@@ -178,7 +178,9 @@ fn parse_l4_ports(ctx: &TcContext, l4_offset: usize, protocol: u8) -> (u16, u16)
         6 => {
             // TCP
             if let Ok(tcp) = ctx.load::<TcpHdr>(l4_offset) {
-                (u16::from_be(tcp.source), u16::from_be(tcp.dest))
+                let src = tcp.source;
+                let dst = tcp.dest;
+                (u16::from_be(src), u16::from_be(dst))
             } else {
                 (0, 0)
             }
@@ -186,7 +188,9 @@ fn parse_l4_ports(ctx: &TcContext, l4_offset: usize, protocol: u8) -> (u16, u16)
         17 => {
             // UDP
             if let Ok(udp) = ctx.load::<UdpHdr>(l4_offset) {
-                (u16::from_be(udp.source), u16::from_be(udp.dest))
+                let src = udp.source;
+                let dst = udp.dest;
+                (u16::from_be(src), u16::from_be(dst))
             } else {
                 (0, 0)
             }
@@ -288,7 +292,8 @@ pub fn tc_ingress(ctx: TcContext) -> i32 {
 fn try_tc_ingress(ctx: &TcContext) -> Result<i32, ()> {
     // Parse Ethernet header.
     let eth: EthHdr = ctx.load(0).map_err(|_| ())?;
-    if eth.ether_type != EtherType::Ipv4 {
+    let ether_type = eth.ether_type;
+    if ether_type != EtherType::Ipv4 {
         return Ok(BPF_TC_ACT_OK as i32);
     }
 
@@ -299,7 +304,8 @@ fn try_tc_ingress(ctx: &TcContext) -> Result<i32, ()> {
     let protocol = ipv4.proto as u8;
     let ihl = (ipv4.ihl() as usize) * 4;
     let l4_offset = ETH_HLEN + ihl;
-    let total_len = u16::from_be(ipv4.tot_len) as u64;
+    let tot_len = ipv4.tot_len;
+    let total_len = u16::from_be(tot_len) as u64;
 
     let (src_port, dst_port) = parse_l4_ports(ctx, l4_offset, protocol);
 
@@ -385,7 +391,8 @@ pub fn tc_egress(ctx: TcContext) -> i32 {
 fn try_tc_egress(ctx: &TcContext) -> Result<i32, ()> {
     // Parse Ethernet header.
     let eth: EthHdr = ctx.load(0).map_err(|_| ())?;
-    if eth.ether_type != EtherType::Ipv4 {
+    let ether_type = eth.ether_type;
+    if ether_type != EtherType::Ipv4 {
         return Ok(BPF_TC_ACT_OK as i32);
     }
 
@@ -396,7 +403,8 @@ fn try_tc_egress(ctx: &TcContext) -> Result<i32, ()> {
     let protocol = ipv4.proto as u8;
     let ihl = (ipv4.ihl() as usize) * 4;
     let l4_offset = ETH_HLEN + ihl;
-    let total_len = u16::from_be(ipv4.tot_len) as u64;
+    let tot_len = ipv4.tot_len;
+    let total_len = u16::from_be(tot_len) as u64;
 
     let (src_port, dst_port) = parse_l4_ports(ctx, l4_offset, protocol);
 
@@ -617,14 +625,15 @@ fn try_tc_tunnel_ingress(ctx: &TcContext) -> Result<i32, ()> {
     //
     // Parse outer Ethernet.
     let eth: EthHdr = ctx.load(0).map_err(|_| ())?;
-    if eth.ether_type != EtherType::Ipv4 {
+    let ether_type = eth.ether_type;
+    if ether_type != EtherType::Ipv4 {
         // Not IPv4 outer — might be inner frame directly. Pass through.
         return Ok(BPF_TC_ACT_OK as i32);
     }
 
     // Parse outer IPv4.
     let outer_ipv4: Ipv4Hdr = ctx.load(ETH_HLEN).map_err(|_| ())?;
-    let outer_src_ip = outer_ipv4.src_addr;
+    let _outer_src_ip = outer_ipv4.src_addr;
     let outer_protocol = outer_ipv4.proto as u8;
 
     // Must be UDP for tunnel traffic.
@@ -637,7 +646,8 @@ fn try_tc_tunnel_ingress(ctx: &TcContext) -> Result<i32, ()> {
 
     // Parse outer UDP.
     let outer_udp: UdpHdr = ctx.load(udp_offset).map_err(|_| ())?;
-    let dst_port = u16::from_be(outer_udp.dest);
+    let udp_dest = outer_udp.dest;
+    let dst_port = u16::from_be(udp_dest);
 
     let tunnel_type = get_config(CONFIG_KEY_TUNNEL_TYPE);
     let tunnel_hdr_offset = udp_offset + UDP_HLEN;
@@ -681,7 +691,8 @@ fn try_tc_tunnel_ingress(ctx: &TcContext) -> Result<i32, ()> {
         // Parse inner Ethernet + IPv4 to get flow info.
         let inner_eth_offset = opts_end;
         let inner_eth: EthHdr = ctx.load(inner_eth_offset).map_err(|_| ())?;
-        if inner_eth.ether_type != EtherType::Ipv4 {
+        let inner_ether_type = inner_eth.ether_type;
+        if inner_ether_type != EtherType::Ipv4 {
             return Ok(BPF_TC_ACT_OK as i32);
         }
 
@@ -692,7 +703,8 @@ fn try_tc_tunnel_ingress(ctx: &TcContext) -> Result<i32, ()> {
         let inner_proto = inner_ipv4.proto as u8;
         let inner_ihl = (inner_ipv4.ihl() as usize) * 4;
         let inner_l4_offset = inner_ip_offset + inner_ihl;
-        let inner_total_len = u16::from_be(inner_ipv4.tot_len) as u64;
+        let inner_tot_len = inner_ipv4.tot_len;
+        let inner_total_len = u16::from_be(inner_tot_len) as u64;
 
         let (inner_src_port, inner_dst_port) = parse_l4_ports(ctx, inner_l4_offset, inner_proto);
 
@@ -722,7 +734,8 @@ fn try_tc_tunnel_ingress(ctx: &TcContext) -> Result<i32, ()> {
 
         let inner_eth_offset = tunnel_hdr_offset + VXLAN_HLEN;
         let inner_eth: EthHdr = ctx.load(inner_eth_offset).map_err(|_| ())?;
-        if inner_eth.ether_type != EtherType::Ipv4 {
+        let inner_ether_type = inner_eth.ether_type;
+        if inner_ether_type != EtherType::Ipv4 {
             return Ok(BPF_TC_ACT_OK as i32);
         }
 
@@ -733,7 +746,8 @@ fn try_tc_tunnel_ingress(ctx: &TcContext) -> Result<i32, ()> {
         let inner_proto = inner_ipv4.proto as u8;
         let inner_ihl = (inner_ipv4.ihl() as usize) * 4;
         let inner_l4_offset = inner_ip_offset + inner_ihl;
-        let inner_total_len = u16::from_be(inner_ipv4.tot_len) as u64;
+        let inner_tot_len = inner_ipv4.tot_len;
+        let inner_total_len = u16::from_be(inner_tot_len) as u64;
 
         let (inner_src_port, inner_dst_port) = parse_l4_ports(ctx, inner_l4_offset, inner_proto);
 
@@ -761,7 +775,7 @@ fn try_tc_tunnel_ingress(ctx: &TcContext) -> Result<i32, ()> {
 /// Shared policy enforcement for tunnel ingress (both Geneve and VXLAN paths).
 #[inline(always)]
 fn enforce_tunnel_policy(
-    ctx: &TcContext,
+    _ctx: &TcContext,
     src_ip: u32,
     dst_ip: u32,
     src_identity: u32,
@@ -850,7 +864,7 @@ pub fn tc_tunnel_egress(ctx: TcContext) -> i32 {
 }
 
 #[inline(always)]
-fn try_tc_tunnel_egress(ctx: &TcContext) -> Result<i32, ()> {
+fn try_tc_tunnel_egress(_ctx: &TcContext) -> Result<i32, ()> {
     // The tunnel egress program runs on the tunnel device's egress path.
     // At this point, the inner packet is being sent to the tunnel device
     // for encapsulation by the kernel.

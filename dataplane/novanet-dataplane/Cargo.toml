@@ -5,7 +5,7 @@ edition = "2021"
 description = "NovaNet userspace dataplane daemon — loads eBPF programs and exposes gRPC API"
 
 [dependencies]
-novanet-common = { path = "../novanet-common" }
+novanet-common = { path = "../novanet-common", features = ["userspace"] }
 tonic = "0.12"
 prost = "0.13"
 tokio = { version = "1", features = ["full"] }

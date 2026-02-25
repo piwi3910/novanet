@@ -4,4 +4,9 @@ version = "0.1.0"
 edition = "2021"
 description = "Shared types between NovaNet eBPF programs and userspace dataplane"
 
-[dependencies]
+[features]
+default = []
+userspace = []
+
+[target.'cfg(target_os = "linux")'.dependencies]
+aya = { version = "0.13", optional = true }

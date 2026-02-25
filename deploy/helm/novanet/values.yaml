@@ -1,17 +1,18 @@
 image:
   agent:
-    repository: ghcr.io/piwi3910/novanet-agent
+    repository: ghcr.io/piwi3910/novanet/agent
     tag: latest
-    pullPolicy: IfNotPresent
+    pullPolicy: Always
   dataplane:
-    repository: ghcr.io/piwi3910/novanet-dataplane
+    repository: ghcr.io/piwi3910/novanet/dataplane
     tag: latest
-    pullPolicy: IfNotPresent
+    pullPolicy: Always
 
-imagePullSecrets: []
+imagePullSecrets:
+  - name: ghcr-pull-secret
 
 config:
-  clusterCIDR: "10.244.0.0/16"
+  clusterCIDR: "10.42.0.0/16"
   nodeCIDRMaskSize: 24
   tunnelProtocol: "geneve"  # geneve or vxlan
   routingMode: "overlay"     # overlay or native
@@ -25,6 +26,10 @@ novaroute:
 
 egress:
   masqueradeEnabled: true
+
+cni:
+  binPath: "/var/lib/rancher/k3s/data/current/bin"
+  confPath: "/var/lib/rancher/k3s/agent/etc/cni/net.d"
 
 policy:
   defaultDeny: false

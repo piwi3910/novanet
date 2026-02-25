@@ -5,14 +5,14 @@
 #   2. Runtime stage uses Debian slim (glibc required by Rust binary).
 
 # ---------- builder ----------
-FROM rust:nightly-bookworm AS builder
+FROM rustlang/rust:nightly-bookworm AS builder
 
 # Install system dependencies for eBPF compilation.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     clang \
     llvm \
     libelf-dev \
-    linux-headers-generic \
+    linux-headers-arm64 \
     pkg-config \
     protobuf-compiler \
     && rm -rf /var/lib/apt/lists/*

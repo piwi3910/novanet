@@ -25,3 +25,4 @@ Thumbs.db
 # Secrets
 *.env
 credentials.json
+novanet-agent

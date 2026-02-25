@@ -4,7 +4,20 @@
 //! both the aya (userspace) and aya-ebpf (kernel) sides. No external dependencies
 //! are required — both libraries work with plain `repr(C)` types natively.
 
-#![no_std]
+#![cfg_attr(not(feature = "userspace"), no_std)]
+
+// When the "userspace" feature is enabled on Linux, implement aya::Pod for
+// all map types so they can be used with aya's HashMap on the userspace side.
+#[cfg(all(feature = "userspace", target_os = "linux"))]
+macro_rules! impl_pod {
+    ($($t:ty),+ $(,)?) => {
+        $(
+            // SAFETY: All types are #[repr(C)] with only primitive fields,
+            // safe to interpret as raw bytes for BPF map operations.
+            unsafe impl aya::Pod for $t {}
+        )+
+    };
+}
 
 // ---------------------------------------------------------------------------
 // Endpoint map: pod IP → interface + identity info
@@ -298,3 +311,19 @@ pub const MAX_EGRESS_POLICIES: u32 = 16384;
 pub const MAX_CONFIG_ENTRIES: u32 = 32;
 /// Size of the flow events ring buffer in bytes (8 MiB).
 pub const FLOW_RING_BUF_SIZE: u32 = 8 * 1024 * 1024;
+
+// ---------------------------------------------------------------------------
+// aya::Pod implementations for userspace map access
+// ---------------------------------------------------------------------------
+
+#[cfg(all(feature = "userspace", target_os = "linux"))]
+impl_pod!(
+    EndpointKey,
+    EndpointValue,
+    PolicyKey,
+    PolicyValue,
+    TunnelKey,
+    TunnelValue,
+    EgressKey,
+    EgressValue,
+);

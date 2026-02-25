@@ -782,7 +782,7 @@ impl RealMaps {
         // Add clsact qdisc if not already present.
         let _ = tc::qdisc_add_clsact(interface);
 
-        let link_id = prog.attach(interface, tc_attach_type)?;
+        let _link_id = prog.attach(interface, tc_attach_type)?;
         let prog_id = prog.info()?.id();
 
         let mut attached = self.attached.write().unwrap();

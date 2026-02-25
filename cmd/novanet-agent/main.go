@@ -31,6 +31,9 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
 	grpcstatus "google.golang.org/grpc/status"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
 )
 
 const (
@@ -388,12 +391,45 @@ func main() {
 		zap.String("tunnel_protocol", cfg.TunnelProtocol),
 	)
 
-	// ---- Validate required flags ----
+	// ---- Resolve node-ip and pod-cidr ----
+	// Auto-detect from Kubernetes node spec when not provided via flags.
+	nodeName := os.Getenv("NOVANET_NODE_NAME")
+	if (*podCIDR == "" || *nodeIPStr == "") && nodeName != "" {
+		logger.Info("auto-detecting node-ip/pod-cidr from Kubernetes API",
+			zap.String("node_name", nodeName),
+		)
+		k8sCfg, err := rest.InClusterConfig()
+		if err != nil {
+			logger.Fatal("failed to create in-cluster config for auto-detection", zap.Error(err))
+		}
+		k8sClient, err := kubernetes.NewForConfig(k8sCfg)
+		if err != nil {
+			logger.Fatal("failed to create kubernetes client", zap.Error(err))
+		}
+		node, err := k8sClient.CoreV1().Nodes().Get(context.Background(), nodeName, metav1.GetOptions{})
+		if err != nil {
+			logger.Fatal("failed to get node for auto-detection", zap.Error(err), zap.String("node", nodeName))
+		}
+		if *podCIDR == "" && node.Spec.PodCIDR != "" {
+			*podCIDR = node.Spec.PodCIDR
+			logger.Info("auto-detected pod-cidr", zap.String("pod_cidr", *podCIDR))
+		}
+		if *nodeIPStr == "" {
+			for _, addr := range node.Status.Addresses {
+				if addr.Type == "InternalIP" {
+					*nodeIPStr = addr.Address
+					logger.Info("auto-detected node-ip", zap.String("node_ip", *nodeIPStr))
+					break
+				}
+			}
+		}
+	}
+
 	if *podCIDR == "" {
-		logger.Fatal("--pod-cidr is required")
+		logger.Fatal("--pod-cidr is required (or set NOVANET_NODE_NAME for auto-detection)")
 	}
 	if *nodeIPStr == "" {
-		logger.Fatal("--node-ip is required")
+		logger.Fatal("--node-ip is required (or set NOVANET_NODE_NAME for auto-detection)")
 	}
 
 	nodeIP := net.ParseIP(*nodeIPStr)

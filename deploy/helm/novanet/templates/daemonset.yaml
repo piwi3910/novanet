@@ -95,8 +95,10 @@ spec:
             exec:
               command:
                 - novanetctl
-                - health
-            initialDelaySeconds: 10
+                - status
+                - --agent-socket
+                - /run/novanet/novanet.sock
+            initialDelaySeconds: 15
             periodSeconds: 15
             timeoutSeconds: 5
             failureThreshold: 3
@@ -104,7 +106,9 @@ spec:
             exec:
               command:
                 - novanetctl
-                - health
+                - status
+                - --agent-socket
+                - /run/novanet/novanet.sock
             initialDelaySeconds: 5
             periodSeconds: 10
             timeoutSeconds: 5
@@ -198,11 +202,11 @@ spec:
         {{- end }}
         - name: cni-bin
           hostPath:
-            path: /opt/cni/bin
+            path: {{ .Values.cni.binPath | default "/opt/cni/bin" }}
             type: DirectoryOrCreate
         - name: cni-conf
           hostPath:
-            path: /etc/cni/net.d
+            path: {{ .Values.cni.confPath | default "/etc/cni/net.d" }}
             type: DirectoryOrCreate
         - name: bpf-maps
           hostPath:
