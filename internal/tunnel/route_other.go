@@ -21,6 +21,16 @@ func AddRoute(cidr string, ifName string, srcIP net.IP, remoteNodeIP net.IP, pro
 	return fmt.Errorf("tunnel routes not supported on this platform")
 }
 
+// AddBlackholeRoute is not supported on non-Linux platforms.
+func AddBlackholeRoute(cidr string) error {
+	return fmt.Errorf("blackhole routes not supported on this platform")
+}
+
+// RemoveBlackholeRoute is not supported on non-Linux platforms.
+func RemoveBlackholeRoute(cidr string) error {
+	return fmt.Errorf("blackhole routes not supported on this platform")
+}
+
 // RemoveRoute is not supported on non-Linux platforms.
 func RemoveRoute(cidr string) error {
 	return fmt.Errorf("tunnel routes not supported on this platform")

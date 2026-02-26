@@ -198,23 +198,13 @@ func (m *ModeManager) startNative(ctx context.Context) error {
 	}
 
 	// Register with NovaRoute.
-	if err := m.novarouteClient.Register(ctx); err != nil {
+	if _, err := m.novarouteClient.Register(ctx); err != nil {
 		return fmt.Errorf("registering with NovaRoute: %w", err)
 	}
 
 	// Advertise PodCIDR.
-	// Note: PodCIDR is per-node and would normally come from the node's
-	// spec. For now we use the cluster CIDR from config as a placeholder.
-	// In production, this would be the node's PodCIDR.
-	if err := m.novarouteClient.AdvertisePrefix(ctx, m.cfg.ClusterCIDR, m.cfg.NovaRoute.Protocol); err != nil {
+	if err := m.novarouteClient.AdvertisePrefix(ctx, m.cfg.ClusterCIDR); err != nil {
 		return fmt.Errorf("advertising PodCIDR: %w", err)
-	}
-
-	// Start receiving route events.
-	if err := m.novarouteClient.StreamEvents(ctx); err != nil {
-		m.logger.Warn("failed to start event streaming",
-			zap.Error(err),
-		)
 	}
 
 	m.logger.Info("native routing mode initialized",
@@ -233,7 +223,7 @@ func (m *ModeManager) stopNative(ctx context.Context) error {
 	}
 
 	// Withdraw the PodCIDR.
-	if err := m.novarouteClient.WithdrawPrefix(ctx, m.cfg.ClusterCIDR, m.cfg.NovaRoute.Protocol); err != nil {
+	if err := m.novarouteClient.WithdrawPrefix(ctx, m.cfg.ClusterCIDR); err != nil {
 		m.logger.Error("failed to withdraw prefix during shutdown",
 			zap.Error(err),
 		)

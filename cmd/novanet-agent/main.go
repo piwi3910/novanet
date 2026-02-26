@@ -24,6 +24,7 @@ import (
 	"github.com/piwi3910/novanet/internal/identity"
 	"github.com/piwi3910/novanet/internal/ipam"
 	"github.com/piwi3910/novanet/internal/masquerade"
+	"github.com/piwi3910/novanet/internal/novaroute"
 	"github.com/piwi3910/novanet/internal/tunnel"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -597,7 +598,7 @@ func main() {
 	}()
 
 	// ---- Mode-specific initialization ----
-	var novarouteConn *grpc.ClientConn
+	var nrClient *novaroute.Client
 
 	switch strings.ToLower(cfg.RoutingMode) {
 	case "overlay":
@@ -619,18 +620,79 @@ func main() {
 		go watchNodes(ctx, logger, k8sClient, tunnelMgr, dpClient, nodeName, nodeIP)
 
 	case "native":
-		logger.Info("running in native routing mode, connecting to NovaRoute",
+		logger.Info("running in native routing mode (eBGP)",
 			zap.String("socket", cfg.NovaRoute.Socket))
-		novarouteConn, err = connectToNovaRoute(ctx, logger, cfg)
-		if err != nil {
-			logger.Error("failed to connect to NovaRoute", zap.Error(err))
-		} else {
-			agentSrv.mu.Lock()
-			agentSrv.mu.Unlock()
-			logger.Info("connected to NovaRoute, advertising PodCIDR",
-				zap.String("pod_cidr", *podCIDR))
-			// In production, we would call AdvertisePrefix here.
+
+		if k8sClient == nil {
+			logger.Fatal("native mode requires NOVANET_NODE_NAME to be set for node discovery")
 		}
+
+		// Clean up stale overlay interfaces from previous mode.
+		if err := tunnel.PrepareOverlay("geneve"); err != nil {
+			logger.Debug("overlay cleanup (geneve)", zap.Error(err))
+		}
+		if err := tunnel.PrepareOverlay("vxlan"); err != nil {
+			logger.Debug("overlay cleanup (vxlan)", zap.Error(err))
+		}
+
+		// Add a blackhole route for the local PodCIDR so the kernel RIB
+		// has the prefix. FRR/BGP needs it in the RIB to advertise via
+		// the "network" command. Individual /32 pod routes take precedence.
+		if err := tunnel.AddBlackholeRoute(*podCIDR); err != nil {
+			logger.Warn("failed to add blackhole route for PodCIDR", zap.Error(err))
+		} else {
+			logger.Info("added blackhole route for local PodCIDR", zap.String("pod_cidr", *podCIDR))
+		}
+
+		nrClient = novaroute.NewClient(cfg.NovaRoute.Socket, "novanet", cfg.NovaRoute.Token, logger)
+
+		if err := nrClient.Connect(ctx); err != nil {
+			logger.Fatal("failed to connect to NovaRoute", zap.Error(err))
+		}
+
+		resp, err := nrClient.Register(ctx)
+		if err != nil {
+			logger.Fatal("failed to register with NovaRoute", zap.Error(err))
+		}
+		logger.Info("registered with NovaRoute",
+			zap.Strings("current_prefixes", resp.CurrentPrefixes))
+
+		// Compute per-node eBGP AS: 65000 + last octet of node IP.
+		lastOctet := uint32(nodeIP.To4()[3])
+		localAS := uint32(65000) + lastOctet
+		routerID := nodeIP.String()
+
+		if err := nrClient.ConfigureBGP(ctx, localAS, routerID); err != nil {
+			logger.Fatal("failed to configure BGP", zap.Error(err))
+		}
+		logger.Info("BGP configured",
+			zap.Uint32("local_as", localAS),
+			zap.String("router_id", routerID))
+
+		// Establish eBGP sessions with TOR/spine switches.
+		for _, tor := range cfg.NovaRoute.TORPeers {
+			if err := nrClient.ApplyPeer(ctx, tor.Address, tor.AS); err != nil {
+				logger.Error("failed to apply TOR peer",
+					zap.Error(err),
+					zap.String("address", tor.Address),
+					zap.Uint32("as", tor.AS),
+				)
+			} else {
+				logger.Info("TOR eBGP peer configured",
+					zap.String("address", tor.Address),
+					zap.Uint32("as", tor.AS),
+				)
+			}
+		}
+
+		// Advertise this node's PodCIDR.
+		if err := nrClient.AdvertisePrefix(ctx, *podCIDR); err != nil {
+			logger.Fatal("failed to advertise PodCIDR", zap.Error(err))
+		}
+		logger.Info("advertised PodCIDR via BGP", zap.String("pod_cidr", *podCIDR))
+
+		// Watch nodes and establish eBGP peering with each remote node.
+		go watchNodesNative(ctx, logger, k8sClient, nrClient, nodeName)
 	}
 
 	// ---- Wait for termination signal ----
@@ -647,11 +709,19 @@ func main() {
 	// Cancel root context to stop background operations.
 	cancel()
 
-	// If native mode, withdraw prefix from NovaRoute.
-	if strings.ToLower(cfg.RoutingMode) == "native" && novarouteConn != nil {
+	// If native mode, withdraw prefix and close NovaRoute connection.
+	if nrClient != nil {
 		logger.Info("withdrawing PodCIDR from NovaRoute", zap.String("pod_cidr", *podCIDR))
-		// In production: call WithdrawPrefix RPC.
-		novarouteConn.Close()
+		if err := nrClient.WithdrawPrefix(shutdownCtx, *podCIDR); err != nil {
+			logger.Error("failed to withdraw prefix", zap.Error(err))
+		}
+		if err := nrClient.Close(); err != nil {
+			logger.Error("failed to close NovaRoute connection", zap.Error(err))
+		}
+		// Remove the blackhole route.
+		if err := tunnel.RemoveBlackholeRoute(*podCIDR); err != nil {
+			logger.Debug("failed to remove blackhole route", zap.Error(err))
+		}
 		logger.Info("NovaRoute connection closed")
 	}
 
@@ -816,21 +886,80 @@ func pushDataplaneConfig(ctx context.Context, logger *zap.Logger, client pb.Data
 	return nil
 }
 
-// connectToNovaRoute establishes a gRPC connection to the NovaRoute daemon.
-func connectToNovaRoute(ctx context.Context, logger *zap.Logger, cfg *config.Config) (*grpc.ClientConn, error) {
-	conn, err := grpc.NewClient(
-		"unix://"+cfg.NovaRoute.Socket,
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
-	)
-	if err != nil {
-		return nil, fmt.Errorf("connecting to NovaRoute at %s: %w", cfg.NovaRoute.Socket, err)
-	}
+// watchNodesNative periodically lists Kubernetes nodes and establishes
+// eBGP peering via NovaRoute for each remote node.
+func watchNodesNative(ctx context.Context, logger *zap.Logger, k8sClient *kubernetes.Clientset,
+	nrClient *novaroute.Client, selfNode string) {
 
-	logger.Info("NovaRoute gRPC connection established",
-		zap.String("socket", cfg.NovaRoute.Socket),
-	)
-	_ = ctx // available for future use with registration RPCs
-	return conn, nil
+	const pollInterval = 15 * time.Second
+
+	logger.Info("native node watcher started", zap.String("self_node", selfNode))
+
+	peered := make(map[string]bool) // track nodes we've already peered with
+
+	for {
+		nodes, err := k8sClient.CoreV1().Nodes().List(ctx, metav1.ListOptions{})
+		if err != nil {
+			logger.Error("failed to list nodes", zap.Error(err))
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(pollInterval):
+				continue
+			}
+		}
+
+		for _, n := range nodes.Items {
+			if n.Name == selfNode {
+				continue
+			}
+
+			remoteIP := ""
+			for _, addr := range n.Status.Addresses {
+				if addr.Type == "InternalIP" {
+					remoteIP = addr.Address
+					break
+				}
+			}
+			if remoteIP == "" {
+				continue
+			}
+
+			if peered[n.Name] {
+				continue
+			}
+
+			// Compute remote node's eBGP AS: 65000 + last octet.
+			ip := net.ParseIP(remoteIP).To4()
+			if ip == nil {
+				continue
+			}
+			remoteAS := uint32(65000) + uint32(ip[3])
+
+			if err := nrClient.ApplyPeer(ctx, remoteIP, remoteAS); err != nil {
+				logger.Error("failed to apply BGP peer",
+					zap.Error(err),
+					zap.String("node", n.Name),
+					zap.String("remote_ip", remoteIP),
+					zap.Uint32("remote_as", remoteAS),
+				)
+				continue
+			}
+
+			peered[n.Name] = true
+			logger.Info("eBGP peer established",
+				zap.String("node", n.Name),
+				zap.String("remote_ip", remoteIP),
+				zap.Uint32("remote_as", remoteAS),
+			)
+		}
+
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(pollInterval):
+		}
+	}
 }
 
 // startGRPCServer creates a Unix socket listener and gRPC server. It removes

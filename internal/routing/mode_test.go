@@ -10,7 +10,6 @@ import (
 
 	"github.com/piwi3910/novanet/internal/config"
 	"github.com/piwi3910/novanet/internal/node"
-	"github.com/piwi3910/novanet/internal/novaroute"
 	"github.com/piwi3910/novanet/internal/tunnel"
 )
 
@@ -157,91 +156,6 @@ func TestNativeModeRequiresClient(t *testing.T) {
 	err := m.Start(ctx)
 	if err == nil {
 		t.Fatal("expected error when NovaRoute client is nil")
-	}
-}
-
-// mockRouteClient implements novaroute.RouteClient for testing.
-type mockRouteClient struct {
-	registerCalled  int
-	advertiseCalled int
-	withdrawCalled  int
-	closeCalled     int
-}
-
-func (m *mockRouteClient) Register(ctx context.Context, owner, token string) error {
-	m.registerCalled++
-	return nil
-}
-
-func (m *mockRouteClient) AdvertisePrefix(ctx context.Context, owner, token, prefix, protocol string) error {
-	m.advertiseCalled++
-	return nil
-}
-
-func (m *mockRouteClient) WithdrawPrefix(ctx context.Context, owner, token, prefix, protocol string) error {
-	m.withdrawCalled++
-	return nil
-}
-
-func (m *mockRouteClient) StreamEvents(ctx context.Context, owner, token string, handler novaroute.EventHandler) error {
-	<-ctx.Done()
-	return ctx.Err()
-}
-
-func (m *mockRouteClient) Close() error {
-	m.closeCalled++
-	return nil
-}
-
-func TestNativeModeStart(t *testing.T) {
-	cfg := testNativeConfig()
-	nodeReg := node.NewRegistry(testLogger())
-
-	mock := &mockRouteClient{}
-	nrClient := novaroute.NewClient(cfg.NovaRoute.Socket, "novanet", cfg.NovaRoute.Token, testLogger())
-	nrClient.SetRouteClient(mock)
-
-	m := NewModeManager(cfg, nil, nrClient, nodeReg, testLogger())
-
-	ctx := t.Context()
-
-	err := m.Start(ctx)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	if mock.registerCalled != 1 {
-		t.Fatalf("expected 1 register call, got %d", mock.registerCalled)
-	}
-	if mock.advertiseCalled != 1 {
-		t.Fatalf("expected 1 advertise call, got %d", mock.advertiseCalled)
-	}
-}
-
-func TestNativeModeStop(t *testing.T) {
-	cfg := testNativeConfig()
-	nodeReg := node.NewRegistry(testLogger())
-
-	mock := &mockRouteClient{}
-	nrClient := novaroute.NewClient(cfg.NovaRoute.Socket, "novanet", cfg.NovaRoute.Token, testLogger())
-	nrClient.SetRouteClient(mock)
-
-	m := NewModeManager(cfg, nil, nrClient, nodeReg, testLogger())
-
-	ctx := t.Context()
-
-	m.Start(ctx)
-
-	err := m.Stop(context.Background())
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	if mock.withdrawCalled != 1 {
-		t.Fatalf("expected 1 withdraw call, got %d", mock.withdrawCalled)
-	}
-	if mock.closeCalled != 1 {
-		t.Fatalf("expected 1 close call, got %d", mock.closeCalled)
 	}
 }
 

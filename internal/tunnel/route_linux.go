@@ -123,6 +123,42 @@ func podCIDRGateway(network *net.IPNet) net.IP {
 	return gw
 }
 
+// AddBlackholeRoute installs a blackhole route for a CIDR. This makes the
+// prefix visible in the kernel RIB so that FRR/BGP can advertise it via
+// the "network" command. Individual /32 pod routes take precedence.
+func AddBlackholeRoute(cidr string) error {
+	_, dst, err := net.ParseCIDR(cidr)
+	if err != nil {
+		return fmt.Errorf("parsing CIDR %s: %w", cidr, err)
+	}
+
+	route := &netlink.Route{
+		Dst:  dst,
+		Type: syscall.RTN_BLACKHOLE,
+	}
+	if err := netlink.RouteReplace(route); err != nil {
+		return fmt.Errorf("adding blackhole route %s: %w", cidr, err)
+	}
+	return nil
+}
+
+// RemoveBlackholeRoute removes a blackhole route for a CIDR.
+func RemoveBlackholeRoute(cidr string) error {
+	_, dst, err := net.ParseCIDR(cidr)
+	if err != nil {
+		return fmt.Errorf("parsing CIDR %s: %w", cidr, err)
+	}
+
+	route := &netlink.Route{
+		Dst:  dst,
+		Type: syscall.RTN_BLACKHOLE,
+	}
+	if err := netlink.RouteDel(route); err != nil {
+		return fmt.Errorf("removing blackhole route %s: %w", cidr, err)
+	}
+	return nil
+}
+
 // RemoveRoute removes a kernel route for a CIDR.
 func RemoveRoute(cidr string) error {
 	_, dst, err := net.ParseCIDR(cidr)
