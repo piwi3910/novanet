@@ -36,23 +36,46 @@ func runEgress() error {
 	ctx, cancel := context.WithTimeout(context.Background(), callTimeout)
 	defer cancel()
 
-	// Get status from agent.
-	status, err := client.GetAgentStatus(ctx, &pb.GetAgentStatusRequest{})
+	resp, err := client.ListEgressPolicies(ctx, &pb.ListEgressPoliciesRequest{})
 	if err != nil {
-		return fmt.Errorf("GetAgentStatus failed: %w", err)
+		return fmt.Errorf("ListEgressPolicies failed: %w", err)
 	}
 
 	w := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
 	fmt.Fprintf(w, "EGRESS POLICIES\n")
 	fmt.Fprintf(w, "===============\n\n")
-	fmt.Fprintf(w, "Routing Mode:\t%s\n\n", status.RoutingMode)
+	fmt.Fprintf(w, "Total Rules:\t%d\n\n", len(resp.Rules))
 
-	fmt.Fprintf(w, "SRC_IDENTITY\tDST_CIDR\tPROTOCOL\tPORT\tACTION\n")
-	// Detailed egress policy listing requires a ListEgressPolicies RPC
-	// that is not yet exposed by the agent. The current proto defines
-	// upsert/delete operations for egress policies but no list endpoint.
-	// A dedicated list endpoint will be added in a future release.
-	fmt.Fprintf(w, "(detailed egress listing requires ListEgressPolicies RPC — coming soon)\n")
+	if len(resp.Rules) == 0 {
+		fmt.Fprintln(w, "No egress policies installed.")
+	} else {
+		fmt.Fprintf(w, "NAMESPACE\tNAME\tSRC_IDENTITY\tDST_CIDR\tPROTOCOL\tPORT\tACTION\n")
+		for _, r := range resp.Rules {
+			proto := protocolName(r.Protocol)
+			action := egressActionName(r.Action)
+			port := "*"
+			if r.DstPort != 0 {
+				port = fmt.Sprintf("%d", r.DstPort)
+			}
+			src := "*"
+			if r.SrcIdentity != 0 {
+				src = fmt.Sprintf("%d", r.SrcIdentity)
+			}
+			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+				r.Namespace, r.Name, src, r.DstCidr, proto, port, action)
+		}
+	}
 
 	return w.Flush()
+}
+
+func egressActionName(action pb.EgressAction) string {
+	switch action {
+	case pb.EgressAction_EGRESS_ACTION_ALLOW:
+		return "ALLOW"
+	case pb.EgressAction_EGRESS_ACTION_SNAT:
+		return "SNAT"
+	default:
+		return "DENY"
+	}
 }

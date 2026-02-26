@@ -36,10 +36,15 @@ func runTunnels() error {
 	ctx, cancel := context.WithTimeout(context.Background(), callTimeout)
 	defer cancel()
 
-	// Get tunnel count from agent status.
+	// Get routing mode from status.
 	status, err := client.GetAgentStatus(ctx, &pb.GetAgentStatusRequest{})
 	if err != nil {
 		return fmt.Errorf("GetAgentStatus failed: %w", err)
+	}
+
+	resp, err := client.ListTunnels(ctx, &pb.ListTunnelsRequest{})
+	if err != nil {
+		return fmt.Errorf("ListTunnels failed: %w", err)
 	}
 
 	w := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
@@ -47,9 +52,9 @@ func runTunnels() error {
 	fmt.Fprintf(w, "============\n\n")
 	fmt.Fprintf(w, "Routing Mode:\t%s\n", status.RoutingMode)
 	fmt.Fprintf(w, "Tunnel Protocol:\t%s\n", status.TunnelProtocol)
-	fmt.Fprintf(w, "Active Tunnels:\t%d\n\n", status.TunnelCount)
+	fmt.Fprintf(w, "Active Tunnels:\t%d\n\n", len(resp.Tunnels))
 
-	if status.TunnelCount == 0 {
+	if len(resp.Tunnels) == 0 {
 		fmt.Fprintln(w, "No active tunnels.")
 		fmt.Fprintln(w)
 		if status.RoutingMode == "native" {
@@ -58,12 +63,12 @@ func runTunnels() error {
 			fmt.Fprintln(w, "Note: Tunnels are created when remote nodes join the cluster.")
 		}
 	} else {
-		fmt.Fprintf(w, "NODE_IP\tIFINDEX\tPROTOCOL\n")
-		// Detailed tunnel information requires additional RPCs that are
-		// not yet exposed by the agent. The dataplane GetDataplaneStatus
-		// provides aggregate counts only. Individual tunnel state will
-		// be available once the agent exposes a ListTunnels RPC.
-		fmt.Fprintf(w, "(detailed tunnel listing requires ListTunnels RPC — coming soon)\n")
+		fmt.Fprintf(w, "NODE\tNODE_IP\tPOD_CIDR\tINTERFACE\tIFINDEX\tPROTOCOL\n")
+		for _, t := range resp.Tunnels {
+			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%d\t%s\n",
+				t.NodeName, t.NodeIp, t.PodCidr,
+				t.InterfaceName, t.Ifindex, t.Protocol)
+		}
 	}
 
 	return w.Flush()

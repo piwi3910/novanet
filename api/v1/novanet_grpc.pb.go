@@ -563,10 +563,14 @@ var DataplaneControl_ServiceDesc = grpc.ServiceDesc{
 }
 
 const (
-	AgentControl_AddPod_FullMethodName           = "/novanet.v1.AgentControl/AddPod"
-	AgentControl_DelPod_FullMethodName           = "/novanet.v1.AgentControl/DelPod"
-	AgentControl_GetAgentStatus_FullMethodName   = "/novanet.v1.AgentControl/GetAgentStatus"
-	AgentControl_StreamAgentFlows_FullMethodName = "/novanet.v1.AgentControl/StreamAgentFlows"
+	AgentControl_AddPod_FullMethodName             = "/novanet.v1.AgentControl/AddPod"
+	AgentControl_DelPod_FullMethodName             = "/novanet.v1.AgentControl/DelPod"
+	AgentControl_GetAgentStatus_FullMethodName     = "/novanet.v1.AgentControl/GetAgentStatus"
+	AgentControl_StreamAgentFlows_FullMethodName   = "/novanet.v1.AgentControl/StreamAgentFlows"
+	AgentControl_ListPolicies_FullMethodName       = "/novanet.v1.AgentControl/ListPolicies"
+	AgentControl_ListIdentities_FullMethodName     = "/novanet.v1.AgentControl/ListIdentities"
+	AgentControl_ListTunnels_FullMethodName        = "/novanet.v1.AgentControl/ListTunnels"
+	AgentControl_ListEgressPolicies_FullMethodName = "/novanet.v1.AgentControl/ListEgressPolicies"
 )
 
 // AgentControlClient is the client API for AgentControl service.
@@ -583,6 +587,11 @@ type AgentControlClient interface {
 	GetAgentStatus(ctx context.Context, in *GetAgentStatusRequest, opts ...grpc.CallOption) (*GetAgentStatusResponse, error)
 	// Flow streaming (proxied from dataplane)
 	StreamAgentFlows(ctx context.Context, in *StreamAgentFlowsRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[FlowEvent], error)
+	// List RPCs (CLI)
+	ListPolicies(ctx context.Context, in *ListPoliciesRequest, opts ...grpc.CallOption) (*ListPoliciesResponse, error)
+	ListIdentities(ctx context.Context, in *ListIdentitiesRequest, opts ...grpc.CallOption) (*ListIdentitiesResponse, error)
+	ListTunnels(ctx context.Context, in *ListTunnelsRequest, opts ...grpc.CallOption) (*ListTunnelsResponse, error)
+	ListEgressPolicies(ctx context.Context, in *ListEgressPoliciesRequest, opts ...grpc.CallOption) (*ListEgressPoliciesResponse, error)
 }
 
 type agentControlClient struct {
@@ -642,6 +651,46 @@ func (c *agentControlClient) StreamAgentFlows(ctx context.Context, in *StreamAge
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type AgentControl_StreamAgentFlowsClient = grpc.ServerStreamingClient[FlowEvent]
 
+func (c *agentControlClient) ListPolicies(ctx context.Context, in *ListPoliciesRequest, opts ...grpc.CallOption) (*ListPoliciesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListPoliciesResponse)
+	err := c.cc.Invoke(ctx, AgentControl_ListPolicies_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *agentControlClient) ListIdentities(ctx context.Context, in *ListIdentitiesRequest, opts ...grpc.CallOption) (*ListIdentitiesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListIdentitiesResponse)
+	err := c.cc.Invoke(ctx, AgentControl_ListIdentities_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *agentControlClient) ListTunnels(ctx context.Context, in *ListTunnelsRequest, opts ...grpc.CallOption) (*ListTunnelsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListTunnelsResponse)
+	err := c.cc.Invoke(ctx, AgentControl_ListTunnels_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *agentControlClient) ListEgressPolicies(ctx context.Context, in *ListEgressPoliciesRequest, opts ...grpc.CallOption) (*ListEgressPoliciesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListEgressPoliciesResponse)
+	err := c.cc.Invoke(ctx, AgentControl_ListEgressPolicies_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // AgentControlServer is the server API for AgentControl service.
 // All implementations must embed UnimplementedAgentControlServer
 // for forward compatibility.
@@ -656,6 +705,11 @@ type AgentControlServer interface {
 	GetAgentStatus(context.Context, *GetAgentStatusRequest) (*GetAgentStatusResponse, error)
 	// Flow streaming (proxied from dataplane)
 	StreamAgentFlows(*StreamAgentFlowsRequest, grpc.ServerStreamingServer[FlowEvent]) error
+	// List RPCs (CLI)
+	ListPolicies(context.Context, *ListPoliciesRequest) (*ListPoliciesResponse, error)
+	ListIdentities(context.Context, *ListIdentitiesRequest) (*ListIdentitiesResponse, error)
+	ListTunnels(context.Context, *ListTunnelsRequest) (*ListTunnelsResponse, error)
+	ListEgressPolicies(context.Context, *ListEgressPoliciesRequest) (*ListEgressPoliciesResponse, error)
 	mustEmbedUnimplementedAgentControlServer()
 }
 
@@ -677,6 +731,18 @@ func (UnimplementedAgentControlServer) GetAgentStatus(context.Context, *GetAgent
 }
 func (UnimplementedAgentControlServer) StreamAgentFlows(*StreamAgentFlowsRequest, grpc.ServerStreamingServer[FlowEvent]) error {
 	return status.Error(codes.Unimplemented, "method StreamAgentFlows not implemented")
+}
+func (UnimplementedAgentControlServer) ListPolicies(context.Context, *ListPoliciesRequest) (*ListPoliciesResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListPolicies not implemented")
+}
+func (UnimplementedAgentControlServer) ListIdentities(context.Context, *ListIdentitiesRequest) (*ListIdentitiesResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListIdentities not implemented")
+}
+func (UnimplementedAgentControlServer) ListTunnels(context.Context, *ListTunnelsRequest) (*ListTunnelsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListTunnels not implemented")
+}
+func (UnimplementedAgentControlServer) ListEgressPolicies(context.Context, *ListEgressPoliciesRequest) (*ListEgressPoliciesResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListEgressPolicies not implemented")
 }
 func (UnimplementedAgentControlServer) mustEmbedUnimplementedAgentControlServer() {}
 func (UnimplementedAgentControlServer) testEmbeddedByValue()                      {}
@@ -764,6 +830,78 @@ func _AgentControl_StreamAgentFlows_Handler(srv interface{}, stream grpc.ServerS
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type AgentControl_StreamAgentFlowsServer = grpc.ServerStreamingServer[FlowEvent]
 
+func _AgentControl_ListPolicies_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListPoliciesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AgentControlServer).ListPolicies(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AgentControl_ListPolicies_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AgentControlServer).ListPolicies(ctx, req.(*ListPoliciesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AgentControl_ListIdentities_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListIdentitiesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AgentControlServer).ListIdentities(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AgentControl_ListIdentities_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AgentControlServer).ListIdentities(ctx, req.(*ListIdentitiesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AgentControl_ListTunnels_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListTunnelsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AgentControlServer).ListTunnels(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AgentControl_ListTunnels_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AgentControlServer).ListTunnels(ctx, req.(*ListTunnelsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AgentControl_ListEgressPolicies_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListEgressPoliciesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AgentControlServer).ListEgressPolicies(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AgentControl_ListEgressPolicies_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AgentControlServer).ListEgressPolicies(ctx, req.(*ListEgressPoliciesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // AgentControl_ServiceDesc is the grpc.ServiceDesc for AgentControl service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -782,6 +920,22 @@ var AgentControl_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetAgentStatus",
 			Handler:    _AgentControl_GetAgentStatus_Handler,
+		},
+		{
+			MethodName: "ListPolicies",
+			Handler:    _AgentControl_ListPolicies_Handler,
+		},
+		{
+			MethodName: "ListIdentities",
+			Handler:    _AgentControl_ListIdentities_Handler,
+		},
+		{
+			MethodName: "ListTunnels",
+			Handler:    _AgentControl_ListTunnels_Handler,
+		},
+		{
+			MethodName: "ListEgressPolicies",
+			Handler:    _AgentControl_ListEgressPolicies_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

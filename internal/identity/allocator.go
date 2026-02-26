@@ -110,6 +110,33 @@ func (a *Allocator) RemoveIdentity(identityID uint32) {
 	}
 }
 
+// IdentityEntry holds an identity's labels and reference count for listing.
+type IdentityEntry struct {
+	ID       uint32
+	Labels   map[string]string
+	RefCount int
+}
+
+// ListAll returns all identities with their labels and reference counts.
+func (a *Allocator) ListAll() []IdentityEntry {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+
+	result := make([]IdentityEntry, 0, len(a.idToLabels))
+	for id, labels := range a.idToLabels {
+		labelsCopy := make(map[string]string, len(labels))
+		for k, v := range labels {
+			labelsCopy[k] = v
+		}
+		result = append(result, IdentityEntry{
+			ID:       id,
+			Labels:   labelsCopy,
+			RefCount: a.refCount[id],
+		})
+	}
+	return result
+}
+
 // Count returns the number of distinct identities currently tracked.
 func (a *Allocator) Count() int {
 	a.mu.RLock()

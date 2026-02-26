@@ -2372,6 +2372,638 @@ func (*DeleteEgressPolicyResponse) Descriptor() ([]byte, []int) {
 	return file_api_v1_novanet_proto_rawDescGZIP(), []int{37}
 }
 
+type ListPoliciesRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListPoliciesRequest) Reset() {
+	*x = ListPoliciesRequest{}
+	mi := &file_api_v1_novanet_proto_msgTypes[38]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListPoliciesRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListPoliciesRequest) ProtoMessage() {}
+
+func (x *ListPoliciesRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_api_v1_novanet_proto_msgTypes[38]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListPoliciesRequest.ProtoReflect.Descriptor instead.
+func (*ListPoliciesRequest) Descriptor() ([]byte, []int) {
+	return file_api_v1_novanet_proto_rawDescGZIP(), []int{38}
+}
+
+type ListPoliciesResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Rules         []*PolicyRuleInfo      `protobuf:"bytes,1,rep,name=rules,proto3" json:"rules,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListPoliciesResponse) Reset() {
+	*x = ListPoliciesResponse{}
+	mi := &file_api_v1_novanet_proto_msgTypes[39]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListPoliciesResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListPoliciesResponse) ProtoMessage() {}
+
+func (x *ListPoliciesResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_api_v1_novanet_proto_msgTypes[39]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListPoliciesResponse.ProtoReflect.Descriptor instead.
+func (*ListPoliciesResponse) Descriptor() ([]byte, []int) {
+	return file_api_v1_novanet_proto_rawDescGZIP(), []int{39}
+}
+
+func (x *ListPoliciesResponse) GetRules() []*PolicyRuleInfo {
+	if x != nil {
+		return x.Rules
+	}
+	return nil
+}
+
+type PolicyRuleInfo struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	SrcIdentity   uint32                 `protobuf:"varint,1,opt,name=src_identity,json=srcIdentity,proto3" json:"src_identity,omitempty"`
+	DstIdentity   uint32                 `protobuf:"varint,2,opt,name=dst_identity,json=dstIdentity,proto3" json:"dst_identity,omitempty"`
+	Protocol      uint32                 `protobuf:"varint,3,opt,name=protocol,proto3" json:"protocol,omitempty"`
+	DstPort       uint32                 `protobuf:"varint,4,opt,name=dst_port,json=dstPort,proto3" json:"dst_port,omitempty"`
+	Action        PolicyAction           `protobuf:"varint,5,opt,name=action,proto3,enum=novanet.v1.PolicyAction" json:"action,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PolicyRuleInfo) Reset() {
+	*x = PolicyRuleInfo{}
+	mi := &file_api_v1_novanet_proto_msgTypes[40]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PolicyRuleInfo) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PolicyRuleInfo) ProtoMessage() {}
+
+func (x *PolicyRuleInfo) ProtoReflect() protoreflect.Message {
+	mi := &file_api_v1_novanet_proto_msgTypes[40]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PolicyRuleInfo.ProtoReflect.Descriptor instead.
+func (*PolicyRuleInfo) Descriptor() ([]byte, []int) {
+	return file_api_v1_novanet_proto_rawDescGZIP(), []int{40}
+}
+
+func (x *PolicyRuleInfo) GetSrcIdentity() uint32 {
+	if x != nil {
+		return x.SrcIdentity
+	}
+	return 0
+}
+
+func (x *PolicyRuleInfo) GetDstIdentity() uint32 {
+	if x != nil {
+		return x.DstIdentity
+	}
+	return 0
+}
+
+func (x *PolicyRuleInfo) GetProtocol() uint32 {
+	if x != nil {
+		return x.Protocol
+	}
+	return 0
+}
+
+func (x *PolicyRuleInfo) GetDstPort() uint32 {
+	if x != nil {
+		return x.DstPort
+	}
+	return 0
+}
+
+func (x *PolicyRuleInfo) GetAction() PolicyAction {
+	if x != nil {
+		return x.Action
+	}
+	return PolicyAction_POLICY_ACTION_DENY
+}
+
+type ListIdentitiesRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListIdentitiesRequest) Reset() {
+	*x = ListIdentitiesRequest{}
+	mi := &file_api_v1_novanet_proto_msgTypes[41]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListIdentitiesRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListIdentitiesRequest) ProtoMessage() {}
+
+func (x *ListIdentitiesRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_api_v1_novanet_proto_msgTypes[41]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListIdentitiesRequest.ProtoReflect.Descriptor instead.
+func (*ListIdentitiesRequest) Descriptor() ([]byte, []int) {
+	return file_api_v1_novanet_proto_rawDescGZIP(), []int{41}
+}
+
+type ListIdentitiesResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Identities    []*IdentityInfo        `protobuf:"bytes,1,rep,name=identities,proto3" json:"identities,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListIdentitiesResponse) Reset() {
+	*x = ListIdentitiesResponse{}
+	mi := &file_api_v1_novanet_proto_msgTypes[42]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListIdentitiesResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListIdentitiesResponse) ProtoMessage() {}
+
+func (x *ListIdentitiesResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_api_v1_novanet_proto_msgTypes[42]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListIdentitiesResponse.ProtoReflect.Descriptor instead.
+func (*ListIdentitiesResponse) Descriptor() ([]byte, []int) {
+	return file_api_v1_novanet_proto_rawDescGZIP(), []int{42}
+}
+
+func (x *ListIdentitiesResponse) GetIdentities() []*IdentityInfo {
+	if x != nil {
+		return x.Identities
+	}
+	return nil
+}
+
+type IdentityInfo struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	IdentityId    uint32                 `protobuf:"varint,1,opt,name=identity_id,json=identityId,proto3" json:"identity_id,omitempty"`
+	Labels        map[string]string      `protobuf:"bytes,2,rep,name=labels,proto3" json:"labels,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	RefCount      uint32                 `protobuf:"varint,3,opt,name=ref_count,json=refCount,proto3" json:"ref_count,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *IdentityInfo) Reset() {
+	*x = IdentityInfo{}
+	mi := &file_api_v1_novanet_proto_msgTypes[43]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *IdentityInfo) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*IdentityInfo) ProtoMessage() {}
+
+func (x *IdentityInfo) ProtoReflect() protoreflect.Message {
+	mi := &file_api_v1_novanet_proto_msgTypes[43]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use IdentityInfo.ProtoReflect.Descriptor instead.
+func (*IdentityInfo) Descriptor() ([]byte, []int) {
+	return file_api_v1_novanet_proto_rawDescGZIP(), []int{43}
+}
+
+func (x *IdentityInfo) GetIdentityId() uint32 {
+	if x != nil {
+		return x.IdentityId
+	}
+	return 0
+}
+
+func (x *IdentityInfo) GetLabels() map[string]string {
+	if x != nil {
+		return x.Labels
+	}
+	return nil
+}
+
+func (x *IdentityInfo) GetRefCount() uint32 {
+	if x != nil {
+		return x.RefCount
+	}
+	return 0
+}
+
+type ListTunnelsRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListTunnelsRequest) Reset() {
+	*x = ListTunnelsRequest{}
+	mi := &file_api_v1_novanet_proto_msgTypes[44]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListTunnelsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListTunnelsRequest) ProtoMessage() {}
+
+func (x *ListTunnelsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_api_v1_novanet_proto_msgTypes[44]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListTunnelsRequest.ProtoReflect.Descriptor instead.
+func (*ListTunnelsRequest) Descriptor() ([]byte, []int) {
+	return file_api_v1_novanet_proto_rawDescGZIP(), []int{44}
+}
+
+type ListTunnelsResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Tunnels       []*TunnelInfoMsg       `protobuf:"bytes,1,rep,name=tunnels,proto3" json:"tunnels,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListTunnelsResponse) Reset() {
+	*x = ListTunnelsResponse{}
+	mi := &file_api_v1_novanet_proto_msgTypes[45]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListTunnelsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListTunnelsResponse) ProtoMessage() {}
+
+func (x *ListTunnelsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_api_v1_novanet_proto_msgTypes[45]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListTunnelsResponse.ProtoReflect.Descriptor instead.
+func (*ListTunnelsResponse) Descriptor() ([]byte, []int) {
+	return file_api_v1_novanet_proto_rawDescGZIP(), []int{45}
+}
+
+func (x *ListTunnelsResponse) GetTunnels() []*TunnelInfoMsg {
+	if x != nil {
+		return x.Tunnels
+	}
+	return nil
+}
+
+type TunnelInfoMsg struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	NodeName      string                 `protobuf:"bytes,1,opt,name=node_name,json=nodeName,proto3" json:"node_name,omitempty"`
+	NodeIp        string                 `protobuf:"bytes,2,opt,name=node_ip,json=nodeIp,proto3" json:"node_ip,omitempty"`
+	PodCidr       string                 `protobuf:"bytes,3,opt,name=pod_cidr,json=podCidr,proto3" json:"pod_cidr,omitempty"`
+	InterfaceName string                 `protobuf:"bytes,4,opt,name=interface_name,json=interfaceName,proto3" json:"interface_name,omitempty"`
+	Ifindex       uint32                 `protobuf:"varint,5,opt,name=ifindex,proto3" json:"ifindex,omitempty"`
+	Protocol      string                 `protobuf:"bytes,6,opt,name=protocol,proto3" json:"protocol,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TunnelInfoMsg) Reset() {
+	*x = TunnelInfoMsg{}
+	mi := &file_api_v1_novanet_proto_msgTypes[46]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TunnelInfoMsg) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TunnelInfoMsg) ProtoMessage() {}
+
+func (x *TunnelInfoMsg) ProtoReflect() protoreflect.Message {
+	mi := &file_api_v1_novanet_proto_msgTypes[46]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TunnelInfoMsg.ProtoReflect.Descriptor instead.
+func (*TunnelInfoMsg) Descriptor() ([]byte, []int) {
+	return file_api_v1_novanet_proto_rawDescGZIP(), []int{46}
+}
+
+func (x *TunnelInfoMsg) GetNodeName() string {
+	if x != nil {
+		return x.NodeName
+	}
+	return ""
+}
+
+func (x *TunnelInfoMsg) GetNodeIp() string {
+	if x != nil {
+		return x.NodeIp
+	}
+	return ""
+}
+
+func (x *TunnelInfoMsg) GetPodCidr() string {
+	if x != nil {
+		return x.PodCidr
+	}
+	return ""
+}
+
+func (x *TunnelInfoMsg) GetInterfaceName() string {
+	if x != nil {
+		return x.InterfaceName
+	}
+	return ""
+}
+
+func (x *TunnelInfoMsg) GetIfindex() uint32 {
+	if x != nil {
+		return x.Ifindex
+	}
+	return 0
+}
+
+func (x *TunnelInfoMsg) GetProtocol() string {
+	if x != nil {
+		return x.Protocol
+	}
+	return ""
+}
+
+type ListEgressPoliciesRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListEgressPoliciesRequest) Reset() {
+	*x = ListEgressPoliciesRequest{}
+	mi := &file_api_v1_novanet_proto_msgTypes[47]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListEgressPoliciesRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListEgressPoliciesRequest) ProtoMessage() {}
+
+func (x *ListEgressPoliciesRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_api_v1_novanet_proto_msgTypes[47]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListEgressPoliciesRequest.ProtoReflect.Descriptor instead.
+func (*ListEgressPoliciesRequest) Descriptor() ([]byte, []int) {
+	return file_api_v1_novanet_proto_rawDescGZIP(), []int{47}
+}
+
+type ListEgressPoliciesResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Rules         []*EgressPolicyInfo    `protobuf:"bytes,1,rep,name=rules,proto3" json:"rules,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListEgressPoliciesResponse) Reset() {
+	*x = ListEgressPoliciesResponse{}
+	mi := &file_api_v1_novanet_proto_msgTypes[48]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListEgressPoliciesResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListEgressPoliciesResponse) ProtoMessage() {}
+
+func (x *ListEgressPoliciesResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_api_v1_novanet_proto_msgTypes[48]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListEgressPoliciesResponse.ProtoReflect.Descriptor instead.
+func (*ListEgressPoliciesResponse) Descriptor() ([]byte, []int) {
+	return file_api_v1_novanet_proto_rawDescGZIP(), []int{48}
+}
+
+func (x *ListEgressPoliciesResponse) GetRules() []*EgressPolicyInfo {
+	if x != nil {
+		return x.Rules
+	}
+	return nil
+}
+
+type EgressPolicyInfo struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Namespace     string                 `protobuf:"bytes,1,opt,name=namespace,proto3" json:"namespace,omitempty"`
+	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	SrcIdentity   uint32                 `protobuf:"varint,3,opt,name=src_identity,json=srcIdentity,proto3" json:"src_identity,omitempty"`
+	DstCidr       string                 `protobuf:"bytes,4,opt,name=dst_cidr,json=dstCidr,proto3" json:"dst_cidr,omitempty"`
+	Protocol      uint32                 `protobuf:"varint,5,opt,name=protocol,proto3" json:"protocol,omitempty"`
+	DstPort       uint32                 `protobuf:"varint,6,opt,name=dst_port,json=dstPort,proto3" json:"dst_port,omitempty"`
+	Action        EgressAction           `protobuf:"varint,7,opt,name=action,proto3,enum=novanet.v1.EgressAction" json:"action,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *EgressPolicyInfo) Reset() {
+	*x = EgressPolicyInfo{}
+	mi := &file_api_v1_novanet_proto_msgTypes[49]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *EgressPolicyInfo) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*EgressPolicyInfo) ProtoMessage() {}
+
+func (x *EgressPolicyInfo) ProtoReflect() protoreflect.Message {
+	mi := &file_api_v1_novanet_proto_msgTypes[49]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use EgressPolicyInfo.ProtoReflect.Descriptor instead.
+func (*EgressPolicyInfo) Descriptor() ([]byte, []int) {
+	return file_api_v1_novanet_proto_rawDescGZIP(), []int{49}
+}
+
+func (x *EgressPolicyInfo) GetNamespace() string {
+	if x != nil {
+		return x.Namespace
+	}
+	return ""
+}
+
+func (x *EgressPolicyInfo) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *EgressPolicyInfo) GetSrcIdentity() uint32 {
+	if x != nil {
+		return x.SrcIdentity
+	}
+	return 0
+}
+
+func (x *EgressPolicyInfo) GetDstCidr() string {
+	if x != nil {
+		return x.DstCidr
+	}
+	return ""
+}
+
+func (x *EgressPolicyInfo) GetProtocol() uint32 {
+	if x != nil {
+		return x.Protocol
+	}
+	return 0
+}
+
+func (x *EgressPolicyInfo) GetDstPort() uint32 {
+	if x != nil {
+		return x.DstPort
+	}
+	return 0
+}
+
+func (x *EgressPolicyInfo) GetAction() EgressAction {
+	if x != nil {
+		return x.Action
+	}
+	return EgressAction_EGRESS_ACTION_DENY
+}
+
 var File_api_v1_novanet_proto protoreflect.FileDescriptor
 
 const file_api_v1_novanet_proto_rawDesc = "" +
@@ -2528,7 +3160,50 @@ const file_api_v1_novanet_proto_rawDesc = "" +
 	"\x13dst_cidr_prefix_len\x18\x03 \x01(\rR\x10dstCidrPrefixLen\x12\x1a\n" +
 	"\bprotocol\x18\x04 \x01(\rR\bprotocol\x12\x19\n" +
 	"\bdst_port\x18\x05 \x01(\rR\adstPort\"\x1c\n" +
-	"\x1aDeleteEgressPolicyResponse*?\n" +
+	"\x1aDeleteEgressPolicyResponse\"\x15\n" +
+	"\x13ListPoliciesRequest\"H\n" +
+	"\x14ListPoliciesResponse\x120\n" +
+	"\x05rules\x18\x01 \x03(\v2\x1a.novanet.v1.PolicyRuleInfoR\x05rules\"\xbf\x01\n" +
+	"\x0ePolicyRuleInfo\x12!\n" +
+	"\fsrc_identity\x18\x01 \x01(\rR\vsrcIdentity\x12!\n" +
+	"\fdst_identity\x18\x02 \x01(\rR\vdstIdentity\x12\x1a\n" +
+	"\bprotocol\x18\x03 \x01(\rR\bprotocol\x12\x19\n" +
+	"\bdst_port\x18\x04 \x01(\rR\adstPort\x120\n" +
+	"\x06action\x18\x05 \x01(\x0e2\x18.novanet.v1.PolicyActionR\x06action\"\x17\n" +
+	"\x15ListIdentitiesRequest\"R\n" +
+	"\x16ListIdentitiesResponse\x128\n" +
+	"\n" +
+	"identities\x18\x01 \x03(\v2\x18.novanet.v1.IdentityInfoR\n" +
+	"identities\"\xc5\x01\n" +
+	"\fIdentityInfo\x12\x1f\n" +
+	"\videntity_id\x18\x01 \x01(\rR\n" +
+	"identityId\x12<\n" +
+	"\x06labels\x18\x02 \x03(\v2$.novanet.v1.IdentityInfo.LabelsEntryR\x06labels\x12\x1b\n" +
+	"\tref_count\x18\x03 \x01(\rR\brefCount\x1a9\n" +
+	"\vLabelsEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\x14\n" +
+	"\x12ListTunnelsRequest\"J\n" +
+	"\x13ListTunnelsResponse\x123\n" +
+	"\atunnels\x18\x01 \x03(\v2\x19.novanet.v1.TunnelInfoMsgR\atunnels\"\xbd\x01\n" +
+	"\rTunnelInfoMsg\x12\x1b\n" +
+	"\tnode_name\x18\x01 \x01(\tR\bnodeName\x12\x17\n" +
+	"\anode_ip\x18\x02 \x01(\tR\x06nodeIp\x12\x19\n" +
+	"\bpod_cidr\x18\x03 \x01(\tR\apodCidr\x12%\n" +
+	"\x0einterface_name\x18\x04 \x01(\tR\rinterfaceName\x12\x18\n" +
+	"\aifindex\x18\x05 \x01(\rR\aifindex\x12\x1a\n" +
+	"\bprotocol\x18\x06 \x01(\tR\bprotocol\"\x1b\n" +
+	"\x19ListEgressPoliciesRequest\"P\n" +
+	"\x1aListEgressPoliciesResponse\x122\n" +
+	"\x05rules\x18\x01 \x03(\v2\x1c.novanet.v1.EgressPolicyInfoR\x05rules\"\xeb\x01\n" +
+	"\x10EgressPolicyInfo\x12\x1c\n" +
+	"\tnamespace\x18\x01 \x01(\tR\tnamespace\x12\x12\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\x12!\n" +
+	"\fsrc_identity\x18\x03 \x01(\rR\vsrcIdentity\x12\x19\n" +
+	"\bdst_cidr\x18\x04 \x01(\tR\adstCidr\x12\x1a\n" +
+	"\bprotocol\x18\x05 \x01(\rR\bprotocol\x12\x19\n" +
+	"\bdst_port\x18\x06 \x01(\rR\adstPort\x120\n" +
+	"\x06action\x18\a \x01(\x0e2\x18.novanet.v1.EgressActionR\x06action*?\n" +
 	"\fPolicyAction\x12\x16\n" +
 	"\x12POLICY_ACTION_DENY\x10\x00\x12\x17\n" +
 	"\x13POLICY_ACTION_ALLOW\x10\x01*9\n" +
@@ -2560,12 +3235,16 @@ const file_api_v1_novanet_proto_rawDesc = "" +
 	"\rAttachProgram\x12 .novanet.v1.AttachProgramRequest\x1a!.novanet.v1.AttachProgramResponse\x12T\n" +
 	"\rDetachProgram\x12 .novanet.v1.DetachProgramRequest\x1a!.novanet.v1.DetachProgramResponse\x12F\n" +
 	"\vStreamFlows\x12\x1e.novanet.v1.StreamFlowsRequest\x1a\x15.novanet.v1.FlowEvent0\x01\x12c\n" +
-	"\x12GetDataplaneStatus\x12%.novanet.v1.GetDataplaneStatusRequest\x1a&.novanet.v1.GetDataplaneStatusResponse2\xbb\x02\n" +
+	"\x12GetDataplaneStatus\x12%.novanet.v1.GetDataplaneStatusRequest\x1a&.novanet.v1.GetDataplaneStatusResponse2\x9c\x05\n" +
 	"\fAgentControl\x12?\n" +
 	"\x06AddPod\x12\x19.novanet.v1.AddPodRequest\x1a\x1a.novanet.v1.AddPodResponse\x12?\n" +
 	"\x06DelPod\x12\x19.novanet.v1.DelPodRequest\x1a\x1a.novanet.v1.DelPodResponse\x12W\n" +
 	"\x0eGetAgentStatus\x12!.novanet.v1.GetAgentStatusRequest\x1a\".novanet.v1.GetAgentStatusResponse\x12P\n" +
-	"\x10StreamAgentFlows\x12#.novanet.v1.StreamAgentFlowsRequest\x1a\x15.novanet.v1.FlowEvent0\x01B$Z\"github.com/piwi3910/novanet/api/v1b\x06proto3"
+	"\x10StreamAgentFlows\x12#.novanet.v1.StreamAgentFlowsRequest\x1a\x15.novanet.v1.FlowEvent0\x01\x12Q\n" +
+	"\fListPolicies\x12\x1f.novanet.v1.ListPoliciesRequest\x1a .novanet.v1.ListPoliciesResponse\x12W\n" +
+	"\x0eListIdentities\x12!.novanet.v1.ListIdentitiesRequest\x1a\".novanet.v1.ListIdentitiesResponse\x12N\n" +
+	"\vListTunnels\x12\x1e.novanet.v1.ListTunnelsRequest\x1a\x1f.novanet.v1.ListTunnelsResponse\x12c\n" +
+	"\x12ListEgressPolicies\x12%.novanet.v1.ListEgressPoliciesRequest\x1a&.novanet.v1.ListEgressPoliciesResponseB$Z\"github.com/piwi3910/novanet/api/v1b\x06proto3"
 
 var (
 	file_api_v1_novanet_proto_rawDescOnce sync.Once
@@ -2580,7 +3259,7 @@ func file_api_v1_novanet_proto_rawDescGZIP() []byte {
 }
 
 var file_api_v1_novanet_proto_enumTypes = make([]protoimpl.EnumInfo, 4)
-var file_api_v1_novanet_proto_msgTypes = make([]protoimpl.MessageInfo, 40)
+var file_api_v1_novanet_proto_msgTypes = make([]protoimpl.MessageInfo, 53)
 var file_api_v1_novanet_proto_goTypes = []any{
 	(PolicyAction)(0),                  // 0: novanet.v1.PolicyAction
 	(AttachType)(0),                    // 1: novanet.v1.AttachType
@@ -2624,59 +3303,87 @@ var file_api_v1_novanet_proto_goTypes = []any{
 	(*UpsertEgressPolicyResponse)(nil), // 39: novanet.v1.UpsertEgressPolicyResponse
 	(*DeleteEgressPolicyRequest)(nil),  // 40: novanet.v1.DeleteEgressPolicyRequest
 	(*DeleteEgressPolicyResponse)(nil), // 41: novanet.v1.DeleteEgressPolicyResponse
-	nil,                                // 42: novanet.v1.UpdateConfigRequest.EntriesEntry
-	nil,                                // 43: novanet.v1.AddPodRequest.LabelsEntry
+	(*ListPoliciesRequest)(nil),        // 42: novanet.v1.ListPoliciesRequest
+	(*ListPoliciesResponse)(nil),       // 43: novanet.v1.ListPoliciesResponse
+	(*PolicyRuleInfo)(nil),             // 44: novanet.v1.PolicyRuleInfo
+	(*ListIdentitiesRequest)(nil),      // 45: novanet.v1.ListIdentitiesRequest
+	(*ListIdentitiesResponse)(nil),     // 46: novanet.v1.ListIdentitiesResponse
+	(*IdentityInfo)(nil),               // 47: novanet.v1.IdentityInfo
+	(*ListTunnelsRequest)(nil),         // 48: novanet.v1.ListTunnelsRequest
+	(*ListTunnelsResponse)(nil),        // 49: novanet.v1.ListTunnelsResponse
+	(*TunnelInfoMsg)(nil),              // 50: novanet.v1.TunnelInfoMsg
+	(*ListEgressPoliciesRequest)(nil),  // 51: novanet.v1.ListEgressPoliciesRequest
+	(*ListEgressPoliciesResponse)(nil), // 52: novanet.v1.ListEgressPoliciesResponse
+	(*EgressPolicyInfo)(nil),           // 53: novanet.v1.EgressPolicyInfo
+	nil,                                // 54: novanet.v1.UpdateConfigRequest.EntriesEntry
+	nil,                                // 55: novanet.v1.AddPodRequest.LabelsEntry
+	nil,                                // 56: novanet.v1.IdentityInfo.LabelsEntry
 }
 var file_api_v1_novanet_proto_depIdxs = []int32{
 	0,  // 0: novanet.v1.UpsertPolicyRequest.action:type_name -> novanet.v1.PolicyAction
 	13, // 1: novanet.v1.SyncPoliciesRequest.policies:type_name -> novanet.v1.PolicyEntry
 	0,  // 2: novanet.v1.PolicyEntry.action:type_name -> novanet.v1.PolicyAction
-	42, // 3: novanet.v1.UpdateConfigRequest.entries:type_name -> novanet.v1.UpdateConfigRequest.EntriesEntry
+	54, // 3: novanet.v1.UpdateConfigRequest.entries:type_name -> novanet.v1.UpdateConfigRequest.EntriesEntry
 	1,  // 4: novanet.v1.AttachProgramRequest.attach_type:type_name -> novanet.v1.AttachType
 	1,  // 5: novanet.v1.DetachProgramRequest.attach_type:type_name -> novanet.v1.AttachType
 	0,  // 6: novanet.v1.FlowEvent.verdict:type_name -> novanet.v1.PolicyAction
 	2,  // 7: novanet.v1.FlowEvent.drop_reason:type_name -> novanet.v1.DropReason
 	29, // 8: novanet.v1.GetDataplaneStatusResponse.programs:type_name -> novanet.v1.AttachedProgram
-	43, // 9: novanet.v1.AddPodRequest.labels:type_name -> novanet.v1.AddPodRequest.LabelsEntry
+	55, // 9: novanet.v1.AddPodRequest.labels:type_name -> novanet.v1.AddPodRequest.LabelsEntry
 	36, // 10: novanet.v1.GetAgentStatusResponse.dataplane:type_name -> novanet.v1.DataplaneStatusInfo
 	3,  // 11: novanet.v1.UpsertEgressPolicyRequest.action:type_name -> novanet.v1.EgressAction
-	4,  // 12: novanet.v1.DataplaneControl.UpsertEndpoint:input_type -> novanet.v1.UpsertEndpointRequest
-	6,  // 13: novanet.v1.DataplaneControl.DeleteEndpoint:input_type -> novanet.v1.DeleteEndpointRequest
-	8,  // 14: novanet.v1.DataplaneControl.UpsertPolicy:input_type -> novanet.v1.UpsertPolicyRequest
-	10, // 15: novanet.v1.DataplaneControl.DeletePolicy:input_type -> novanet.v1.DeletePolicyRequest
-	12, // 16: novanet.v1.DataplaneControl.SyncPolicies:input_type -> novanet.v1.SyncPoliciesRequest
-	15, // 17: novanet.v1.DataplaneControl.UpsertTunnel:input_type -> novanet.v1.UpsertTunnelRequest
-	17, // 18: novanet.v1.DataplaneControl.DeleteTunnel:input_type -> novanet.v1.DeleteTunnelRequest
-	19, // 19: novanet.v1.DataplaneControl.UpdateConfig:input_type -> novanet.v1.UpdateConfigRequest
-	21, // 20: novanet.v1.DataplaneControl.AttachProgram:input_type -> novanet.v1.AttachProgramRequest
-	23, // 21: novanet.v1.DataplaneControl.DetachProgram:input_type -> novanet.v1.DetachProgramRequest
-	25, // 22: novanet.v1.DataplaneControl.StreamFlows:input_type -> novanet.v1.StreamFlowsRequest
-	27, // 23: novanet.v1.DataplaneControl.GetDataplaneStatus:input_type -> novanet.v1.GetDataplaneStatusRequest
-	30, // 24: novanet.v1.AgentControl.AddPod:input_type -> novanet.v1.AddPodRequest
-	32, // 25: novanet.v1.AgentControl.DelPod:input_type -> novanet.v1.DelPodRequest
-	34, // 26: novanet.v1.AgentControl.GetAgentStatus:input_type -> novanet.v1.GetAgentStatusRequest
-	37, // 27: novanet.v1.AgentControl.StreamAgentFlows:input_type -> novanet.v1.StreamAgentFlowsRequest
-	5,  // 28: novanet.v1.DataplaneControl.UpsertEndpoint:output_type -> novanet.v1.UpsertEndpointResponse
-	7,  // 29: novanet.v1.DataplaneControl.DeleteEndpoint:output_type -> novanet.v1.DeleteEndpointResponse
-	9,  // 30: novanet.v1.DataplaneControl.UpsertPolicy:output_type -> novanet.v1.UpsertPolicyResponse
-	11, // 31: novanet.v1.DataplaneControl.DeletePolicy:output_type -> novanet.v1.DeletePolicyResponse
-	14, // 32: novanet.v1.DataplaneControl.SyncPolicies:output_type -> novanet.v1.SyncPoliciesResponse
-	16, // 33: novanet.v1.DataplaneControl.UpsertTunnel:output_type -> novanet.v1.UpsertTunnelResponse
-	18, // 34: novanet.v1.DataplaneControl.DeleteTunnel:output_type -> novanet.v1.DeleteTunnelResponse
-	20, // 35: novanet.v1.DataplaneControl.UpdateConfig:output_type -> novanet.v1.UpdateConfigResponse
-	22, // 36: novanet.v1.DataplaneControl.AttachProgram:output_type -> novanet.v1.AttachProgramResponse
-	24, // 37: novanet.v1.DataplaneControl.DetachProgram:output_type -> novanet.v1.DetachProgramResponse
-	26, // 38: novanet.v1.DataplaneControl.StreamFlows:output_type -> novanet.v1.FlowEvent
-	28, // 39: novanet.v1.DataplaneControl.GetDataplaneStatus:output_type -> novanet.v1.GetDataplaneStatusResponse
-	31, // 40: novanet.v1.AgentControl.AddPod:output_type -> novanet.v1.AddPodResponse
-	33, // 41: novanet.v1.AgentControl.DelPod:output_type -> novanet.v1.DelPodResponse
-	35, // 42: novanet.v1.AgentControl.GetAgentStatus:output_type -> novanet.v1.GetAgentStatusResponse
-	26, // 43: novanet.v1.AgentControl.StreamAgentFlows:output_type -> novanet.v1.FlowEvent
-	28, // [28:44] is the sub-list for method output_type
-	12, // [12:28] is the sub-list for method input_type
-	12, // [12:12] is the sub-list for extension type_name
-	12, // [12:12] is the sub-list for extension extendee
-	0,  // [0:12] is the sub-list for field type_name
+	44, // 12: novanet.v1.ListPoliciesResponse.rules:type_name -> novanet.v1.PolicyRuleInfo
+	0,  // 13: novanet.v1.PolicyRuleInfo.action:type_name -> novanet.v1.PolicyAction
+	47, // 14: novanet.v1.ListIdentitiesResponse.identities:type_name -> novanet.v1.IdentityInfo
+	56, // 15: novanet.v1.IdentityInfo.labels:type_name -> novanet.v1.IdentityInfo.LabelsEntry
+	50, // 16: novanet.v1.ListTunnelsResponse.tunnels:type_name -> novanet.v1.TunnelInfoMsg
+	53, // 17: novanet.v1.ListEgressPoliciesResponse.rules:type_name -> novanet.v1.EgressPolicyInfo
+	3,  // 18: novanet.v1.EgressPolicyInfo.action:type_name -> novanet.v1.EgressAction
+	4,  // 19: novanet.v1.DataplaneControl.UpsertEndpoint:input_type -> novanet.v1.UpsertEndpointRequest
+	6,  // 20: novanet.v1.DataplaneControl.DeleteEndpoint:input_type -> novanet.v1.DeleteEndpointRequest
+	8,  // 21: novanet.v1.DataplaneControl.UpsertPolicy:input_type -> novanet.v1.UpsertPolicyRequest
+	10, // 22: novanet.v1.DataplaneControl.DeletePolicy:input_type -> novanet.v1.DeletePolicyRequest
+	12, // 23: novanet.v1.DataplaneControl.SyncPolicies:input_type -> novanet.v1.SyncPoliciesRequest
+	15, // 24: novanet.v1.DataplaneControl.UpsertTunnel:input_type -> novanet.v1.UpsertTunnelRequest
+	17, // 25: novanet.v1.DataplaneControl.DeleteTunnel:input_type -> novanet.v1.DeleteTunnelRequest
+	19, // 26: novanet.v1.DataplaneControl.UpdateConfig:input_type -> novanet.v1.UpdateConfigRequest
+	21, // 27: novanet.v1.DataplaneControl.AttachProgram:input_type -> novanet.v1.AttachProgramRequest
+	23, // 28: novanet.v1.DataplaneControl.DetachProgram:input_type -> novanet.v1.DetachProgramRequest
+	25, // 29: novanet.v1.DataplaneControl.StreamFlows:input_type -> novanet.v1.StreamFlowsRequest
+	27, // 30: novanet.v1.DataplaneControl.GetDataplaneStatus:input_type -> novanet.v1.GetDataplaneStatusRequest
+	30, // 31: novanet.v1.AgentControl.AddPod:input_type -> novanet.v1.AddPodRequest
+	32, // 32: novanet.v1.AgentControl.DelPod:input_type -> novanet.v1.DelPodRequest
+	34, // 33: novanet.v1.AgentControl.GetAgentStatus:input_type -> novanet.v1.GetAgentStatusRequest
+	37, // 34: novanet.v1.AgentControl.StreamAgentFlows:input_type -> novanet.v1.StreamAgentFlowsRequest
+	42, // 35: novanet.v1.AgentControl.ListPolicies:input_type -> novanet.v1.ListPoliciesRequest
+	45, // 36: novanet.v1.AgentControl.ListIdentities:input_type -> novanet.v1.ListIdentitiesRequest
+	48, // 37: novanet.v1.AgentControl.ListTunnels:input_type -> novanet.v1.ListTunnelsRequest
+	51, // 38: novanet.v1.AgentControl.ListEgressPolicies:input_type -> novanet.v1.ListEgressPoliciesRequest
+	5,  // 39: novanet.v1.DataplaneControl.UpsertEndpoint:output_type -> novanet.v1.UpsertEndpointResponse
+	7,  // 40: novanet.v1.DataplaneControl.DeleteEndpoint:output_type -> novanet.v1.DeleteEndpointResponse
+	9,  // 41: novanet.v1.DataplaneControl.UpsertPolicy:output_type -> novanet.v1.UpsertPolicyResponse
+	11, // 42: novanet.v1.DataplaneControl.DeletePolicy:output_type -> novanet.v1.DeletePolicyResponse
+	14, // 43: novanet.v1.DataplaneControl.SyncPolicies:output_type -> novanet.v1.SyncPoliciesResponse
+	16, // 44: novanet.v1.DataplaneControl.UpsertTunnel:output_type -> novanet.v1.UpsertTunnelResponse
+	18, // 45: novanet.v1.DataplaneControl.DeleteTunnel:output_type -> novanet.v1.DeleteTunnelResponse
+	20, // 46: novanet.v1.DataplaneControl.UpdateConfig:output_type -> novanet.v1.UpdateConfigResponse
+	22, // 47: novanet.v1.DataplaneControl.AttachProgram:output_type -> novanet.v1.AttachProgramResponse
+	24, // 48: novanet.v1.DataplaneControl.DetachProgram:output_type -> novanet.v1.DetachProgramResponse
+	26, // 49: novanet.v1.DataplaneControl.StreamFlows:output_type -> novanet.v1.FlowEvent
+	28, // 50: novanet.v1.DataplaneControl.GetDataplaneStatus:output_type -> novanet.v1.GetDataplaneStatusResponse
+	31, // 51: novanet.v1.AgentControl.AddPod:output_type -> novanet.v1.AddPodResponse
+	33, // 52: novanet.v1.AgentControl.DelPod:output_type -> novanet.v1.DelPodResponse
+	35, // 53: novanet.v1.AgentControl.GetAgentStatus:output_type -> novanet.v1.GetAgentStatusResponse
+	26, // 54: novanet.v1.AgentControl.StreamAgentFlows:output_type -> novanet.v1.FlowEvent
+	43, // 55: novanet.v1.AgentControl.ListPolicies:output_type -> novanet.v1.ListPoliciesResponse
+	46, // 56: novanet.v1.AgentControl.ListIdentities:output_type -> novanet.v1.ListIdentitiesResponse
+	49, // 57: novanet.v1.AgentControl.ListTunnels:output_type -> novanet.v1.ListTunnelsResponse
+	52, // 58: novanet.v1.AgentControl.ListEgressPolicies:output_type -> novanet.v1.ListEgressPoliciesResponse
+	39, // [39:59] is the sub-list for method output_type
+	19, // [19:39] is the sub-list for method input_type
+	19, // [19:19] is the sub-list for extension type_name
+	19, // [19:19] is the sub-list for extension extendee
+	0,  // [0:19] is the sub-list for field type_name
 }
 
 func init() { file_api_v1_novanet_proto_init() }
@@ -2690,7 +3397,7 @@ func file_api_v1_novanet_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_api_v1_novanet_proto_rawDesc), len(file_api_v1_novanet_proto_rawDesc)),
 			NumEnums:      4,
-			NumMessages:   40,
+			NumMessages:   53,
 			NumExtensions: 0,
 			NumServices:   2,
 		},
