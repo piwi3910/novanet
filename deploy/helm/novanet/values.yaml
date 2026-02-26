@@ -28,8 +28,8 @@ egress:
   masqueradeEnabled: true
 
 cni:
-  binPath: "/var/lib/rancher/k3s/data/current/bin"
-  confPath: "/var/lib/rancher/k3s/agent/etc/cni/net.d"
+  binPath: "/opt/cni/bin"
+  confPath: "/etc/cni/net.d"
 
 policy:
   defaultDeny: false

@@ -54,7 +54,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY --from=builder /build/dataplane/target/release/novanet-dataplane /usr/bin/novanet-dataplane
 
 # Copy eBPF object files (the dataplane loads these at runtime).
-COPY --from=builder /build/dataplane/target/bpfel-unknown-none/release/novanet-ebpf /usr/lib/novanet/novanet-ebpf.bpf.o
+# Default path expected by the binary is /opt/novanet/novanet-ebpf.
+COPY --from=builder /build/dataplane/target/bpfel-unknown-none/release/novanet-ebpf /opt/novanet/novanet-ebpf
 
 # Create runtime directories.
 RUN mkdir -p /run/novanet /sys/fs/bpf && chown novanet:novanet /run/novanet

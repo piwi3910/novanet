@@ -116,15 +116,7 @@ spec:
           resources:
             {{- toYaml .Values.resources.agent | nindent 12 }}
           securityContext:
-            privileged: false
-            capabilities:
-              add:
-                - NET_ADMIN
-                - SYS_ADMIN
-                - BPF
-                - NET_RAW
-              drop:
-                - ALL
+            privileged: true
           volumeMounts:
             - name: config
               mountPath: /etc/novanet
@@ -163,15 +155,7 @@ spec:
           resources:
             {{- toYaml .Values.resources.dataplane | nindent 12 }}
           securityContext:
-            privileged: false
-            capabilities:
-              add:
-                - NET_ADMIN
-                - SYS_ADMIN
-                - BPF
-                - NET_RAW
-              drop:
-                - ALL
+            privileged: true
           volumeMounts:
             - name: run-novanet
               mountPath: /run/novanet
