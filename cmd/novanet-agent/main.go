@@ -161,6 +161,7 @@ type agentServer struct {
 	ipAlloc     *ipam.Allocator
 	idAlloc     *identity.Allocator
 	dpClient    pb.DataplaneControlClient
+	k8sClient   kubernetes.Interface
 	nodeIP             net.IP
 	podCIDR            string
 	dpConnected        bool
@@ -201,11 +202,27 @@ func (s *agentServer) AddPod(ctx context.Context, req *pb.AddPodRequest) (*pb.Ad
 		return nil, grpcstatus.Errorf(codes.ResourceExhausted, "IP allocation failed: %v", err)
 	}
 
-	// Allocate an identity from the pod labels.
-	labels := req.Labels
-	if labels == nil {
-		labels = map[string]string{}
+	// Fetch pod labels from K8s API to ensure identity matches policy compiler.
+	// The policy compiler includes namespace scoping (ns:kubernetes.io/metadata.name)
+	// so we must do the same here for consistent identity allocation.
+	labels := make(map[string]string)
+	if s.k8sClient != nil {
+		pod, err := s.k8sClient.CoreV1().Pods(req.PodNamespace).Get(ctx, req.PodName, metav1.GetOptions{})
+		if err != nil {
+			s.logger.Warn("failed to fetch pod labels from K8s, using empty labels",
+				zap.String("pod", key), zap.Error(err))
+		} else if pod.Labels != nil {
+			for k, v := range pod.Labels {
+				labels[k] = v
+			}
+		}
+	} else if req.Labels != nil {
+		for k, v := range req.Labels {
+			labels[k] = v
+		}
 	}
+	// Add namespace scoping label to match policy compiler identity allocation.
+	labels["ns:kubernetes.io/metadata.name"] = req.PodNamespace
 	identityID := s.idAlloc.AllocateIdentity(labels)
 
 	// Generate a deterministic MAC based on the IP.
@@ -741,11 +758,13 @@ func upsertRemoteEndpoint(ctx context.Context, logger *zap.Logger,
 	}
 
 	// Compute identity from pod labels using the same FNV-1a hash
-	// that the local identity allocator uses.
-	labels := pod.Labels
-	if labels == nil {
-		labels = map[string]string{}
+	// that the local identity allocator uses. Include namespace scoping
+	// label to match the policy compiler's selectorToIdentity.
+	labels := make(map[string]string)
+	for k, v := range pod.Labels {
+		labels[k] = v
 	}
+	labels["ns:kubernetes.io/metadata.name"] = pod.Namespace
 	identityID := identity.HashLabels(labels)
 
 	req := &pb.UpsertEndpointRequest{
@@ -976,6 +995,7 @@ func main() {
 		ipAlloc:        ipAlloc,
 		idAlloc:        idAlloc,
 		dpClient:       dpClient,
+		k8sClient:      k8sClient,
 		nodeIP:         nodeIP,
 		podCIDR:        *podCIDR,
 		dpConnected:    dpConnected,
