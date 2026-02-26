@@ -201,6 +201,76 @@ impl proto::dataplane_control_server::DataplaneControl for DataplaneService {
     }
 
     // -----------------------------------------------------------------------
+    // Egress policy management
+    // -----------------------------------------------------------------------
+
+    async fn upsert_egress_policy(
+        &self,
+        request: Request<proto::UpsertEgressPolicyRequest>,
+    ) -> Result<Response<proto::UpsertEgressPolicyResponse>, Status> {
+        let req = request.into_inner();
+
+        let action = match proto::EgressAction::try_from(req.action) {
+            Ok(proto::EgressAction::Allow) => EGRESS_ALLOW,
+            Ok(proto::EgressAction::Snat) => EGRESS_SNAT,
+            Ok(proto::EgressAction::Deny) | _ => EGRESS_DENY,
+        };
+
+        let key = EgressKey {
+            src_identity: req.src_identity,
+            dst_ip: req.dst_cidr_ip,
+            dst_prefix_len: req.dst_cidr_prefix_len as u8,
+            _pad: [0; 3],
+        };
+
+        let value = EgressValue {
+            action,
+            _pad: [0; 3],
+            snat_ip: 0, // SNAT IP is resolved by iptables for now.
+        };
+
+        self.maps
+            .upsert_egress_policy(key, value)
+            .map_err(|e| Status::internal(format!("Failed to upsert egress policy: {}", e)))?;
+
+        debug!(
+            src_identity = req.src_identity,
+            dst_cidr_ip = req.dst_cidr_ip,
+            prefix_len = req.dst_cidr_prefix_len,
+            action = action,
+            "Upserted egress policy"
+        );
+
+        Ok(Response::new(proto::UpsertEgressPolicyResponse {}))
+    }
+
+    async fn delete_egress_policy(
+        &self,
+        request: Request<proto::DeleteEgressPolicyRequest>,
+    ) -> Result<Response<proto::DeleteEgressPolicyResponse>, Status> {
+        let req = request.into_inner();
+
+        let key = EgressKey {
+            src_identity: req.src_identity,
+            dst_ip: req.dst_cidr_ip,
+            dst_prefix_len: req.dst_cidr_prefix_len as u8,
+            _pad: [0; 3],
+        };
+
+        self.maps
+            .delete_egress_policy(&key)
+            .map_err(|e| Status::internal(format!("Failed to delete egress policy: {}", e)))?;
+
+        debug!(
+            src_identity = req.src_identity,
+            dst_cidr_ip = req.dst_cidr_ip,
+            "Deleted egress policy"
+        );
+
+        Ok(Response::new(proto::DeleteEgressPolicyResponse {}))
+    }
+
+    // -----------------------------------------------------------------------
     // Tunnel management
     // -----------------------------------------------------------------------
 
@@ -385,6 +455,7 @@ impl proto::dataplane_control_server::DataplaneControl for DataplaneService {
             programs,
             mode: self.maps.mode_string(),
             tunnel_protocol: self.maps.tunnel_protocol_string(),
+            drop_counters: self.maps.get_drop_counters(),
         };
 
         Ok(Response::new(resp))

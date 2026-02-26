@@ -1,3 +1,7 @@
+# Override the chart name or full name. These are used by _helpers.tpl.
+nameOverride: ""
+fullnameOverride: ""
+
 image:
   agent:
     repository: ghcr.io/piwi3910/novanet/agent

@@ -3,6 +3,7 @@
 //! Reads `FlowEvent` structs from the eBPF ring buffer and distributes them
 //! to connected gRPC stream subscribers.
 
+#[cfg(target_os = "linux")]
 use novanet_common::FlowEvent as RawFlowEvent;
 use tokio::sync::broadcast;
 
@@ -28,7 +29,7 @@ pub fn subscribe_flows() -> broadcast::Receiver<crate::proto::FlowEvent> {
 }
 
 /// Convert a raw eBPF FlowEvent to the protobuf FlowEvent.
-#[allow(dead_code)]
+#[cfg(target_os = "linux")]
 fn raw_to_proto(raw: &RawFlowEvent) -> crate::proto::FlowEvent {
     use crate::proto::{DropReason, PolicyAction};
 
@@ -68,14 +69,43 @@ fn raw_to_proto(raw: &RawFlowEvent) -> crate::proto::FlowEvent {
 #[cfg(target_os = "linux")]
 pub async fn flow_reader_task(mut ring_buf: aya::maps::RingBuf<aya::maps::MapData>) {
     use std::mem;
+    use std::os::fd::AsRawFd;
+    use tokio::io::unix::AsyncFd;
+    use tokio::io::Interest;
 
     let tx = flow_broadcaster();
 
-    tracing::info!("Flow event reader started");
+    tracing::info!("Flow event reader started (epoll mode)");
+
+    // Wrap the ring buffer's file descriptor in AsyncFd for epoll-based notification.
+    let fd = ring_buf.as_raw_fd();
+    let async_fd = match AsyncFd::with_interest(
+        // Safety: the fd is owned by ring_buf which outlives this task.
+        unsafe { std::os::fd::BorrowedFd::borrow_raw(fd) },
+        Interest::READABLE,
+    ) {
+        Ok(afd) => afd,
+        Err(e) => {
+            tracing::warn!("Failed to create AsyncFd for ring buffer, falling back to polling: {}", e);
+            // Fallback to polling mode.
+            flow_reader_task_polling(ring_buf).await;
+            return;
+        }
+    };
 
     loop {
-        // Poll the ring buffer. In a production implementation, we would use
-        // epoll/AsyncFd for efficient waiting. For now, we poll with a small sleep.
+        // Wait until the ring buffer becomes readable.
+        let mut guard = match async_fd.readable().await {
+            Ok(g) => g,
+            Err(e) => {
+                tracing::warn!("AsyncFd readable error: {}", e);
+                tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+                continue;
+            }
+        };
+
+        // Drain all available events.
+        let mut count = 0u64;
         while let Some(item) = ring_buf.next() {
             let data = item.as_ref();
             if data.len() < mem::size_of::<RawFlowEvent>() {
@@ -89,12 +119,38 @@ pub async fn flow_reader_task(mut ring_buf: aya::maps::RingBuf<aya::maps::MapDat
 
             let raw: &RawFlowEvent = unsafe { &*(data.as_ptr() as *const RawFlowEvent) };
             let proto_event = raw_to_proto(raw);
-
-            // Broadcast to all subscribers. If nobody is listening, that's fine.
             let _ = tx.send(proto_event);
+            count += 1;
         }
 
-        // Sleep briefly before polling again.
+        if count > 0 {
+            tracing::debug!(count, "Processed flow events");
+        }
+
+        // Clear readiness so we wait for the next epoll notification.
+        guard.clear_ready();
+    }
+}
+
+/// Fallback polling-based flow reader for when AsyncFd is not available.
+#[cfg(target_os = "linux")]
+async fn flow_reader_task_polling(mut ring_buf: aya::maps::RingBuf<aya::maps::MapData>) {
+    use std::mem;
+
+    let tx = flow_broadcaster();
+
+    tracing::info!("Flow event reader started (polling mode)");
+
+    loop {
+        while let Some(item) = ring_buf.next() {
+            let data = item.as_ref();
+            if data.len() < mem::size_of::<RawFlowEvent>() {
+                continue;
+            }
+            let raw: &RawFlowEvent = unsafe { &*(data.as_ptr() as *const RawFlowEvent) };
+            let proto_event = raw_to_proto(raw);
+            let _ = tx.send(proto_event);
+        }
         tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
     }
 }

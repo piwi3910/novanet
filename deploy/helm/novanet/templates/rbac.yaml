@@ -18,27 +18,13 @@ rules:
       - pods
       - nodes
       - namespaces
-      - endpoints
-      - services
     verbs:
       - get
       - list
       - watch
-  - apiGroups: [""]
-    resources:
-      - nodes/status
-    verbs:
-      - patch
   - apiGroups: ["networking.k8s.io"]
     resources:
       - networkpolicies
-    verbs:
-      - get
-      - list
-      - watch
-  - apiGroups: ["discovery.k8s.io"]
-    resources:
-      - endpointslices
     verbs:
       - get
       - list

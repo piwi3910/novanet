@@ -64,7 +64,7 @@ const (
 	configKeyClusterCIDRPL    uint32 = 4
 	configKeyDefaultDeny      uint32 = 5
 	configKeyMasqueradeEnable uint32 = 6
-	configKeySNATIP           uint32 = 7
+	configKeySNATIP           uint32 = 7 // Reserved for eBPF-level SNAT (currently using iptables fallback).
 	// Pod CIDR uses keys 8 and 9 (not defined in Rust yet, added here).
 	configKeyPodCIDRIP uint32 = 8
 	configKeyPodCIDRPL uint32 = 9
@@ -161,9 +161,10 @@ type agentServer struct {
 	ipAlloc     *ipam.Allocator
 	idAlloc     *identity.Allocator
 	dpClient    pb.DataplaneControlClient
-	nodeIP      net.IP
-	podCIDR     string
-	dpConnected bool
+	nodeIP             net.IP
+	podCIDR            string
+	dpConnected        bool
+	novarouteConnected bool
 
 	// Policy enforcement.
 	policyCompiler *policy.Compiler
@@ -367,13 +368,14 @@ func (s *agentServer) GetAgentStatus(ctx context.Context, _ *pb.GetAgentStatusRe
 	s.mu.RUnlock()
 
 	resp := &pb.GetAgentStatusResponse{
-		RoutingMode:    s.cfg.RoutingMode,
-		TunnelProtocol: s.cfg.TunnelProtocol,
-		EndpointCount:  epCount,
-		IdentityCount:  uint32(s.idAlloc.Count()),
-		NodeIp:         s.nodeIP.String(),
-		PodCidr:        s.podCIDR,
-		ClusterCidr:    s.cfg.ClusterCIDR,
+		RoutingMode:        s.cfg.RoutingMode,
+		TunnelProtocol:     s.cfg.TunnelProtocol,
+		EndpointCount:      epCount,
+		IdentityCount:      uint32(s.idAlloc.Count()),
+		NodeIp:             s.nodeIP.String(),
+		PodCidr:            s.podCIDR,
+		ClusterCidr:        s.cfg.ClusterCIDR,
+		NovarouteConnected: s.novarouteConnected,
 		Dataplane: &pb.DataplaneStatusInfo{
 			Connected: s.dpConnected,
 		},
@@ -532,12 +534,9 @@ func (s *agentServer) onPolicyChange(rules []*policy.CompiledRule) {
 
 	entries := make([]*pb.PolicyEntry, 0, len(rules))
 	for _, r := range rules {
-		// Skip CIDR-based rules for now — the eBPF dataplane only supports
-		// identity-based rules. CIDR rules are logged but not pushed.
 		if r.CIDR != "" {
-			s.logger.Debug("skipping CIDR-based rule (not yet supported in eBPF)",
-				zap.String("cidr", r.CIDR),
-			)
+			// CIDR-based rules are handled by syncEgressRules() via the
+			// EGRESS_POLICIES eBPF map, not the identity-based POLICIES map.
 			continue
 		}
 
@@ -571,6 +570,81 @@ func (s *agentServer) onPolicyChange(rules []*policy.CompiledRule) {
 		zap.Uint32("updated", resp.Updated),
 		zap.Int("total_rules", len(entries)),
 	)
+
+	// Also sync egress (CIDR-based) rules to the egress manager and dataplane.
+	s.syncEgressRules(rules)
+}
+
+// syncEgressRules extracts egress CIDR rules from the compiled policy set
+// and pushes them to the egress manager. This bridges NetworkPolicy egress
+// rules to the eBPF EGRESS_POLICIES map.
+func (s *agentServer) syncEgressRules(rules []*policy.CompiledRule) {
+	if s.egressMgr == nil || s.dpClient == nil || !s.dpConnected {
+		return
+	}
+
+	// Clear and rebuild egress rules from the compiled policy set.
+	// Egress rules are those with a CIDR (IPBlock) destination.
+	var egressCount int
+	for i, r := range rules {
+		if r.CIDR == "" {
+			continue
+		}
+		egressCount++
+
+		// Parse the CIDR to get IP and prefix length.
+		_, cidrNet, err := net.ParseCIDR(r.CIDR)
+		if err != nil {
+			s.logger.Warn("failed to parse egress CIDR",
+				zap.String("cidr", r.CIDR),
+				zap.Error(err))
+			continue
+		}
+
+		cidrIP := cidrNet.IP.To4()
+		if cidrIP == nil {
+			continue // skip IPv6
+		}
+		ones, _ := cidrNet.Mask.Size()
+
+		action := pb.EgressAction_EGRESS_ACTION_DENY
+		if r.Action == policy.ActionAllow {
+			action = pb.EgressAction_EGRESS_ACTION_ALLOW
+		}
+
+		name := fmt.Sprintf("np-cidr-%d", i)
+		// Store in egress manager for ListEgressPolicies RPC.
+		_ = s.egressMgr.AddEgressRule(r.Namespace, egress.EgressRule{
+			Name:        name,
+			SrcIdentity: r.SrcIdentity,
+			DstCIDR:     r.CIDR,
+			Protocol:    uint8(r.Protocol),
+			DstPort:     uint16(r.DstPort),
+			Action:      uint8(action),
+		})
+
+		// Push to eBPF dataplane.
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		_, err = s.dpClient.UpsertEgressPolicy(ctx, &pb.UpsertEgressPolicyRequest{
+			SrcIdentity:      r.SrcIdentity,
+			DstCidrIp:        ipToUint32(cidrIP),
+			DstCidrPrefixLen: uint32(ones),
+			Protocol:         uint32(r.Protocol),
+			DstPort:          uint32(r.DstPort),
+			Action:           action,
+		})
+		cancel()
+		if err != nil {
+			s.logger.Warn("failed to push egress policy to dataplane",
+				zap.String("cidr", r.CIDR),
+				zap.Error(err))
+		}
+	}
+
+	if egressCount > 0 {
+		s.logger.Info("synced egress CIDR rules",
+			zap.Int("count", egressCount))
+	}
 }
 
 // startRemoteEndpointSync watches all cluster pods via an informer and pushes
@@ -1071,6 +1145,7 @@ func main() {
 			logger.Fatal("failed to advertise PodCIDR", zap.Error(err))
 		}
 		logger.Info("advertised PodCIDR via BGP", zap.String("pod_cidr", *podCIDR))
+		agentSrv.novarouteConnected = true
 
 		// Watch nodes and establish eBGP peering with each remote node.
 		go watchNodesNative(ctx, logger, k8sClient, nrClient, nodeName)

@@ -28,6 +28,10 @@ service DataplaneControl {
   rpc AttachProgram(AttachProgramRequest) returns (AttachProgramResponse);
   rpc DetachProgram(DetachProgramRequest) returns (DetachProgramResponse);
 
+  // Egress policy management
+  rpc UpsertEgressPolicy(UpsertEgressPolicyRequest) returns (UpsertEgressPolicyResponse);
+  rpc DeleteEgressPolicy(DeleteEgressPolicyRequest) returns (DeleteEgressPolicyResponse);
+
   // Observability
   rpc StreamFlows(StreamFlowsRequest) returns (stream FlowEvent);
   rpc GetDataplaneStatus(GetDataplaneStatusRequest) returns (GetDataplaneStatusResponse);
@@ -188,6 +192,7 @@ message GetDataplaneStatusResponse {
   repeated AttachedProgram programs = 4;
   string mode = 5;
   string tunnel_protocol = 6;
+  map<uint32, uint64> drop_counters = 7;
 }
 
 message AttachedProgram {

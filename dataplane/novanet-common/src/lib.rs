@@ -296,9 +296,6 @@ pub const VXLAN_PORT: u16 = 4789;
 /// VXLAN header size in bytes.
 pub const VXLAN_HLEN: usize = 8;
 
-/// EtherType for IPv4.
-pub const ETH_P_IP: u16 = 0x0800;
-
 // ---------------------------------------------------------------------------
 // Map sizes
 // ---------------------------------------------------------------------------
@@ -614,11 +611,6 @@ mod tests {
         assert_eq!(UDP_HLEN, 8);
         assert_eq!(GENEVE_HLEN, 8);
         assert_eq!(GENEVE_IDENTITY_OPT_SIZE, 8);
-    }
-
-    #[test]
-    fn ethertype_ipv4() {
-        assert_eq!(ETH_P_IP, 0x0800);
     }
 
     #[test]

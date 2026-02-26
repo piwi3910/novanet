@@ -163,7 +163,6 @@ impl MapManager {
 
     // -- Egress policy operations --
 
-    #[allow(dead_code)]
     pub fn upsert_egress_policy(
         &self,
         key: EgressKey,
@@ -176,7 +175,6 @@ impl MapManager {
         }
     }
 
-    #[allow(dead_code)]
     pub fn delete_egress_policy(&self, key: &EgressKey) -> anyhow::Result<()> {
         match &self.inner {
             MapManagerInner::Mock(m) => m.delete_egress_policy(key),
@@ -240,6 +238,18 @@ impl MapManager {
             TUNNEL_GENEVE => "geneve".to_string(),
             TUNNEL_VXLAN => "vxlan".to_string(),
             _ => "unknown".to_string(),
+        }
+    }
+
+    // -- Drop counters --
+
+    /// Read drop counters from the eBPF PerCpuArray, summing values across all CPUs.
+    /// Returns a map of drop_reason_index → total_count.
+    pub fn get_drop_counters(&self) -> StdHashMap<u32, u64> {
+        match &self.inner {
+            MapManagerInner::Mock(_) => StdHashMap::new(),
+            #[cfg(target_os = "linux")]
+            MapManagerInner::Real(m) => m.get_drop_counters(),
         }
     }
 }
@@ -954,9 +964,11 @@ pub struct RealMaps {
     tunnels: RwLock<aya::maps::HashMap<aya::maps::MapData, TunnelKey, TunnelValue>>,
     config: RwLock<aya::maps::HashMap<aya::maps::MapData, u32, u64>>,
     egress: RwLock<aya::maps::HashMap<aya::maps::MapData, EgressKey, EgressValue>>,
+    drop_counters: RwLock<aya::maps::PerCpuArray<aya::maps::MapData, u64>>,
     attached: RwLock<Vec<AttachedProgramInfo>>,
     /// Holds TC program links so they stay attached (aya auto-detaches on drop).
-    _tc_links: std::sync::Mutex<Vec<aya::programs::tc::SchedClassifierLink>>,
+    /// Tuples of (interface_name, attach_type, link) for targeted detach.
+    _tc_links: std::sync::Mutex<Vec<(String, String, aya::programs::tc::SchedClassifierLink)>>,
     /// Holds references to the loaded eBPF object so programs stay loaded.
     _ebpf: std::sync::Mutex<aya::Ebpf>,
 }
@@ -970,6 +982,7 @@ impl RealMaps {
         tunnels: aya::maps::HashMap<aya::maps::MapData, TunnelKey, TunnelValue>,
         config: aya::maps::HashMap<aya::maps::MapData, u32, u64>,
         egress: aya::maps::HashMap<aya::maps::MapData, EgressKey, EgressValue>,
+        drop_counters: aya::maps::PerCpuArray<aya::maps::MapData, u64>,
         ebpf: aya::Ebpf,
     ) -> Self {
         Self {
@@ -978,6 +991,7 @@ impl RealMaps {
             tunnels: RwLock::new(tunnels),
             config: RwLock::new(config),
             egress: RwLock::new(egress),
+            drop_counters: RwLock::new(drop_counters),
             attached: RwLock::new(Vec::new()),
             _tc_links: std::sync::Mutex::new(Vec::new()),
             _ebpf: std::sync::Mutex::new(ebpf),
@@ -1167,6 +1181,23 @@ impl RealMaps {
         Ok(())
     }
 
+    fn get_drop_counters(&self) -> StdHashMap<u32, u64> {
+        let map = self.drop_counters.read().unwrap();
+        let mut result = StdHashMap::new();
+        for idx in 0..DROP_REASON_MAX {
+            match map.get(&idx, 0) {
+                Ok(values) => {
+                    let total: u64 = values.iter().sum();
+                    if total > 0 {
+                        result.insert(idx, total);
+                    }
+                }
+                Err(_) => {}
+            }
+        }
+        result
+    }
+
     fn attached_programs(&self) -> Vec<AttachedProgramInfo> {
         self.attached.read().unwrap().clone()
     }
@@ -1225,7 +1256,7 @@ impl RealMaps {
         // Without this, the link is stored inside the Program object and
         // could be dropped when the Ebpf mutex guard is released.
         let link = prog.take_link(link_id)?;
-        self._tc_links.lock().unwrap().push(link);
+        self._tc_links.lock().unwrap().push((interface.to_string(), type_str.to_string(), link));
 
         let mut attached = self.attached.write().unwrap();
         attached.push(AttachedProgramInfo {
@@ -1255,20 +1286,22 @@ impl RealMaps {
             AttachDirection::Egress => "egress",
         };
 
+        // Remove from tracking list.
         let mut attached = self.attached.write().unwrap();
         let before = attached.len();
         attached.retain(|p| !(p.interface == interface && p.attach_type == type_str));
         let after = attached.len();
 
+        // Remove and drop the TC link, which triggers actual detach via aya.
+        let mut links = self._tc_links.lock().unwrap();
+        links.retain(|(iface, at, _link)| !(iface == interface && at == type_str));
+
         if before == after {
             warn!(interface, attach_type = type_str, "program not found for detach");
         } else {
-            info!(interface, attach_type = type_str, "detached program");
+            info!(interface, attach_type = type_str, "detached program (link dropped)");
         }
 
-        // Note: In a full implementation, we would also need to detach the TC
-        // program via netlink. For now, removing from our tracking list is
-        // sufficient since the program detaches when the link is dropped.
         Ok(())
     }
 }

@@ -19,8 +19,6 @@ use aya_ebpf::{
     maps::{HashMap, PerCpuArray, RingBuf},
     programs::TcContext,
 };
-use aya_log_ebpf::info;
-use core::mem;
 use network_types::{
     eth::{EthHdr, EtherType},
     ip::Ipv4Hdr,
@@ -158,7 +156,7 @@ fn emit_flow_event(
             _pad3: [0; 2],
             bytes,
             packets: 1,
-            timestamp_ns: 0, // kernel fills this if we use bpf_ktime_get_ns
+            timestamp_ns: unsafe { aya_ebpf::helpers::bpf_ktime_get_ns() },
         };
         unsafe {
             entry.write(event);

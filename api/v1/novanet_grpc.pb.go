@@ -29,6 +29,8 @@ const (
 	DataplaneControl_UpdateConfig_FullMethodName       = "/novanet.v1.DataplaneControl/UpdateConfig"
 	DataplaneControl_AttachProgram_FullMethodName      = "/novanet.v1.DataplaneControl/AttachProgram"
 	DataplaneControl_DetachProgram_FullMethodName      = "/novanet.v1.DataplaneControl/DetachProgram"
+	DataplaneControl_UpsertEgressPolicy_FullMethodName = "/novanet.v1.DataplaneControl/UpsertEgressPolicy"
+	DataplaneControl_DeleteEgressPolicy_FullMethodName = "/novanet.v1.DataplaneControl/DeleteEgressPolicy"
 	DataplaneControl_StreamFlows_FullMethodName        = "/novanet.v1.DataplaneControl/StreamFlows"
 	DataplaneControl_GetDataplaneStatus_FullMethodName = "/novanet.v1.DataplaneControl/GetDataplaneStatus"
 )
@@ -56,6 +58,9 @@ type DataplaneControlClient interface {
 	// TC program lifecycle
 	AttachProgram(ctx context.Context, in *AttachProgramRequest, opts ...grpc.CallOption) (*AttachProgramResponse, error)
 	DetachProgram(ctx context.Context, in *DetachProgramRequest, opts ...grpc.CallOption) (*DetachProgramResponse, error)
+	// Egress policy management
+	UpsertEgressPolicy(ctx context.Context, in *UpsertEgressPolicyRequest, opts ...grpc.CallOption) (*UpsertEgressPolicyResponse, error)
+	DeleteEgressPolicy(ctx context.Context, in *DeleteEgressPolicyRequest, opts ...grpc.CallOption) (*DeleteEgressPolicyResponse, error)
 	// Observability
 	StreamFlows(ctx context.Context, in *StreamFlowsRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[FlowEvent], error)
 	GetDataplaneStatus(ctx context.Context, in *GetDataplaneStatusRequest, opts ...grpc.CallOption) (*GetDataplaneStatusResponse, error)
@@ -169,6 +174,26 @@ func (c *dataplaneControlClient) DetachProgram(ctx context.Context, in *DetachPr
 	return out, nil
 }
 
+func (c *dataplaneControlClient) UpsertEgressPolicy(ctx context.Context, in *UpsertEgressPolicyRequest, opts ...grpc.CallOption) (*UpsertEgressPolicyResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(UpsertEgressPolicyResponse)
+	err := c.cc.Invoke(ctx, DataplaneControl_UpsertEgressPolicy_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dataplaneControlClient) DeleteEgressPolicy(ctx context.Context, in *DeleteEgressPolicyRequest, opts ...grpc.CallOption) (*DeleteEgressPolicyResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DeleteEgressPolicyResponse)
+	err := c.cc.Invoke(ctx, DataplaneControl_DeleteEgressPolicy_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *dataplaneControlClient) StreamFlows(ctx context.Context, in *StreamFlowsRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[FlowEvent], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	stream, err := c.cc.NewStream(ctx, &DataplaneControl_ServiceDesc.Streams[0], DataplaneControl_StreamFlows_FullMethodName, cOpts...)
@@ -221,6 +246,9 @@ type DataplaneControlServer interface {
 	// TC program lifecycle
 	AttachProgram(context.Context, *AttachProgramRequest) (*AttachProgramResponse, error)
 	DetachProgram(context.Context, *DetachProgramRequest) (*DetachProgramResponse, error)
+	// Egress policy management
+	UpsertEgressPolicy(context.Context, *UpsertEgressPolicyRequest) (*UpsertEgressPolicyResponse, error)
+	DeleteEgressPolicy(context.Context, *DeleteEgressPolicyRequest) (*DeleteEgressPolicyResponse, error)
 	// Observability
 	StreamFlows(*StreamFlowsRequest, grpc.ServerStreamingServer[FlowEvent]) error
 	GetDataplaneStatus(context.Context, *GetDataplaneStatusRequest) (*GetDataplaneStatusResponse, error)
@@ -263,6 +291,12 @@ func (UnimplementedDataplaneControlServer) AttachProgram(context.Context, *Attac
 }
 func (UnimplementedDataplaneControlServer) DetachProgram(context.Context, *DetachProgramRequest) (*DetachProgramResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method DetachProgram not implemented")
+}
+func (UnimplementedDataplaneControlServer) UpsertEgressPolicy(context.Context, *UpsertEgressPolicyRequest) (*UpsertEgressPolicyResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method UpsertEgressPolicy not implemented")
+}
+func (UnimplementedDataplaneControlServer) DeleteEgressPolicy(context.Context, *DeleteEgressPolicyRequest) (*DeleteEgressPolicyResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method DeleteEgressPolicy not implemented")
 }
 func (UnimplementedDataplaneControlServer) StreamFlows(*StreamFlowsRequest, grpc.ServerStreamingServer[FlowEvent]) error {
 	return status.Error(codes.Unimplemented, "method StreamFlows not implemented")
@@ -471,6 +505,42 @@ func _DataplaneControl_DetachProgram_Handler(srv interface{}, ctx context.Contex
 	return interceptor(ctx, in, info, handler)
 }
 
+func _DataplaneControl_UpsertEgressPolicy_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UpsertEgressPolicyRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DataplaneControlServer).UpsertEgressPolicy(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DataplaneControl_UpsertEgressPolicy_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DataplaneControlServer).UpsertEgressPolicy(ctx, req.(*UpsertEgressPolicyRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DataplaneControl_DeleteEgressPolicy_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeleteEgressPolicyRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DataplaneControlServer).DeleteEgressPolicy(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DataplaneControl_DeleteEgressPolicy_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DataplaneControlServer).DeleteEgressPolicy(ctx, req.(*DeleteEgressPolicyRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _DataplaneControl_StreamFlows_Handler(srv interface{}, stream grpc.ServerStream) error {
 	m := new(StreamFlowsRequest)
 	if err := stream.RecvMsg(m); err != nil {
@@ -546,6 +616,14 @@ var DataplaneControl_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "DetachProgram",
 			Handler:    _DataplaneControl_DetachProgram_Handler,
+		},
+		{
+			MethodName: "UpsertEgressPolicy",
+			Handler:    _DataplaneControl_UpsertEgressPolicy_Handler,
+		},
+		{
+			MethodName: "DeleteEgressPolicy",
+			Handler:    _DataplaneControl_DeleteEgressPolicy_Handler,
 		},
 		{
 			MethodName: "GetDataplaneStatus",
