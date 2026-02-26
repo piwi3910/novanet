@@ -17,18 +17,6 @@ var prometheusNameRe = regexp.MustCompile(`^[a-zA-Z_:][a-zA-Z0-9_:]*$`)
 // TestMetricsNonNil verifies that all package-level metric variables are
 // initialised (non-nil) at package init time.
 func TestMetricsNonNil(t *testing.T) {
-	if EndpointCount == nil {
-		t.Error("EndpointCount is nil")
-	}
-	if PolicyCount == nil {
-		t.Error("PolicyCount is nil")
-	}
-	if TunnelCount == nil {
-		t.Error("TunnelCount is nil")
-	}
-	if IdentityCount == nil {
-		t.Error("IdentityCount is nil")
-	}
 	if FlowTotal == nil {
 		t.Error("FlowTotal is nil")
 	}
@@ -37,12 +25,6 @@ func TestMetricsNonNil(t *testing.T) {
 	}
 	if PolicyVerdictTotal == nil {
 		t.Error("PolicyVerdictTotal is nil")
-	}
-	if LatencySeconds == nil {
-		t.Error("LatencySeconds is nil")
-	}
-	if GRPCDuration == nil {
-		t.Error("GRPCDuration is nil")
 	}
 	if TCPLatencySeconds == nil {
 		t.Error("TCPLatencySeconds is nil")
@@ -65,18 +47,6 @@ func TestRegister(t *testing.T) {
 
 	// Register a fresh set of the same metrics into a custom registry to verify
 	// they are gatherable without error.
-	endpointCount := prometheus.NewGauge(prometheus.GaugeOpts{
-		Namespace: "novanet", Name: "endpoint_count", Help: "Number of known endpoints.",
-	})
-	policyCount := prometheus.NewGauge(prometheus.GaugeOpts{
-		Namespace: "novanet", Name: "policy_count", Help: "Number of compiled policy rules.",
-	})
-	tunnelCount := prometheus.NewGauge(prometheus.GaugeOpts{
-		Namespace: "novanet", Name: "tunnel_count", Help: "Number of active overlay tunnels.",
-	})
-	identityCount := prometheus.NewGauge(prometheus.GaugeOpts{
-		Namespace: "novanet", Name: "identity_count", Help: "Number of distinct security identities.",
-	})
 	flowTotal := prometheus.NewCounterVec(prometheus.CounterOpts{
 		Namespace: "novanet", Name: "flow_total", Help: "Total observed network flows.",
 	}, []string{"src_identity", "dst_identity", "verdict"})
@@ -86,14 +56,6 @@ func TestRegister(t *testing.T) {
 	policyVerdictTotal := prometheus.NewCounterVec(prometheus.CounterOpts{
 		Namespace: "novanet", Name: "policy_verdict_total", Help: "Total policy verdict evaluations by action.",
 	}, []string{"action"})
-	latencySeconds := prometheus.NewHistogram(prometheus.HistogramOpts{
-		Namespace: "novanet", Name: "latency_seconds", Help: "Operation latency in seconds.",
-		Buckets: prometheus.DefBuckets,
-	})
-	grpcDuration := prometheus.NewHistogramVec(prometheus.HistogramOpts{
-		Namespace: "novanet", Name: "grpc_duration_seconds", Help: "gRPC call duration in seconds.",
-		Buckets: prometheus.DefBuckets,
-	}, []string{"method"})
 
 	tcpLatencySeconds := prometheus.NewHistogram(prometheus.HistogramOpts{
 		Namespace: "novanet", Subsystem: "dataplane", Name: "tcp_latency_seconds",
@@ -102,9 +64,8 @@ func TestRegister(t *testing.T) {
 	})
 
 	reg.MustRegister(
-		endpointCount, policyCount, tunnelCount, identityCount,
 		flowTotal, dropsTotal, policyVerdictTotal,
-		latencySeconds, grpcDuration, tcpLatencySeconds,
+		tcpLatencySeconds,
 	)
 
 	mfs, err := reg.Gather()
@@ -113,67 +74,6 @@ func TestRegister(t *testing.T) {
 	}
 	if len(mfs) == 0 {
 		t.Error("Gather() returned no metric families")
-	}
-}
-
-// readGauge returns the current float64 value of a Gauge by writing it into a
-// dto.Metric struct.
-func readGauge(g prometheus.Gauge) float64 {
-	var m dto.Metric
-	if err := g.Write(&m); err != nil {
-		panic(err)
-	}
-	return m.GetGauge().GetValue()
-}
-
-// TestGaugeSetAndRead verifies that each Gauge metric correctly stores and
-// returns a value that was Set on it.
-func TestGaugeSetAndRead(t *testing.T) {
-	tests := []struct {
-		name   string
-		gauge  prometheus.Gauge
-		value  float64
-	}{
-		{"EndpointCount", EndpointCount, 42},
-		{"PolicyCount", PolicyCount, 7},
-		{"TunnelCount", TunnelCount, 3},
-		{"IdentityCount", IdentityCount, 100},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			// Reset to zero first so tests are independent of execution order.
-			tt.gauge.Set(0)
-			tt.gauge.Set(tt.value)
-			got := readGauge(tt.gauge)
-			if got != tt.value {
-				t.Errorf("%s: Set(%v) then read back %v", tt.name, tt.value, got)
-			}
-		})
-	}
-}
-
-// TestGaugeIncrementAndDecrement verifies Inc/Dec behaviour on Gauges.
-func TestGaugeIncrementAndDecrement(t *testing.T) {
-	EndpointCount.Set(10)
-	EndpointCount.Inc()
-	if got := readGauge(EndpointCount); got != 11 {
-		t.Errorf("after Inc: expected 11, got %v", got)
-	}
-
-	EndpointCount.Dec()
-	if got := readGauge(EndpointCount); got != 10 {
-		t.Errorf("after Dec: expected 10, got %v", got)
-	}
-
-	EndpointCount.Add(5)
-	if got := readGauge(EndpointCount); got != 15 {
-		t.Errorf("after Add(5): expected 15, got %v", got)
-	}
-
-	EndpointCount.Sub(3)
-	if got := readGauge(EndpointCount); got != 12 {
-		t.Errorf("after Sub(3): expected 12, got %v", got)
 	}
 }
 
@@ -250,46 +150,22 @@ func readHistogramSampleSum(h prometheus.Histogram) float64 {
 
 // TestHistogramObserve verifies that histogram metrics record observations.
 func TestHistogramObserve(t *testing.T) {
-	t.Run("LatencySeconds", func(t *testing.T) {
-		beforeCount := readHistogramSampleCount(LatencySeconds)
-		beforeSum := readHistogramSampleSum(LatencySeconds)
+	t.Run("TCPLatencySeconds", func(t *testing.T) {
+		beforeCount := readHistogramSampleCount(TCPLatencySeconds)
+		beforeSum := readHistogramSampleSum(TCPLatencySeconds)
 
-		LatencySeconds.Observe(0.001)
-		LatencySeconds.Observe(0.5)
+		TCPLatencySeconds.Observe(0.001)
+		TCPLatencySeconds.Observe(0.005)
 
-		afterCount := readHistogramSampleCount(LatencySeconds)
-		afterSum := readHistogramSampleSum(LatencySeconds)
-
-		if afterCount != beforeCount+2 {
-			t.Errorf("LatencySeconds: expected sample count %d, got %d", beforeCount+2, afterCount)
-		}
-		wantSum := beforeSum + 0.001 + 0.5
-		if afterSum != wantSum {
-			t.Errorf("LatencySeconds: expected sample sum %v, got %v", wantSum, afterSum)
-		}
-	})
-
-	t.Run("GRPCDuration", func(t *testing.T) {
-		obs := GRPCDuration.WithLabelValues("RouteAdvertise")
-		h, ok := obs.(prometheus.Histogram)
-		if !ok {
-			t.Fatal("GRPCDuration.WithLabelValues did not return a prometheus.Histogram")
-		}
-		beforeCount := readHistogramSampleCount(h)
-		beforeSum := readHistogramSampleSum(h)
-
-		h.Observe(0.002)
-		h.Observe(0.010)
-
-		afterCount := readHistogramSampleCount(h)
-		afterSum := readHistogramSampleSum(h)
+		afterCount := readHistogramSampleCount(TCPLatencySeconds)
+		afterSum := readHistogramSampleSum(TCPLatencySeconds)
 
 		if afterCount != beforeCount+2 {
-			t.Errorf("GRPCDuration: expected sample count %d, got %d", beforeCount+2, afterCount)
+			t.Errorf("TCPLatencySeconds: expected sample count %d, got %d", beforeCount+2, afterCount)
 		}
-		wantSum := beforeSum + 0.002 + 0.010
+		wantSum := beforeSum + 0.001 + 0.005
 		if afterSum != wantSum {
-			t.Errorf("GRPCDuration: expected sample sum %v, got %v", wantSum, afterSum)
+			t.Errorf("TCPLatencySeconds: expected sample sum %v, got %v", wantSum, afterSum)
 		}
 	})
 }
@@ -343,15 +219,9 @@ func TestTCPLatencyBuckets(t *testing.T) {
 func TestMetricNamingConventions(t *testing.T) {
 	// Collect descriptors from every metric variable defined in the package.
 	collectors := []prometheus.Collector{
-		EndpointCount,
-		PolicyCount,
-		TunnelCount,
-		IdentityCount,
 		FlowTotal,
 		DropsTotal,
 		PolicyVerdictTotal,
-		LatencySeconds,
-		GRPCDuration,
 		TCPLatencySeconds,
 	}
 
@@ -401,21 +271,6 @@ func TestCounterVecLabelVariants(t *testing.T) {
 	}
 }
 
-// TestHistogramBuckets verifies that LatencySeconds uses the default bucket set
-// (11 buckets + +Inf), confirming bucket configuration is intact.
-func TestHistogramBuckets(t *testing.T) {
-	var m dto.Metric
-	if err := LatencySeconds.Write(&m); err != nil {
-		t.Fatalf("Write: %v", err)
-	}
-	// prometheus.DefBuckets has 11 entries; the proto encodes one bucket per
-	// boundary plus a final +Inf bucket, so we expect at least 12.
-	buckets := m.GetHistogram().GetBucket()
-	if len(buckets) < len(prometheus.DefBuckets) {
-		t.Errorf("expected at least %d buckets, got %d", len(prometheus.DefBuckets), len(buckets))
-	}
-}
-
 // TestCollectDoesNotBlock ensures that Collect() on every metric returns at
 // least one sample without blocking.
 func TestCollectDoesNotBlock(t *testing.T) {
@@ -423,15 +278,9 @@ func TestCollectDoesNotBlock(t *testing.T) {
 		name      string
 		collector prometheus.Collector
 	}{
-		{"EndpointCount", EndpointCount},
-		{"PolicyCount", PolicyCount},
-		{"TunnelCount", TunnelCount},
-		{"IdentityCount", IdentityCount},
 		{"FlowTotal", FlowTotal},
 		{"DropsTotal", DropsTotal},
 		{"PolicyVerdictTotal", PolicyVerdictTotal},
-		{"LatencySeconds", LatencySeconds},
-		{"GRPCDuration", GRPCDuration},
 		{"TCPLatencySeconds", TCPLatencySeconds},
 	}
 

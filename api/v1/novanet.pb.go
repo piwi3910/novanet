@@ -1476,6 +1476,7 @@ type GetDataplaneStatusResponse struct {
 	Programs       []*AttachedProgram     `protobuf:"bytes,4,rep,name=programs,proto3" json:"programs,omitempty"`
 	Mode           string                 `protobuf:"bytes,5,opt,name=mode,proto3" json:"mode,omitempty"`
 	TunnelProtocol string                 `protobuf:"bytes,6,opt,name=tunnel_protocol,json=tunnelProtocol,proto3" json:"tunnel_protocol,omitempty"`
+	DropCounters   map[uint32]uint64      `protobuf:"bytes,7,rep,name=drop_counters,json=dropCounters,proto3" json:"drop_counters,omitempty" protobuf_key:"varint,1,opt,name=key" protobuf_val:"varint,2,opt,name=value"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
@@ -1550,6 +1551,13 @@ func (x *GetDataplaneStatusResponse) GetTunnelProtocol() string {
 		return x.TunnelProtocol
 	}
 	return ""
+}
+
+func (x *GetDataplaneStatusResponse) GetDropCounters() map[uint32]uint64 {
+	if x != nil {
+		return x.DropCounters
+	}
+	return nil
 }
 
 type AttachedProgram struct {
@@ -3089,14 +3097,18 @@ const file_api_v1_novanet_proto_rawDesc = "" +
 	"\ftimestamp_ns\x18\v \x01(\x03R\vtimestampNs\x127\n" +
 	"\vdrop_reason\x18\f \x01(\x0e2\x16.novanet.v1.DropReasonR\n" +
 	"dropReason\"\x1b\n" +
-	"\x19GetDataplaneStatusRequest\"\xff\x01\n" +
+	"\x19GetDataplaneStatusRequest\"\x9f\x03\n" +
 	"\x1aGetDataplaneStatusResponse\x12%\n" +
 	"\x0eendpoint_count\x18\x01 \x01(\rR\rendpointCount\x12!\n" +
 	"\fpolicy_count\x18\x02 \x01(\rR\vpolicyCount\x12!\n" +
 	"\ftunnel_count\x18\x03 \x01(\rR\vtunnelCount\x127\n" +
 	"\bprograms\x18\x04 \x03(\v2\x1b.novanet.v1.AttachedProgramR\bprograms\x12\x12\n" +
 	"\x04mode\x18\x05 \x01(\tR\x04mode\x12'\n" +
-	"\x0ftunnel_protocol\x18\x06 \x01(\tR\x0etunnelProtocol\"x\n" +
+	"\x0ftunnel_protocol\x18\x06 \x01(\tR\x0etunnelProtocol\x12]\n" +
+	"\rdrop_counters\x18\a \x03(\v28.novanet.v1.GetDataplaneStatusResponse.DropCountersEntryR\fdropCounters\x1a?\n" +
+	"\x11DropCountersEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\rR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\x04R\x05value:\x028\x01\"x\n" +
 	"\x0fAttachedProgram\x12%\n" +
 	"\x0einterface_name\x18\x01 \x01(\tR\rinterfaceName\x12\x1f\n" +
 	"\vattach_type\x18\x02 \x01(\tR\n" +
@@ -3222,7 +3234,7 @@ const file_api_v1_novanet_proto_rawDesc = "" +
 	"\fEgressAction\x12\x16\n" +
 	"\x12EGRESS_ACTION_DENY\x10\x00\x12\x17\n" +
 	"\x13EGRESS_ACTION_ALLOW\x10\x01\x12\x16\n" +
-	"\x12EGRESS_ACTION_SNAT\x10\x022\x8f\b\n" +
+	"\x12EGRESS_ACTION_SNAT\x10\x022\xd9\t\n" +
 	"\x10DataplaneControl\x12W\n" +
 	"\x0eUpsertEndpoint\x12!.novanet.v1.UpsertEndpointRequest\x1a\".novanet.v1.UpsertEndpointResponse\x12W\n" +
 	"\x0eDeleteEndpoint\x12!.novanet.v1.DeleteEndpointRequest\x1a\".novanet.v1.DeleteEndpointResponse\x12Q\n" +
@@ -3233,7 +3245,9 @@ const file_api_v1_novanet_proto_rawDesc = "" +
 	"\fDeleteTunnel\x12\x1f.novanet.v1.DeleteTunnelRequest\x1a .novanet.v1.DeleteTunnelResponse\x12Q\n" +
 	"\fUpdateConfig\x12\x1f.novanet.v1.UpdateConfigRequest\x1a .novanet.v1.UpdateConfigResponse\x12T\n" +
 	"\rAttachProgram\x12 .novanet.v1.AttachProgramRequest\x1a!.novanet.v1.AttachProgramResponse\x12T\n" +
-	"\rDetachProgram\x12 .novanet.v1.DetachProgramRequest\x1a!.novanet.v1.DetachProgramResponse\x12F\n" +
+	"\rDetachProgram\x12 .novanet.v1.DetachProgramRequest\x1a!.novanet.v1.DetachProgramResponse\x12c\n" +
+	"\x12UpsertEgressPolicy\x12%.novanet.v1.UpsertEgressPolicyRequest\x1a&.novanet.v1.UpsertEgressPolicyResponse\x12c\n" +
+	"\x12DeleteEgressPolicy\x12%.novanet.v1.DeleteEgressPolicyRequest\x1a&.novanet.v1.DeleteEgressPolicyResponse\x12F\n" +
 	"\vStreamFlows\x12\x1e.novanet.v1.StreamFlowsRequest\x1a\x15.novanet.v1.FlowEvent0\x01\x12c\n" +
 	"\x12GetDataplaneStatus\x12%.novanet.v1.GetDataplaneStatusRequest\x1a&.novanet.v1.GetDataplaneStatusResponse2\x9c\x05\n" +
 	"\fAgentControl\x12?\n" +
@@ -3259,7 +3273,7 @@ func file_api_v1_novanet_proto_rawDescGZIP() []byte {
 }
 
 var file_api_v1_novanet_proto_enumTypes = make([]protoimpl.EnumInfo, 4)
-var file_api_v1_novanet_proto_msgTypes = make([]protoimpl.MessageInfo, 53)
+var file_api_v1_novanet_proto_msgTypes = make([]protoimpl.MessageInfo, 54)
 var file_api_v1_novanet_proto_goTypes = []any{
 	(PolicyAction)(0),                  // 0: novanet.v1.PolicyAction
 	(AttachType)(0),                    // 1: novanet.v1.AttachType
@@ -3316,8 +3330,9 @@ var file_api_v1_novanet_proto_goTypes = []any{
 	(*ListEgressPoliciesResponse)(nil), // 52: novanet.v1.ListEgressPoliciesResponse
 	(*EgressPolicyInfo)(nil),           // 53: novanet.v1.EgressPolicyInfo
 	nil,                                // 54: novanet.v1.UpdateConfigRequest.EntriesEntry
-	nil,                                // 55: novanet.v1.AddPodRequest.LabelsEntry
-	nil,                                // 56: novanet.v1.IdentityInfo.LabelsEntry
+	nil,                                // 55: novanet.v1.GetDataplaneStatusResponse.DropCountersEntry
+	nil,                                // 56: novanet.v1.AddPodRequest.LabelsEntry
+	nil,                                // 57: novanet.v1.IdentityInfo.LabelsEntry
 }
 var file_api_v1_novanet_proto_depIdxs = []int32{
 	0,  // 0: novanet.v1.UpsertPolicyRequest.action:type_name -> novanet.v1.PolicyAction
@@ -3329,61 +3344,66 @@ var file_api_v1_novanet_proto_depIdxs = []int32{
 	0,  // 6: novanet.v1.FlowEvent.verdict:type_name -> novanet.v1.PolicyAction
 	2,  // 7: novanet.v1.FlowEvent.drop_reason:type_name -> novanet.v1.DropReason
 	29, // 8: novanet.v1.GetDataplaneStatusResponse.programs:type_name -> novanet.v1.AttachedProgram
-	55, // 9: novanet.v1.AddPodRequest.labels:type_name -> novanet.v1.AddPodRequest.LabelsEntry
-	36, // 10: novanet.v1.GetAgentStatusResponse.dataplane:type_name -> novanet.v1.DataplaneStatusInfo
-	3,  // 11: novanet.v1.UpsertEgressPolicyRequest.action:type_name -> novanet.v1.EgressAction
-	44, // 12: novanet.v1.ListPoliciesResponse.rules:type_name -> novanet.v1.PolicyRuleInfo
-	0,  // 13: novanet.v1.PolicyRuleInfo.action:type_name -> novanet.v1.PolicyAction
-	47, // 14: novanet.v1.ListIdentitiesResponse.identities:type_name -> novanet.v1.IdentityInfo
-	56, // 15: novanet.v1.IdentityInfo.labels:type_name -> novanet.v1.IdentityInfo.LabelsEntry
-	50, // 16: novanet.v1.ListTunnelsResponse.tunnels:type_name -> novanet.v1.TunnelInfoMsg
-	53, // 17: novanet.v1.ListEgressPoliciesResponse.rules:type_name -> novanet.v1.EgressPolicyInfo
-	3,  // 18: novanet.v1.EgressPolicyInfo.action:type_name -> novanet.v1.EgressAction
-	4,  // 19: novanet.v1.DataplaneControl.UpsertEndpoint:input_type -> novanet.v1.UpsertEndpointRequest
-	6,  // 20: novanet.v1.DataplaneControl.DeleteEndpoint:input_type -> novanet.v1.DeleteEndpointRequest
-	8,  // 21: novanet.v1.DataplaneControl.UpsertPolicy:input_type -> novanet.v1.UpsertPolicyRequest
-	10, // 22: novanet.v1.DataplaneControl.DeletePolicy:input_type -> novanet.v1.DeletePolicyRequest
-	12, // 23: novanet.v1.DataplaneControl.SyncPolicies:input_type -> novanet.v1.SyncPoliciesRequest
-	15, // 24: novanet.v1.DataplaneControl.UpsertTunnel:input_type -> novanet.v1.UpsertTunnelRequest
-	17, // 25: novanet.v1.DataplaneControl.DeleteTunnel:input_type -> novanet.v1.DeleteTunnelRequest
-	19, // 26: novanet.v1.DataplaneControl.UpdateConfig:input_type -> novanet.v1.UpdateConfigRequest
-	21, // 27: novanet.v1.DataplaneControl.AttachProgram:input_type -> novanet.v1.AttachProgramRequest
-	23, // 28: novanet.v1.DataplaneControl.DetachProgram:input_type -> novanet.v1.DetachProgramRequest
-	25, // 29: novanet.v1.DataplaneControl.StreamFlows:input_type -> novanet.v1.StreamFlowsRequest
-	27, // 30: novanet.v1.DataplaneControl.GetDataplaneStatus:input_type -> novanet.v1.GetDataplaneStatusRequest
-	30, // 31: novanet.v1.AgentControl.AddPod:input_type -> novanet.v1.AddPodRequest
-	32, // 32: novanet.v1.AgentControl.DelPod:input_type -> novanet.v1.DelPodRequest
-	34, // 33: novanet.v1.AgentControl.GetAgentStatus:input_type -> novanet.v1.GetAgentStatusRequest
-	37, // 34: novanet.v1.AgentControl.StreamAgentFlows:input_type -> novanet.v1.StreamAgentFlowsRequest
-	42, // 35: novanet.v1.AgentControl.ListPolicies:input_type -> novanet.v1.ListPoliciesRequest
-	45, // 36: novanet.v1.AgentControl.ListIdentities:input_type -> novanet.v1.ListIdentitiesRequest
-	48, // 37: novanet.v1.AgentControl.ListTunnels:input_type -> novanet.v1.ListTunnelsRequest
-	51, // 38: novanet.v1.AgentControl.ListEgressPolicies:input_type -> novanet.v1.ListEgressPoliciesRequest
-	5,  // 39: novanet.v1.DataplaneControl.UpsertEndpoint:output_type -> novanet.v1.UpsertEndpointResponse
-	7,  // 40: novanet.v1.DataplaneControl.DeleteEndpoint:output_type -> novanet.v1.DeleteEndpointResponse
-	9,  // 41: novanet.v1.DataplaneControl.UpsertPolicy:output_type -> novanet.v1.UpsertPolicyResponse
-	11, // 42: novanet.v1.DataplaneControl.DeletePolicy:output_type -> novanet.v1.DeletePolicyResponse
-	14, // 43: novanet.v1.DataplaneControl.SyncPolicies:output_type -> novanet.v1.SyncPoliciesResponse
-	16, // 44: novanet.v1.DataplaneControl.UpsertTunnel:output_type -> novanet.v1.UpsertTunnelResponse
-	18, // 45: novanet.v1.DataplaneControl.DeleteTunnel:output_type -> novanet.v1.DeleteTunnelResponse
-	20, // 46: novanet.v1.DataplaneControl.UpdateConfig:output_type -> novanet.v1.UpdateConfigResponse
-	22, // 47: novanet.v1.DataplaneControl.AttachProgram:output_type -> novanet.v1.AttachProgramResponse
-	24, // 48: novanet.v1.DataplaneControl.DetachProgram:output_type -> novanet.v1.DetachProgramResponse
-	26, // 49: novanet.v1.DataplaneControl.StreamFlows:output_type -> novanet.v1.FlowEvent
-	28, // 50: novanet.v1.DataplaneControl.GetDataplaneStatus:output_type -> novanet.v1.GetDataplaneStatusResponse
-	31, // 51: novanet.v1.AgentControl.AddPod:output_type -> novanet.v1.AddPodResponse
-	33, // 52: novanet.v1.AgentControl.DelPod:output_type -> novanet.v1.DelPodResponse
-	35, // 53: novanet.v1.AgentControl.GetAgentStatus:output_type -> novanet.v1.GetAgentStatusResponse
-	26, // 54: novanet.v1.AgentControl.StreamAgentFlows:output_type -> novanet.v1.FlowEvent
-	43, // 55: novanet.v1.AgentControl.ListPolicies:output_type -> novanet.v1.ListPoliciesResponse
-	46, // 56: novanet.v1.AgentControl.ListIdentities:output_type -> novanet.v1.ListIdentitiesResponse
-	49, // 57: novanet.v1.AgentControl.ListTunnels:output_type -> novanet.v1.ListTunnelsResponse
-	52, // 58: novanet.v1.AgentControl.ListEgressPolicies:output_type -> novanet.v1.ListEgressPoliciesResponse
-	39, // [39:59] is the sub-list for method output_type
-	19, // [19:39] is the sub-list for method input_type
-	19, // [19:19] is the sub-list for extension type_name
-	19, // [19:19] is the sub-list for extension extendee
-	0,  // [0:19] is the sub-list for field type_name
+	55, // 9: novanet.v1.GetDataplaneStatusResponse.drop_counters:type_name -> novanet.v1.GetDataplaneStatusResponse.DropCountersEntry
+	56, // 10: novanet.v1.AddPodRequest.labels:type_name -> novanet.v1.AddPodRequest.LabelsEntry
+	36, // 11: novanet.v1.GetAgentStatusResponse.dataplane:type_name -> novanet.v1.DataplaneStatusInfo
+	3,  // 12: novanet.v1.UpsertEgressPolicyRequest.action:type_name -> novanet.v1.EgressAction
+	44, // 13: novanet.v1.ListPoliciesResponse.rules:type_name -> novanet.v1.PolicyRuleInfo
+	0,  // 14: novanet.v1.PolicyRuleInfo.action:type_name -> novanet.v1.PolicyAction
+	47, // 15: novanet.v1.ListIdentitiesResponse.identities:type_name -> novanet.v1.IdentityInfo
+	57, // 16: novanet.v1.IdentityInfo.labels:type_name -> novanet.v1.IdentityInfo.LabelsEntry
+	50, // 17: novanet.v1.ListTunnelsResponse.tunnels:type_name -> novanet.v1.TunnelInfoMsg
+	53, // 18: novanet.v1.ListEgressPoliciesResponse.rules:type_name -> novanet.v1.EgressPolicyInfo
+	3,  // 19: novanet.v1.EgressPolicyInfo.action:type_name -> novanet.v1.EgressAction
+	4,  // 20: novanet.v1.DataplaneControl.UpsertEndpoint:input_type -> novanet.v1.UpsertEndpointRequest
+	6,  // 21: novanet.v1.DataplaneControl.DeleteEndpoint:input_type -> novanet.v1.DeleteEndpointRequest
+	8,  // 22: novanet.v1.DataplaneControl.UpsertPolicy:input_type -> novanet.v1.UpsertPolicyRequest
+	10, // 23: novanet.v1.DataplaneControl.DeletePolicy:input_type -> novanet.v1.DeletePolicyRequest
+	12, // 24: novanet.v1.DataplaneControl.SyncPolicies:input_type -> novanet.v1.SyncPoliciesRequest
+	15, // 25: novanet.v1.DataplaneControl.UpsertTunnel:input_type -> novanet.v1.UpsertTunnelRequest
+	17, // 26: novanet.v1.DataplaneControl.DeleteTunnel:input_type -> novanet.v1.DeleteTunnelRequest
+	19, // 27: novanet.v1.DataplaneControl.UpdateConfig:input_type -> novanet.v1.UpdateConfigRequest
+	21, // 28: novanet.v1.DataplaneControl.AttachProgram:input_type -> novanet.v1.AttachProgramRequest
+	23, // 29: novanet.v1.DataplaneControl.DetachProgram:input_type -> novanet.v1.DetachProgramRequest
+	38, // 30: novanet.v1.DataplaneControl.UpsertEgressPolicy:input_type -> novanet.v1.UpsertEgressPolicyRequest
+	40, // 31: novanet.v1.DataplaneControl.DeleteEgressPolicy:input_type -> novanet.v1.DeleteEgressPolicyRequest
+	25, // 32: novanet.v1.DataplaneControl.StreamFlows:input_type -> novanet.v1.StreamFlowsRequest
+	27, // 33: novanet.v1.DataplaneControl.GetDataplaneStatus:input_type -> novanet.v1.GetDataplaneStatusRequest
+	30, // 34: novanet.v1.AgentControl.AddPod:input_type -> novanet.v1.AddPodRequest
+	32, // 35: novanet.v1.AgentControl.DelPod:input_type -> novanet.v1.DelPodRequest
+	34, // 36: novanet.v1.AgentControl.GetAgentStatus:input_type -> novanet.v1.GetAgentStatusRequest
+	37, // 37: novanet.v1.AgentControl.StreamAgentFlows:input_type -> novanet.v1.StreamAgentFlowsRequest
+	42, // 38: novanet.v1.AgentControl.ListPolicies:input_type -> novanet.v1.ListPoliciesRequest
+	45, // 39: novanet.v1.AgentControl.ListIdentities:input_type -> novanet.v1.ListIdentitiesRequest
+	48, // 40: novanet.v1.AgentControl.ListTunnels:input_type -> novanet.v1.ListTunnelsRequest
+	51, // 41: novanet.v1.AgentControl.ListEgressPolicies:input_type -> novanet.v1.ListEgressPoliciesRequest
+	5,  // 42: novanet.v1.DataplaneControl.UpsertEndpoint:output_type -> novanet.v1.UpsertEndpointResponse
+	7,  // 43: novanet.v1.DataplaneControl.DeleteEndpoint:output_type -> novanet.v1.DeleteEndpointResponse
+	9,  // 44: novanet.v1.DataplaneControl.UpsertPolicy:output_type -> novanet.v1.UpsertPolicyResponse
+	11, // 45: novanet.v1.DataplaneControl.DeletePolicy:output_type -> novanet.v1.DeletePolicyResponse
+	14, // 46: novanet.v1.DataplaneControl.SyncPolicies:output_type -> novanet.v1.SyncPoliciesResponse
+	16, // 47: novanet.v1.DataplaneControl.UpsertTunnel:output_type -> novanet.v1.UpsertTunnelResponse
+	18, // 48: novanet.v1.DataplaneControl.DeleteTunnel:output_type -> novanet.v1.DeleteTunnelResponse
+	20, // 49: novanet.v1.DataplaneControl.UpdateConfig:output_type -> novanet.v1.UpdateConfigResponse
+	22, // 50: novanet.v1.DataplaneControl.AttachProgram:output_type -> novanet.v1.AttachProgramResponse
+	24, // 51: novanet.v1.DataplaneControl.DetachProgram:output_type -> novanet.v1.DetachProgramResponse
+	39, // 52: novanet.v1.DataplaneControl.UpsertEgressPolicy:output_type -> novanet.v1.UpsertEgressPolicyResponse
+	41, // 53: novanet.v1.DataplaneControl.DeleteEgressPolicy:output_type -> novanet.v1.DeleteEgressPolicyResponse
+	26, // 54: novanet.v1.DataplaneControl.StreamFlows:output_type -> novanet.v1.FlowEvent
+	28, // 55: novanet.v1.DataplaneControl.GetDataplaneStatus:output_type -> novanet.v1.GetDataplaneStatusResponse
+	31, // 56: novanet.v1.AgentControl.AddPod:output_type -> novanet.v1.AddPodResponse
+	33, // 57: novanet.v1.AgentControl.DelPod:output_type -> novanet.v1.DelPodResponse
+	35, // 58: novanet.v1.AgentControl.GetAgentStatus:output_type -> novanet.v1.GetAgentStatusResponse
+	26, // 59: novanet.v1.AgentControl.StreamAgentFlows:output_type -> novanet.v1.FlowEvent
+	43, // 60: novanet.v1.AgentControl.ListPolicies:output_type -> novanet.v1.ListPoliciesResponse
+	46, // 61: novanet.v1.AgentControl.ListIdentities:output_type -> novanet.v1.ListIdentitiesResponse
+	49, // 62: novanet.v1.AgentControl.ListTunnels:output_type -> novanet.v1.ListTunnelsResponse
+	52, // 63: novanet.v1.AgentControl.ListEgressPolicies:output_type -> novanet.v1.ListEgressPoliciesResponse
+	42, // [42:64] is the sub-list for method output_type
+	20, // [20:42] is the sub-list for method input_type
+	20, // [20:20] is the sub-list for extension type_name
+	20, // [20:20] is the sub-list for extension extendee
+	0,  // [0:20] is the sub-list for field type_name
 }
 
 func init() { file_api_v1_novanet_proto_init() }
@@ -3397,7 +3417,7 @@ func file_api_v1_novanet_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_api_v1_novanet_proto_rawDesc), len(file_api_v1_novanet_proto_rawDesc)),
 			NumEnums:      4,
-			NumMessages:   53,
+			NumMessages:   54,
 			NumExtensions: 0,
 			NumServices:   2,
 		},

@@ -47,6 +47,8 @@ type CompiledRule struct {
 	CIDR string
 	// IsEgress indicates whether this is an egress rule (vs ingress).
 	IsEgress bool
+	// Namespace is the Kubernetes namespace of the NetworkPolicy that produced this rule.
+	Namespace string
 }
 
 // Compiler compiles Kubernetes NetworkPolicy resources into identity-based rules.
@@ -84,6 +86,7 @@ func (c *Compiler) CompilePolicy(np *networkingv1.NetworkPolicy) []*CompiledRule
 				Protocol:    ProtocolAny,
 				DstPort:     0,
 				Action:      ActionDeny,
+				Namespace:   np.Namespace,
 			})
 		} else {
 			for _, ingressRule := range np.Spec.Ingress {
@@ -102,6 +105,7 @@ func (c *Compiler) CompilePolicy(np *networkingv1.NetworkPolicy) []*CompiledRule
 				Protocol:    ProtocolAny,
 				DstPort:     0,
 				Action:      ActionDeny,
+				Namespace:   np.Namespace,
 			})
 		} else {
 			for _, egressRule := range np.Spec.Egress {
@@ -159,20 +163,22 @@ func (c *Compiler) compileIngressRule(rule networkingv1.NetworkPolicyIngressRule
 				Protocol:    pp.protocol,
 				DstPort:     pp.port,
 				Action:      ActionAllow,
+				Namespace:   namespace,
 			})
 		}
 	}
 
-	// Create CIDR-based rules for IPBlock peers.
-	for _, cidr := range srcCIDRs {
+	// Create CIDR-based rules for IPBlock peers (including Except deny rules).
+	for _, entry := range srcCIDRs {
 		for _, pp := range ports {
 			rules = append(rules, &CompiledRule{
 				SrcIdentity: WildcardIdentity,
 				DstIdentity: dstIdentity,
 				Protocol:    pp.protocol,
 				DstPort:     pp.port,
-				Action:      ActionAllow,
-				CIDR:        cidr,
+				Action:      entry.action,
+				CIDR:        entry.cidr,
+				Namespace:   namespace,
 			})
 		}
 	}
@@ -212,26 +218,35 @@ func (c *Compiler) compileEgressRule(rule networkingv1.NetworkPolicyEgressRule, 
 				DstPort:     pp.port,
 				Action:      ActionAllow,
 				IsEgress:    true,
+				Namespace:   namespace,
 			})
 		}
 	}
 
-	// Create CIDR-based rules for IPBlock peers.
-	for _, cidr := range dstCIDRs {
+	// Create CIDR-based rules for IPBlock peers (including Except deny rules).
+	for _, entry := range dstCIDRs {
 		for _, pp := range ports {
 			rules = append(rules, &CompiledRule{
 				SrcIdentity: srcIdentity,
 				DstIdentity: WildcardIdentity,
 				Protocol:    pp.protocol,
 				DstPort:     pp.port,
-				Action:      ActionAllow,
-				CIDR:        cidr,
+				Action:      entry.action,
+				CIDR:        entry.cidr,
 				IsEgress:    true,
+				Namespace:   namespace,
 			})
 		}
 	}
 
 	return rules
+}
+
+// cidrEntry represents a CIDR from an IPBlock with an associated action.
+// The primary CIDR gets ActionAllow while Except CIDRs get ActionDeny.
+type cidrEntry struct {
+	cidr   string
+	action uint8 // ActionAllow or ActionDeny
 }
 
 // portProto combines a protocol and port for rule generation.
@@ -280,13 +295,15 @@ func (c *Compiler) resolvePeers(peers []networkingv1.NetworkPolicyPeer, namespac
 }
 
 // resolvePeersWithIPBlock returns IPBlock CIDRs from peers (for CIDR-based rules).
-func (c *Compiler) resolvePeersWithIPBlock(peers []networkingv1.NetworkPolicyPeer) []string {
-	var cidrs []string
+// The primary CIDR is returned with ActionAllow, and any Except CIDRs are
+// returned with ActionDeny so callers can create corresponding deny rules.
+func (c *Compiler) resolvePeersWithIPBlock(peers []networkingv1.NetworkPolicyPeer) []cidrEntry {
+	var entries []cidrEntry
 	for _, peer := range peers {
 		if peer.IPBlock == nil {
 			continue
 		}
-		// Validate CIDR.
+		// Validate primary CIDR.
 		_, _, err := net.ParseCIDR(peer.IPBlock.CIDR)
 		if err != nil {
 			c.logger.Warn("invalid IPBlock CIDR, skipping",
@@ -295,16 +312,23 @@ func (c *Compiler) resolvePeersWithIPBlock(peers []networkingv1.NetworkPolicyPee
 			)
 			continue
 		}
-		cidrs = append(cidrs, peer.IPBlock.CIDR)
-		// Note: IPBlock.Except CIDRs are not yet supported in the eBPF dataplane.
-		// They would require additional deny rules or range-based matching.
-		if len(peer.IPBlock.Except) > 0 {
-			c.logger.Debug("IPBlock.Except not yet supported in eBPF dataplane, ignoring",
-				zap.Strings("except", peer.IPBlock.Except),
-			)
+		entries = append(entries, cidrEntry{cidr: peer.IPBlock.CIDR, action: ActionAllow})
+
+		// Generate deny entries for IPBlock.Except CIDRs. These must be
+		// evaluated before the allow rule (more-specific prefix wins in LPM).
+		for _, exceptCIDR := range peer.IPBlock.Except {
+			_, _, err := net.ParseCIDR(exceptCIDR)
+			if err != nil {
+				c.logger.Warn("invalid IPBlock.Except CIDR, skipping",
+					zap.String("except_cidr", exceptCIDR),
+					zap.Error(err),
+				)
+				continue
+			}
+			entries = append(entries, cidrEntry{cidr: exceptCIDR, action: ActionDeny})
 		}
 	}
-	return cidrs
+	return entries
 }
 
 // resolvePorts converts NetworkPolicyPort to portProto pairs.

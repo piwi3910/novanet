@@ -165,14 +165,15 @@ func TestUint32ToIP(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// protoName
+// protocolName
 // ---------------------------------------------------------------------------
 
-func TestProtoName(t *testing.T) {
+func TestProtocolName(t *testing.T) {
 	tests := []struct {
 		proto uint32
 		want  string
 	}{
+		{0, "*"},
 		{1, "ICMP"},
 		{6, "TCP"},
 		{17, "UDP"},
@@ -182,9 +183,9 @@ func TestProtoName(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		got := protoName(tt.proto)
+		got := protocolName(tt.proto)
 		if got != tt.want {
-			t.Errorf("protoName(%d) = %q, want %q", tt.proto, got, tt.want)
+			t.Errorf("protocolName(%d) = %q, want %q", tt.proto, got, tt.want)
 		}
 	}
 }

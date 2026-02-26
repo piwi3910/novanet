@@ -76,18 +76,3 @@ func runPolicy() error {
 
 	return w.Flush()
 }
-
-func protocolName(proto uint32) string {
-	switch proto {
-	case 6:
-		return "TCP"
-	case 17:
-		return "UDP"
-	case 132:
-		return "SCTP"
-	case 0:
-		return "*"
-	default:
-		return fmt.Sprintf("%d", proto)
-	}
-}

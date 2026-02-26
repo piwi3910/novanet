@@ -92,7 +92,7 @@ func printFlow(w *tabwriter.Writer, flow *pb.FlowEvent, showDropReason bool) {
 	ts := time.Unix(0, flow.TimestampNs).UTC().Format("15:04:05.000")
 	srcIP := uint32ToIP(flow.SrcIp)
 	dstIP := uint32ToIP(flow.DstIp)
-	proto := protoName(flow.Protocol)
+	proto := protocolName(flow.Protocol)
 	verdict := verdictName(flow.Verdict)
 
 	fmt.Fprintf(w, "%s\t%s\t%s\t%d\t%d\t%s\t%d\t%s\t%d",
@@ -115,21 +115,6 @@ func uint32ToIP(n uint32) string {
 		byte(n),
 	)
 	return ip.String()
-}
-
-func protoName(proto uint32) string {
-	switch proto {
-	case 1:
-		return "ICMP"
-	case 6:
-		return "TCP"
-	case 17:
-		return "UDP"
-	case 132:
-		return "SCTP"
-	default:
-		return fmt.Sprintf("%d", proto)
-	}
 }
 
 func verdictName(v pb.PolicyAction) string {
