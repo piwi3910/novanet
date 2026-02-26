@@ -36,29 +36,58 @@ func runPolicy() error {
 	ctx, cancel := context.WithTimeout(context.Background(), callTimeout)
 	defer cancel()
 
-	// Get policy count from agent status.
-	status, err := client.GetAgentStatus(ctx, &pb.GetAgentStatusRequest{})
+	resp, err := client.ListPolicies(ctx, &pb.ListPoliciesRequest{})
 	if err != nil {
-		return fmt.Errorf("GetAgentStatus failed: %w", err)
+		return fmt.Errorf("ListPolicies failed: %w", err)
 	}
 
 	w := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
 	fmt.Fprintf(w, "POLICY RULES\n")
 	fmt.Fprintf(w, "============\n\n")
-	fmt.Fprintf(w, "Total Policies:\t%d\n\n", status.PolicyCount)
+	fmt.Fprintf(w, "Total Rules:\t%d\n\n", len(resp.Rules))
 
-	if status.PolicyCount == 0 {
+	if len(resp.Rules) == 0 {
 		fmt.Fprintln(w, "No policies installed.")
 		fmt.Fprintln(w)
 		fmt.Fprintln(w, "Policies are compiled from Kubernetes NetworkPolicy resources.")
 	} else {
 		fmt.Fprintf(w, "SRC_IDENTITY\tDST_IDENTITY\tPROTOCOL\tPORT\tACTION\n")
-		// Detailed policy listing requires a ListPolicies RPC that is
-		// not yet exposed by the agent. The current proto only provides
-		// upsert/delete/sync operations. A dedicated list endpoint will
-		// be added in a future release.
-		fmt.Fprintf(w, "(detailed policy listing requires ListPolicies RPC — coming soon)\n")
+		for _, r := range resp.Rules {
+			proto := protocolName(r.Protocol)
+			action := "DENY"
+			if r.Action == pb.PolicyAction_POLICY_ACTION_ALLOW {
+				action = "ALLOW"
+			}
+			port := "*"
+			if r.DstPort != 0 {
+				port = fmt.Sprintf("%d", r.DstPort)
+			}
+			src := "*"
+			if r.SrcIdentity != 0 {
+				src = fmt.Sprintf("%d", r.SrcIdentity)
+			}
+			dst := "*"
+			if r.DstIdentity != 0 {
+				dst = fmt.Sprintf("%d", r.DstIdentity)
+			}
+			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", src, dst, proto, port, action)
+		}
 	}
 
 	return w.Flush()
+}
+
+func protocolName(proto uint32) string {
+	switch proto {
+	case 6:
+		return "TCP"
+	case 17:
+		return "UDP"
+	case 132:
+		return "SCTP"
+	case 0:
+		return "*"
+	default:
+		return fmt.Sprintf("%d", proto)
+	}
 }

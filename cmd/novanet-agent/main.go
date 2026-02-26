@@ -21,11 +21,13 @@ import (
 	pb "github.com/piwi3910/novanet/api/v1"
 	cnisetup "github.com/piwi3910/novanet/internal/cni"
 	"github.com/piwi3910/novanet/internal/config"
+	"github.com/piwi3910/novanet/internal/egress"
 	"github.com/piwi3910/novanet/internal/identity"
 	"github.com/piwi3910/novanet/internal/ipam"
 	"github.com/piwi3910/novanet/internal/masquerade"
 	"github.com/piwi3910/novanet/internal/metrics"
 	"github.com/piwi3910/novanet/internal/novaroute"
+	"github.com/piwi3910/novanet/internal/policy"
 	"github.com/piwi3910/novanet/internal/tunnel"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -36,9 +38,12 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
 	grpcstatus "google.golang.org/grpc/status"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/cache"
 )
 
 const (
@@ -111,6 +116,12 @@ var (
 		Help:      "Latency of CNI DEL operations.",
 		Buckets:   prometheus.DefBuckets,
 	})
+	metricRemoteEndpoints = prometheus.NewGauge(prometheus.GaugeOpts{
+		Namespace: "novanet",
+		Subsystem: "agent",
+		Name:      "remote_endpoints_total",
+		Help:      "Number of remote pod endpoints synced for cross-node identity resolution.",
+	})
 )
 
 func init() {
@@ -121,6 +132,7 @@ func init() {
 		metricIdentities,
 		metricCNIAddLatency,
 		metricCNIDelLatency,
+		metricRemoteEndpoints,
 	)
 	// Register shared dataplane metrics (flow counters, TCP latency histogram, etc.).
 	metrics.Register()
@@ -144,14 +156,23 @@ type endpoint struct {
 type agentServer struct {
 	pb.UnimplementedAgentControlServer
 
-	logger     *zap.Logger
-	cfg        *config.Config
-	ipAlloc    *ipam.Allocator
-	idAlloc    *identity.Allocator
-	dpClient   pb.DataplaneControlClient
-	nodeIP     net.IP
-	podCIDR    string
+	logger      *zap.Logger
+	cfg         *config.Config
+	ipAlloc     *ipam.Allocator
+	idAlloc     *identity.Allocator
+	dpClient    pb.DataplaneControlClient
+	nodeIP      net.IP
+	podCIDR     string
 	dpConnected bool
+
+	// Policy enforcement.
+	policyCompiler *policy.Compiler
+	tunnelMgr      *tunnel.Manager
+	egressMgr      *egress.Manager
+
+	// Compiled policy rules (updated by the policy watcher callback).
+	policyMu    sync.RWMutex
+	policyRules []*policy.CompiledRule
 
 	mu        sync.RWMutex
 	endpoints map[string]*endpoint // key: namespace/name
@@ -402,6 +423,320 @@ func (s *agentServer) StreamAgentFlows(req *pb.StreamAgentFlowsRequest, stream g
 	}
 }
 
+// ListPolicies returns the compiled policy rules.
+func (s *agentServer) ListPolicies(_ context.Context, _ *pb.ListPoliciesRequest) (*pb.ListPoliciesResponse, error) {
+	s.policyMu.RLock()
+	rules := s.policyRules
+	s.policyMu.RUnlock()
+
+	resp := &pb.ListPoliciesResponse{
+		Rules: make([]*pb.PolicyRuleInfo, 0, len(rules)),
+	}
+	for _, r := range rules {
+		action := pb.PolicyAction_POLICY_ACTION_DENY
+		if r.Action == policy.ActionAllow {
+			action = pb.PolicyAction_POLICY_ACTION_ALLOW
+		}
+		resp.Rules = append(resp.Rules, &pb.PolicyRuleInfo{
+			SrcIdentity: r.SrcIdentity,
+			DstIdentity: r.DstIdentity,
+			Protocol:    uint32(r.Protocol),
+			DstPort:     uint32(r.DstPort),
+			Action:      action,
+		})
+	}
+	return resp, nil
+}
+
+// ListIdentities returns all identity mappings.
+func (s *agentServer) ListIdentities(_ context.Context, _ *pb.ListIdentitiesRequest) (*pb.ListIdentitiesResponse, error) {
+	entries := s.idAlloc.ListAll()
+	resp := &pb.ListIdentitiesResponse{
+		Identities: make([]*pb.IdentityInfo, 0, len(entries)),
+	}
+	for _, e := range entries {
+		resp.Identities = append(resp.Identities, &pb.IdentityInfo{
+			IdentityId: e.ID,
+			Labels:     e.Labels,
+			RefCount:   uint32(e.RefCount),
+		})
+	}
+	return resp, nil
+}
+
+// ListTunnels returns the current tunnel state.
+func (s *agentServer) ListTunnels(_ context.Context, _ *pb.ListTunnelsRequest) (*pb.ListTunnelsResponse, error) {
+	resp := &pb.ListTunnelsResponse{}
+	if s.tunnelMgr == nil {
+		return resp, nil
+	}
+	tunnels := s.tunnelMgr.ListTunnels()
+	resp.Tunnels = make([]*pb.TunnelInfoMsg, 0, len(tunnels))
+	for _, t := range tunnels {
+		resp.Tunnels = append(resp.Tunnels, &pb.TunnelInfoMsg{
+			NodeName:      t.NodeName,
+			NodeIp:        t.NodeIP,
+			PodCidr:       t.PodCIDR,
+			InterfaceName: t.InterfaceName,
+			Ifindex:       uint32(t.Ifindex),
+			Protocol:      s.tunnelMgr.Protocol(),
+		})
+	}
+	return resp, nil
+}
+
+// ListEgressPolicies returns the egress policy rules.
+func (s *agentServer) ListEgressPolicies(_ context.Context, _ *pb.ListEgressPoliciesRequest) (*pb.ListEgressPoliciesResponse, error) {
+	resp := &pb.ListEgressPoliciesResponse{}
+	if s.egressMgr == nil {
+		return resp, nil
+	}
+	rules := s.egressMgr.GetRules()
+	resp.Rules = make([]*pb.EgressPolicyInfo, 0, len(rules))
+	for _, r := range rules {
+		action := pb.EgressAction_EGRESS_ACTION_DENY
+		switch r.Action {
+		case egress.ActionAllow:
+			action = pb.EgressAction_EGRESS_ACTION_ALLOW
+		case egress.ActionSNAT:
+			action = pb.EgressAction_EGRESS_ACTION_SNAT
+		}
+		resp.Rules = append(resp.Rules, &pb.EgressPolicyInfo{
+			Namespace:   r.Namespace,
+			Name:        r.Name,
+			SrcIdentity: r.SrcIdentity,
+			DstCidr:     r.DstCIDR.String(),
+			Protocol:    uint32(r.Protocol),
+			DstPort:     uint32(r.DstPort),
+			Action:      action,
+		})
+	}
+	return resp, nil
+}
+
+// onPolicyChange is the callback invoked by the policy watcher when
+// NetworkPolicy resources change. It syncs compiled rules to the dataplane.
+func (s *agentServer) onPolicyChange(rules []*policy.CompiledRule) {
+	// Store for ListPolicies RPC.
+	s.policyMu.Lock()
+	s.policyRules = rules
+	s.policyMu.Unlock()
+
+	metricPolicies.Set(float64(len(rules)))
+
+	// Sync to dataplane.
+	if s.dpClient == nil || !s.dpConnected {
+		s.logger.Debug("skipping policy sync — dataplane not connected")
+		return
+	}
+
+	entries := make([]*pb.PolicyEntry, 0, len(rules))
+	for _, r := range rules {
+		// Skip CIDR-based rules for now — the eBPF dataplane only supports
+		// identity-based rules. CIDR rules are logged but not pushed.
+		if r.CIDR != "" {
+			s.logger.Debug("skipping CIDR-based rule (not yet supported in eBPF)",
+				zap.String("cidr", r.CIDR),
+			)
+			continue
+		}
+
+		action := pb.PolicyAction_POLICY_ACTION_DENY
+		if r.Action == policy.ActionAllow {
+			action = pb.PolicyAction_POLICY_ACTION_ALLOW
+		}
+		entries = append(entries, &pb.PolicyEntry{
+			SrcIdentity: r.SrcIdentity,
+			DstIdentity: r.DstIdentity,
+			Protocol:    uint32(r.Protocol),
+			DstPort:     uint32(r.DstPort),
+			Action:      action,
+		})
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	resp, err := s.dpClient.SyncPolicies(ctx, &pb.SyncPoliciesRequest{
+		Policies: entries,
+	})
+	if err != nil {
+		s.logger.Error("failed to sync policies to dataplane", zap.Error(err))
+		return
+	}
+
+	s.logger.Info("synced policies to dataplane",
+		zap.Uint32("added", resp.Added),
+		zap.Uint32("removed", resp.Removed),
+		zap.Uint32("updated", resp.Updated),
+		zap.Int("total_rules", len(entries)),
+	)
+}
+
+// startRemoteEndpointSync watches all cluster pods via an informer and pushes
+// remote (non-local) pod endpoints to the eBPF dataplane. This enables
+// cross-node identity resolution for policy enforcement in all routing modes
+// (Geneve, VXLAN, Native/BGP).
+//
+// For remote pods, ifindex=0 and mac=nil (not needed for policy lookup).
+// The identity_id is computed from the pod's labels using the same FNV-1a hash,
+// and node_ip is set from the pod's Status.HostIP.
+func startRemoteEndpointSync(ctx context.Context, logger *zap.Logger, k8sClient kubernetes.Interface,
+	dpClient pb.DataplaneControlClient, selfNode string) {
+
+	factory := informers.NewSharedInformerFactory(k8sClient, 30*time.Second)
+	podInformer := factory.Core().V1().Pods().Informer()
+
+	var remoteCount int64
+	var mu sync.Mutex
+
+	podInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc: func(obj any) {
+			pod, ok := obj.(*corev1.Pod)
+			if !ok || pod.Spec.NodeName == selfNode || pod.Status.PodIP == "" {
+				return
+			}
+			if upsertRemoteEndpoint(ctx, logger, dpClient, pod) {
+				mu.Lock()
+				remoteCount++
+				metricRemoteEndpoints.Set(float64(remoteCount))
+				mu.Unlock()
+			}
+		},
+		UpdateFunc: func(oldObj, newObj any) {
+			pod, ok := newObj.(*corev1.Pod)
+			if !ok || pod.Spec.NodeName == selfNode {
+				return
+			}
+			if pod.Status.PodIP == "" {
+				return
+			}
+			upsertRemoteEndpoint(ctx, logger, dpClient, pod)
+		},
+		DeleteFunc: func(obj any) {
+			pod, ok := obj.(*corev1.Pod)
+			if !ok {
+				tombstone, ok := obj.(cache.DeletedFinalStateUnknown)
+				if ok {
+					pod, _ = tombstone.Obj.(*corev1.Pod)
+				}
+			}
+			if pod == nil || pod.Spec.NodeName == selfNode || pod.Status.PodIP == "" {
+				return
+			}
+			if deleteRemoteEndpoint(ctx, logger, dpClient, pod) {
+				mu.Lock()
+				remoteCount--
+				if remoteCount < 0 {
+					remoteCount = 0
+				}
+				metricRemoteEndpoints.Set(float64(remoteCount))
+				mu.Unlock()
+			}
+		},
+	})
+
+	factory.Start(ctx.Done())
+	factory.WaitForCacheSync(ctx.Done())
+
+	logger.Info("remote endpoint sync started — cross-node identity resolution enabled")
+	<-ctx.Done()
+}
+
+// upsertRemoteEndpoint pushes a remote pod's endpoint to the eBPF dataplane
+// for identity resolution. Returns true if the upsert succeeded.
+func upsertRemoteEndpoint(ctx context.Context, logger *zap.Logger,
+	dpClient pb.DataplaneControlClient, pod *corev1.Pod) bool {
+
+	podIP := net.ParseIP(pod.Status.PodIP)
+	if podIP == nil {
+		return false
+	}
+	podIP = podIP.To4()
+	if podIP == nil {
+		return false // skip IPv6
+	}
+
+	hostIP := net.ParseIP(pod.Status.HostIP)
+	if hostIP == nil {
+		return false
+	}
+	hostIP = hostIP.To4()
+	if hostIP == nil {
+		return false
+	}
+
+	// Compute identity from pod labels using the same FNV-1a hash
+	// that the local identity allocator uses.
+	labels := pod.Labels
+	if labels == nil {
+		labels = map[string]string{}
+	}
+	identityID := identity.HashLabels(labels)
+
+	req := &pb.UpsertEndpointRequest{
+		Ip:         ipToUint32(podIP),
+		Ifindex:    0,   // Remote pod — no local interface.
+		Mac:        nil, // Remote pod — MAC not needed for policy.
+		IdentityId: identityID,
+		PodName:    pod.Name,
+		Namespace:  pod.Namespace,
+		NodeIp:     ipToUint32(hostIP),
+	}
+
+	callCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	if _, err := dpClient.UpsertEndpoint(callCtx, req); err != nil {
+		logger.Debug("failed to sync remote endpoint",
+			zap.String("pod", pod.Namespace+"/"+pod.Name),
+			zap.String("pod_ip", pod.Status.PodIP),
+			zap.Error(err))
+		return false
+	}
+
+	logger.Debug("synced remote endpoint",
+		zap.String("pod", pod.Namespace+"/"+pod.Name),
+		zap.String("pod_ip", pod.Status.PodIP),
+		zap.Uint32("identity_id", identityID),
+	)
+	return true
+}
+
+// deleteRemoteEndpoint removes a remote pod's endpoint from the eBPF dataplane.
+// Returns true if the deletion succeeded.
+func deleteRemoteEndpoint(ctx context.Context, logger *zap.Logger,
+	dpClient pb.DataplaneControlClient, pod *corev1.Pod) bool {
+
+	podIP := net.ParseIP(pod.Status.PodIP)
+	if podIP == nil {
+		return false
+	}
+	podIP = podIP.To4()
+	if podIP == nil {
+		return false
+	}
+
+	callCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	if _, err := dpClient.DeleteEndpoint(callCtx, &pb.DeleteEndpointRequest{
+		Ip: ipToUint32(podIP),
+	}); err != nil {
+		logger.Debug("failed to remove remote endpoint",
+			zap.String("pod", pod.Namespace+"/"+pod.Name),
+			zap.String("pod_ip", pod.Status.PodIP),
+			zap.Error(err))
+		return false
+	}
+
+	logger.Debug("removed remote endpoint",
+		zap.String("pod", pod.Namespace+"/"+pod.Name),
+		zap.String("pod_ip", pod.Status.PodIP),
+	)
+	return true
+}
+
 func main() {
 	// Parse flags.
 	configPath := flag.String("config", "/etc/novanet/config.json", "Path to configuration file")
@@ -533,6 +868,20 @@ func main() {
 	idAlloc := identity.NewAllocator(logger)
 	logger.Info("identity allocator created")
 
+	// ---- Create policy compiler ----
+	policyCompiler := policy.NewCompiler(idAlloc, logger)
+	logger.Info("policy compiler created")
+
+	// ---- Create egress manager ----
+	var egressMgr *egress.Manager
+	if cfg.ClusterCIDR != "" {
+		_, clusterNet, err := net.ParseCIDR(cfg.ClusterCIDR)
+		if err == nil {
+			egressMgr = egress.NewManager(nodeIP, clusterNet, logger)
+			logger.Info("egress manager created")
+		}
+	}
+
 	// ---- Connect to dataplane ----
 	dpConn, dpClient, dpConnected := connectToDataplane(ctx, logger, cfg.DataplaneSocket)
 
@@ -548,15 +897,36 @@ func main() {
 
 	// ---- Create agent gRPC server ----
 	agentSrv := &agentServer{
-		logger:      logger,
-		cfg:         cfg,
-		ipAlloc:     ipAlloc,
-		idAlloc:     idAlloc,
-		dpClient:    dpClient,
-		nodeIP:      nodeIP,
-		podCIDR:     *podCIDR,
-		dpConnected: dpConnected,
-		endpoints:   make(map[string]*endpoint),
+		logger:         logger,
+		cfg:            cfg,
+		ipAlloc:        ipAlloc,
+		idAlloc:        idAlloc,
+		dpClient:       dpClient,
+		nodeIP:         nodeIP,
+		podCIDR:        *podCIDR,
+		dpConnected:    dpConnected,
+		policyCompiler: policyCompiler,
+		egressMgr:      egressMgr,
+		endpoints:      make(map[string]*endpoint),
+	}
+
+	// ---- Start NetworkPolicy watcher ----
+	if k8sClient != nil {
+		policyWatcher := policy.NewWatcher(k8sClient, policyCompiler, logger)
+		policyWatcher.OnChange(agentSrv.onPolicyChange)
+		go func() {
+			logger.Info("starting NetworkPolicy watcher")
+			if err := policyWatcher.Start(ctx); err != nil {
+				logger.Error("NetworkPolicy watcher error", zap.Error(err))
+			}
+		}()
+	} else {
+		logger.Warn("no Kubernetes client — NetworkPolicy watcher disabled")
+	}
+
+	// ---- Start remote endpoint sync for cross-node identity resolution ----
+	if k8sClient != nil && dpClient != nil && dpConnected {
+		go startRemoteEndpointSync(ctx, logger, k8sClient, dpClient, nodeName)
 	}
 
 	// ---- Start CNI gRPC server ----
@@ -627,6 +997,7 @@ func main() {
 		}
 
 		tunnelMgr := tunnel.NewManager(cfg.TunnelProtocol, nodeIP, 1, nil, logger)
+		agentSrv.tunnelMgr = tunnelMgr
 		go watchNodes(ctx, logger, k8sClient, tunnelMgr, dpClient, nodeName, nodeIP)
 
 	case "native":

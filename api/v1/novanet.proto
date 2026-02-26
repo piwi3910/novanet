@@ -45,6 +45,12 @@ service AgentControl {
 
   // Flow streaming (proxied from dataplane)
   rpc StreamAgentFlows(StreamAgentFlowsRequest) returns (stream FlowEvent);
+
+  // List RPCs (CLI)
+  rpc ListPolicies(ListPoliciesRequest) returns (ListPoliciesResponse);
+  rpc ListIdentities(ListIdentitiesRequest) returns (ListIdentitiesResponse);
+  rpc ListTunnels(ListTunnelsRequest) returns (ListTunnelsResponse);
+  rpc ListEgressPolicies(ListEgressPoliciesRequest) returns (ListEgressPoliciesResponse);
 }
 
 // --- Endpoints ---
@@ -269,4 +275,55 @@ enum EgressAction {
   EGRESS_ACTION_DENY = 0;
   EGRESS_ACTION_ALLOW = 1;
   EGRESS_ACTION_SNAT = 2;
+}
+
+// --- List RPCs (CLI) ---
+
+message ListPoliciesRequest {}
+message ListPoliciesResponse {
+  repeated PolicyRuleInfo rules = 1;
+}
+message PolicyRuleInfo {
+  uint32 src_identity = 1;
+  uint32 dst_identity = 2;
+  uint32 protocol = 3;
+  uint32 dst_port = 4;
+  PolicyAction action = 5;
+}
+
+message ListIdentitiesRequest {}
+message ListIdentitiesResponse {
+  repeated IdentityInfo identities = 1;
+}
+message IdentityInfo {
+  uint32 identity_id = 1;
+  map<string, string> labels = 2;
+  uint32 ref_count = 3;
+}
+
+message ListTunnelsRequest {}
+message ListTunnelsResponse {
+  repeated TunnelInfoMsg tunnels = 1;
+}
+message TunnelInfoMsg {
+  string node_name = 1;
+  string node_ip = 2;
+  string pod_cidr = 3;
+  string interface_name = 4;
+  uint32 ifindex = 5;
+  string protocol = 6;
+}
+
+message ListEgressPoliciesRequest {}
+message ListEgressPoliciesResponse {
+  repeated EgressPolicyInfo rules = 1;
+}
+message EgressPolicyInfo {
+  string namespace = 1;
+  string name = 2;
+  uint32 src_identity = 3;
+  string dst_cidr = 4;
+  uint32 protocol = 5;
+  uint32 dst_port = 6;
+  EgressAction action = 7;
 }

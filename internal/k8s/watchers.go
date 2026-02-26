@@ -32,6 +32,11 @@ type Watchers struct {
 	OnPodUpdate func(old, new *corev1.Pod)
 	OnPodDelete func(*corev1.Pod)
 
+	// Remote pod callbacks (non-local pods, for cross-node identity resolution).
+	OnRemotePodAdd    func(*corev1.Pod)
+	OnRemotePodUpdate func(old, new *corev1.Pod)
+	OnRemotePodDelete func(*corev1.Pod)
+
 	// Namespace callbacks.
 	OnNamespaceAdd    func(*corev1.Namespace)
 	OnNamespaceUpdate func(old, new *corev1.Namespace)
@@ -100,34 +105,54 @@ func (w *Watchers) Start(ctx context.Context) error {
 	podInformer := w.factory.Core().V1().Pods().Informer()
 	podInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(obj any) {
-			if w.OnPodAdd != nil {
-				if pod, ok := obj.(*corev1.Pod); ok {
-					if w.isLocalPod(pod) {
-						w.OnPodAdd(pod)
-					}
+			pod, ok := obj.(*corev1.Pod)
+			if !ok {
+				return
+			}
+			if w.isLocalPod(pod) {
+				if w.OnPodAdd != nil {
+					w.OnPodAdd(pod)
+				}
+			} else {
+				if w.OnRemotePodAdd != nil {
+					w.OnRemotePodAdd(pod)
 				}
 			}
 		},
 		UpdateFunc: func(oldObj, newObj any) {
-			if w.OnPodUpdate != nil {
-				oldPod, ok1 := oldObj.(*corev1.Pod)
-				newPod, ok2 := newObj.(*corev1.Pod)
-				if ok1 && ok2 && w.isLocalPod(newPod) {
+			oldPod, ok1 := oldObj.(*corev1.Pod)
+			newPod, ok2 := newObj.(*corev1.Pod)
+			if !ok1 || !ok2 {
+				return
+			}
+			if w.isLocalPod(newPod) {
+				if w.OnPodUpdate != nil {
 					w.OnPodUpdate(oldPod, newPod)
+				}
+			} else {
+				if w.OnRemotePodUpdate != nil {
+					w.OnRemotePodUpdate(oldPod, newPod)
 				}
 			}
 		},
 		DeleteFunc: func(obj any) {
-			if w.OnPodDelete != nil {
-				pod, ok := obj.(*corev1.Pod)
-				if !ok {
-					tombstone, ok := obj.(cache.DeletedFinalStateUnknown)
-					if ok {
-						pod, ok = tombstone.Obj.(*corev1.Pod)
-					}
+			pod, ok := obj.(*corev1.Pod)
+			if !ok {
+				tombstone, ok := obj.(cache.DeletedFinalStateUnknown)
+				if ok {
+					pod, ok = tombstone.Obj.(*corev1.Pod)
 				}
-				if ok && pod != nil && w.isLocalPod(pod) {
+			}
+			if !ok || pod == nil {
+				return
+			}
+			if w.isLocalPod(pod) {
+				if w.OnPodDelete != nil {
 					w.OnPodDelete(pod)
+				}
+			} else {
+				if w.OnRemotePodDelete != nil {
+					w.OnRemotePodDelete(pod)
 				}
 			}
 		},

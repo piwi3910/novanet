@@ -4,6 +4,7 @@ package policy
 
 import (
 	"maps"
+	"net"
 	"slices"
 
 	"go.uber.org/zap"
@@ -42,6 +43,10 @@ type CompiledRule struct {
 	DstPort uint16
 	// Action is the policy action (0 = deny, 1 = allow).
 	Action uint8
+	// CIDR is set for IPBlock-based rules (empty for identity-based rules).
+	CIDR string
+	// IsEgress indicates whether this is an egress rule (vs ingress).
+	IsEgress bool
 }
 
 // Compiler compiles Kubernetes NetworkPolicy resources into identity-based rules.
@@ -129,6 +134,8 @@ func (c *Compiler) compileIngressRule(rule networkingv1.NetworkPolicyIngressRule
 
 	// Resolve source identities from peers.
 	srcIdentities := c.resolvePeers(rule.From, namespace)
+	// Resolve IPBlock CIDRs.
+	srcCIDRs := c.resolvePeersWithIPBlock(rule.From)
 
 	// Resolve ports.
 	ports := c.resolvePorts(rule.Ports)
@@ -143,7 +150,7 @@ func (c *Compiler) compileIngressRule(rule networkingv1.NetworkPolicyIngressRule
 		ports = []portProto{{protocol: ProtocolAny, port: 0}}
 	}
 
-	// Create cartesian product of sources x ports.
+	// Create cartesian product of sources x ports (identity-based).
 	for _, srcID := range srcIdentities {
 		for _, pp := range ports {
 			rules = append(rules, &CompiledRule{
@@ -152,6 +159,20 @@ func (c *Compiler) compileIngressRule(rule networkingv1.NetworkPolicyIngressRule
 				Protocol:    pp.protocol,
 				DstPort:     pp.port,
 				Action:      ActionAllow,
+			})
+		}
+	}
+
+	// Create CIDR-based rules for IPBlock peers.
+	for _, cidr := range srcCIDRs {
+		for _, pp := range ports {
+			rules = append(rules, &CompiledRule{
+				SrcIdentity: WildcardIdentity,
+				DstIdentity: dstIdentity,
+				Protocol:    pp.protocol,
+				DstPort:     pp.port,
+				Action:      ActionAllow,
+				CIDR:        cidr,
 			})
 		}
 	}
@@ -165,6 +186,8 @@ func (c *Compiler) compileEgressRule(rule networkingv1.NetworkPolicyEgressRule, 
 
 	// Resolve destination identities from peers.
 	dstIdentities := c.resolvePeers(rule.To, namespace)
+	// Resolve IPBlock CIDRs.
+	dstCIDRs := c.resolvePeersWithIPBlock(rule.To)
 
 	// Resolve ports.
 	ports := c.resolvePorts(rule.Ports)
@@ -179,7 +202,7 @@ func (c *Compiler) compileEgressRule(rule networkingv1.NetworkPolicyEgressRule, 
 		ports = []portProto{{protocol: ProtocolAny, port: 0}}
 	}
 
-	// Create cartesian product of destinations x ports.
+	// Create cartesian product of destinations x ports (identity-based).
 	for _, dstID := range dstIdentities {
 		for _, pp := range ports {
 			rules = append(rules, &CompiledRule{
@@ -188,6 +211,22 @@ func (c *Compiler) compileEgressRule(rule networkingv1.NetworkPolicyEgressRule, 
 				Protocol:    pp.protocol,
 				DstPort:     pp.port,
 				Action:      ActionAllow,
+				IsEgress:    true,
+			})
+		}
+	}
+
+	// Create CIDR-based rules for IPBlock peers.
+	for _, cidr := range dstCIDRs {
+		for _, pp := range ports {
+			rules = append(rules, &CompiledRule{
+				SrcIdentity: srcIdentity,
+				DstIdentity: WildcardIdentity,
+				Protocol:    pp.protocol,
+				DstPort:     pp.port,
+				Action:      ActionAllow,
+				CIDR:        cidr,
+				IsEgress:    true,
 			})
 		}
 	}
@@ -207,11 +246,7 @@ func (c *Compiler) resolvePeers(peers []networkingv1.NetworkPolicyPeer, namespac
 
 	for _, peer := range peers {
 		if peer.IPBlock != nil {
-			// IPBlock rules cannot be represented purely as identity-based rules.
-			// We log and skip — these require CIDR-based rules in the dataplane.
-			c.logger.Debug("skipping IPBlock peer (not identity-based)",
-				zap.String("cidr", peer.IPBlock.CIDR),
-			)
+			// IPBlock rules are handled separately via resolvePeersWithIPBlock.
 			continue
 		}
 
@@ -242,6 +277,34 @@ func (c *Compiler) resolvePeers(peers []networkingv1.NetworkPolicyPeer, namespac
 	}
 
 	return identities
+}
+
+// resolvePeersWithIPBlock returns IPBlock CIDRs from peers (for CIDR-based rules).
+func (c *Compiler) resolvePeersWithIPBlock(peers []networkingv1.NetworkPolicyPeer) []string {
+	var cidrs []string
+	for _, peer := range peers {
+		if peer.IPBlock == nil {
+			continue
+		}
+		// Validate CIDR.
+		_, _, err := net.ParseCIDR(peer.IPBlock.CIDR)
+		if err != nil {
+			c.logger.Warn("invalid IPBlock CIDR, skipping",
+				zap.String("cidr", peer.IPBlock.CIDR),
+				zap.Error(err),
+			)
+			continue
+		}
+		cidrs = append(cidrs, peer.IPBlock.CIDR)
+		// Note: IPBlock.Except CIDRs are not yet supported in the eBPF dataplane.
+		// They would require additional deny rules or range-based matching.
+		if len(peer.IPBlock.Except) > 0 {
+			c.logger.Debug("IPBlock.Except not yet supported in eBPF dataplane, ignoring",
+				zap.Strings("except", peer.IPBlock.Except),
+			)
+		}
+	}
+	return cidrs
 }
 
 // resolvePorts converts NetworkPolicyPort to portProto pairs.

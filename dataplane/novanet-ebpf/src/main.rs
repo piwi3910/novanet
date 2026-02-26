@@ -471,8 +471,8 @@ fn try_tc_egress(ctx: &TcContext) -> Result<i32, ()> {
                 node_ip: dst_ep.node_ip,
             };
             if let Some(tunnel) = unsafe { TUNNELS.get(&tunnel_key) } {
-                // Redirect to tunnel interface. The tc_tunnel_egress program on
-                // the tunnel device will add the identity TLV.
+                // Redirect to tunnel interface for kernel encapsulation.
+                // Identity is resolved on the receiving side via endpoint map lookup.
                 emit_flow_event(
                     src_ip, dst_ip, src_identity, dst_identity, protocol,
                     src_port, dst_port, ACTION_ALLOW, DROP_REASON_NONE, total_len,
@@ -853,14 +853,19 @@ fn enforce_tunnel_policy(
 // ===========================================================================
 // TC PROGRAM: tc_tunnel_egress
 // Attached to tunnel interface egress direction.
-// In Geneve mode: the kernel handles encapsulation, but we need to ensure
-// identity information is available. In practice, the kernel's Geneve
-// implementation uses route metadata for encap, and we inject identity
-// via the Geneve TLV options set in the tunnel metadata.
 //
-// For now, this is a pass-through — identity injection into Geneve TLV
-// is handled via tunnel key metadata set by the userspace dataplane when
-// configuring the tunnel interface (ip link add geneve ... options).
+// The kernel handles Geneve/VXLAN encapsulation — tc_egress on the pod veth
+// redirects cross-node packets to the tunnel interface via bpf_redirect(),
+// and the kernel's tunnel module adds the outer headers.
+//
+// On the receiving side, tc_tunnel_ingress resolves identity via:
+//   1. Geneve TLV option (if present)
+//   2. Endpoint map lookup by inner source IP (always works)
+//
+// This program is a pass-through. A future optimization could inject the
+// source pod's identity into a Geneve TLV here using bpf_skb_set_tunnel_opt,
+// avoiding the endpoint map lookup on the receiving side. This is not
+// required for correctness — the fallback path works for all cases.
 // ===========================================================================
 
 #[classifier]
@@ -873,23 +878,8 @@ pub fn tc_tunnel_egress(ctx: TcContext) -> i32 {
 
 #[inline(always)]
 fn try_tc_tunnel_egress(_ctx: &TcContext) -> Result<i32, ()> {
-    // The tunnel egress program runs on the tunnel device's egress path.
-    // At this point, the inner packet is being sent to the tunnel device
-    // for encapsulation by the kernel.
-    //
-    // For Geneve with identity TLV:
-    //   The identity needs to be set in the tunnel metadata before the
-    //   kernel encapsulates. This is typically done via:
-    //   1. BPF tunnel key helpers (bpf_skb_set_tunnel_key + bpf_skb_set_tunnel_opt)
-    //   2. Or by the userspace dataplane setting up the tunnel with metadata mode.
-    //
-    // We use approach 2: the tunnel interface is created in "external" mode
-    // (ip link add geneve0 type geneve external) and the tc_egress program
-    // on the pod veth sets tunnel metadata via bpf_skb_set_tunnel_key before
-    // redirecting to the tunnel device.
-    //
-    // For now, pass through. The heavy lifting is in tc_egress which sets up
-    // the redirect with tunnel metadata.
+    // Pass through — kernel handles encapsulation.
+    // See tc_tunnel_ingress for the receiving side.
     Ok(BPF_TC_ACT_OK as i32)
 }
 
