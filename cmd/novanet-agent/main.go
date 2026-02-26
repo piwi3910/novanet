@@ -676,8 +676,8 @@ func upsertRemoteEndpoint(ctx context.Context, logger *zap.Logger,
 
 	req := &pb.UpsertEndpointRequest{
 		Ip:         ipToUint32(podIP),
-		Ifindex:    0,   // Remote pod — no local interface.
-		Mac:        nil, // Remote pod — MAC not needed for policy.
+		Ifindex:    0,                              // Remote pod — no local interface.
+		Mac:        []byte{0, 0, 0, 0, 0, 0},      // Remote pod — zero MAC (not used for policy).
 		IdentityId: identityID,
 		PodName:    pod.Name,
 		Namespace:  pod.Namespace,
