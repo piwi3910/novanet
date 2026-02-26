@@ -169,6 +169,7 @@ type agentServer struct {
 
 	// Policy enforcement.
 	policyCompiler *policy.Compiler
+	policyWatcher  *policy.Watcher
 	tunnelMgr      *tunnel.Manager
 	egressMgr      *egress.Manager
 
@@ -304,6 +305,12 @@ func (s *agentServer) AddPod(ctx context.Context, req *pb.AddPodRequest) (*pb.Ad
 		zap.Int("ifindex", ifindex),
 		zap.Uint32("identity_id", identityID),
 	)
+
+	// Trigger policy recompilation so that rules reference the actual pod
+	// identity rather than a hash of selector labels.
+	if s.policyWatcher != nil {
+		s.policyWatcher.Recompile()
+	}
 
 	return &pb.AddPodResponse{
 		Ip:           podIP.String(),
@@ -1008,6 +1015,7 @@ func main() {
 	if k8sClient != nil {
 		policyWatcher := policy.NewWatcher(k8sClient, policyCompiler, logger)
 		policyWatcher.OnChange(agentSrv.onPolicyChange)
+		agentSrv.policyWatcher = policyWatcher
 		go func() {
 			logger.Info("starting NetworkPolicy watcher")
 			if err := policyWatcher.Start(ctx); err != nil {

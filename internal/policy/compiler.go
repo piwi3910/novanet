@@ -73,43 +73,47 @@ func (c *Compiler) CompilePolicy(np *networkingv1.NetworkPolicy) []*CompiledRule
 
 	var rules []*CompiledRule
 
-	// Determine the identity of pods selected by this policy.
-	dstIdentity := c.selectorToIdentity(np.Spec.PodSelector, np.Namespace)
+	// Determine the identities of pods selected by this policy.
+	// A selector may match multiple distinct identities (pods with different
+	// label supersets all containing the selector labels).
+	targetIdentities := c.selectorToIdentities(np.Spec.PodSelector, np.Namespace)
 
-	// Process ingress rules.
-	if hasPolicyType(np, networkingv1.PolicyTypeIngress) {
-		if len(np.Spec.Ingress) == 0 {
-			// Default deny ingress: deny all traffic to selected pods.
-			rules = append(rules, &CompiledRule{
-				SrcIdentity: WildcardIdentity,
-				DstIdentity: dstIdentity,
-				Protocol:    ProtocolAny,
-				DstPort:     0,
-				Action:      ActionDeny,
-				Namespace:   np.Namespace,
-			})
-		} else {
-			for _, ingressRule := range np.Spec.Ingress {
-				rules = append(rules, c.compileIngressRule(ingressRule, dstIdentity, np.Namespace)...)
+	for _, targetID := range targetIdentities {
+		// Process ingress rules.
+		if hasPolicyType(np, networkingv1.PolicyTypeIngress) {
+			if len(np.Spec.Ingress) == 0 {
+				// Default deny ingress: deny all traffic to selected pods.
+				rules = append(rules, &CompiledRule{
+					SrcIdentity: WildcardIdentity,
+					DstIdentity: targetID,
+					Protocol:    ProtocolAny,
+					DstPort:     0,
+					Action:      ActionDeny,
+					Namespace:   np.Namespace,
+				})
+			} else {
+				for _, ingressRule := range np.Spec.Ingress {
+					rules = append(rules, c.compileIngressRule(ingressRule, targetID, np.Namespace)...)
+				}
 			}
 		}
-	}
 
-	// Process egress rules.
-	if hasPolicyType(np, networkingv1.PolicyTypeEgress) {
-		if len(np.Spec.Egress) == 0 {
-			// Default deny egress: deny all traffic from selected pods.
-			rules = append(rules, &CompiledRule{
-				SrcIdentity: dstIdentity,
-				DstIdentity: WildcardIdentity,
-				Protocol:    ProtocolAny,
-				DstPort:     0,
-				Action:      ActionDeny,
-				Namespace:   np.Namespace,
-			})
-		} else {
-			for _, egressRule := range np.Spec.Egress {
-				rules = append(rules, c.compileEgressRule(egressRule, dstIdentity, np.Namespace)...)
+		// Process egress rules.
+		if hasPolicyType(np, networkingv1.PolicyTypeEgress) {
+			if len(np.Spec.Egress) == 0 {
+				// Default deny egress: deny all traffic from selected pods.
+				rules = append(rules, &CompiledRule{
+					SrcIdentity: targetID,
+					DstIdentity: WildcardIdentity,
+					Protocol:    ProtocolAny,
+					DstPort:     0,
+					Action:      ActionDeny,
+					Namespace:   np.Namespace,
+				})
+			} else {
+				for _, egressRule := range np.Spec.Egress {
+					rules = append(rules, c.compileEgressRule(egressRule, targetID, np.Namespace)...)
+				}
 			}
 		}
 	}
@@ -256,6 +260,8 @@ type portProto struct {
 }
 
 // resolvePeers converts NetworkPolicyPeer selectors to identity IDs.
+// It matches against actually allocated identities when possible, falling
+// back to hashing the selector labels when no matching identities exist yet.
 func (c *Compiler) resolvePeers(peers []networkingv1.NetworkPolicyPeer, namespace string) []uint32 {
 	var identities []uint32
 
@@ -283,8 +289,15 @@ func (c *Compiler) resolvePeers(peers []networkingv1.NetworkPolicyPeer, namespac
 		}
 
 		if len(labels) > 0 {
-			id := c.identityAllocator.AllocateIdentity(labels)
-			identities = append(identities, id)
+			// Find allocated identities whose labels are a superset of the selector.
+			matches := c.identityAllocator.FindMatchingIdentities(labels)
+			if len(matches) > 0 {
+				identities = append(identities, matches...)
+			} else {
+				// Fallback: no matching identities yet. Use hash of selector labels
+				// so rules are ready when matching pods are created.
+				identities = append(identities, identity.HashLabels(labels))
+			}
 		} else {
 			// Empty selector matches everything.
 			identities = append(identities, WildcardIdentity)
@@ -362,14 +375,24 @@ func (c *Compiler) resolvePorts(npPorts []networkingv1.NetworkPolicyPort) []port
 	return ports
 }
 
-// selectorToIdentity converts a LabelSelector plus namespace into an identity ID.
-func (c *Compiler) selectorToIdentity(selector metav1.LabelSelector, namespace string) uint32 {
+// selectorToIdentities converts a LabelSelector plus namespace into identity IDs.
+// It finds all allocated identities whose labels are a superset of the selector,
+// falling back to hashing the selector labels if no matches exist yet.
+func (c *Compiler) selectorToIdentities(selector metav1.LabelSelector, namespace string) []uint32 {
 	labels := make(map[string]string)
 	maps.Copy(labels, selector.MatchLabels)
 	// Always scope to the policy namespace.
 	labels["ns:kubernetes.io/metadata.name"] = namespace
 
-	return c.identityAllocator.AllocateIdentity(labels)
+	// Find allocated identities that match (their labels contain all selector labels).
+	matches := c.identityAllocator.FindMatchingIdentities(labels)
+	if len(matches) > 0 {
+		return matches
+	}
+
+	// Fallback: no matching identities yet. Use hash of selector labels so
+	// rules exist as placeholders until matching pods are created.
+	return []uint32{identity.HashLabels(labels)}
 }
 
 // hasPolicyType checks if a NetworkPolicy specifies a given policy type.
