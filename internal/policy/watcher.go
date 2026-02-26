@@ -83,6 +83,13 @@ func (w *Watcher) Start(ctx context.Context) error {
 	return nil
 }
 
+// Recompile triggers a full recompilation of all policies and invokes
+// the OnChange callback. Call this when identity allocations change
+// (e.g., after AddPod) so that policy rules use actual pod identities.
+func (w *Watcher) Recompile() {
+	w.recompileAll()
+}
+
 // recompileAll fetches all policies from the store, compiles them, and
 // invokes the OnChange callback.
 func (w *Watcher) recompileAll() {
