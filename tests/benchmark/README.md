@@ -144,7 +144,7 @@ Each benchmark writes a JSON file with fortio-style latency histograms:
   "metadata": {
     "timestamp": "20260226T143000Z",
     "kubernetes_version": "v1.31.4+k3s1",
-    "novanet_image": "ghcr.io/piwi3910/novanet/agent:latest",
+    "novanet_image": "ghcr.io/piwi3910/novanet-agent:latest",
     "node_count": 8,
     "duration": "10s"
   },
