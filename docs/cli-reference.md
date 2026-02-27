@@ -1,0 +1,221 @@
+# NovaNet CLI Reference
+
+`novanetctl` is the command-line tool for inspecting and managing a running NovaNet agent. It communicates with the agent and dataplane via gRPC over Unix sockets.
+
+---
+
+## Global Flags
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--agent-socket` | `/run/novanet/novanet.sock` | Path to the agent gRPC socket |
+| `--dataplane-socket` | `/run/novanet/dataplane.sock` | Path to the dataplane gRPC socket |
+
+When running inside a NovaNet pod, the defaults work automatically. From the host, you may need to specify the socket paths.
+
+---
+
+## Commands
+
+### status
+
+Show the overall status of the agent and dataplane.
+
+```bash
+novanetctl status
+```
+
+Example output:
+
+```
+NovaNet Agent Status
+  Version:           0.1.0
+  Mode:              overlay
+  Tunnel Protocol:   geneve
+  Endpoints:         12
+  Policies:          48
+  Identities:        6
+  Tunnels:           4
+  Dataplane:         connected
+  NovaRoute:         not connected
+```
+
+---
+
+### flows
+
+Stream real-time flow events from the eBPF dataplane.
+
+```bash
+novanetctl flows [flags]
+```
+
+| Flag | Description |
+|------|-------------|
+| `--identity <id>` | Filter events by source or destination identity |
+| `--drops-only` | Show only denied/dropped flows |
+
+Example output:
+
+```
+TIMESTAMP            SRC_IP          DST_IP          PROTO  SRC_PORT  DST_PORT  SRC_ID  DST_ID  VERDICT
+2026-02-27 10:15:03  10.42.1.5       10.42.2.8       TCP    45032     80        1001    1002    ALLOW
+2026-02-27 10:15:03  10.42.1.5       10.42.3.12      TCP    45033     443       1001    1003    ALLOW
+2026-02-27 10:15:04  10.42.2.8       10.42.1.5       TCP    80        45032     1002    1001    ALLOW
+```
+
+---
+
+### drops
+
+Watch denied packets only. Shortcut for `flows --drops-only`.
+
+```bash
+novanetctl drops
+```
+
+Example output:
+
+```
+TIMESTAMP            SRC_IP          DST_IP          PROTO  SRC_PORT  DST_PORT  SRC_ID  DST_ID  DROP_REASON
+2026-02-27 10:15:05  10.42.1.5       10.42.4.2       TCP    50001     3306      1001    1004    POLICY_DENIED
+2026-02-27 10:15:06  10.42.3.12      10.42.1.5       UDP    12345     53        1003    1001    NO_IDENTITY
+```
+
+Drop reasons:
+
+| Code | Meaning |
+|------|---------|
+| `POLICY_DENIED` | No matching allow rule in the policy map |
+| `NO_IDENTITY` | Source pod has no identity in the ENDPOINTS map |
+| `NO_ROUTE` | No route to destination (native mode) |
+| `NO_TUNNEL` | No tunnel entry for remote node (overlay mode) |
+| `TTL_EXCEEDED` | IP TTL reached zero |
+
+---
+
+### tunnels
+
+List active overlay tunnels (overlay mode only).
+
+```bash
+novanetctl tunnels
+```
+
+Example output:
+
+```
+NODE          NODE_IP         POD_CIDR        INTERFACE    IFINDEX  PROTOCOL
+worker-21     192.168.100.21  10.42.1.0/24    nv_worker-21  8       geneve
+worker-22     192.168.100.22  10.42.2.0/24    nv_worker-22  9       geneve
+worker-23     192.168.100.23  10.42.3.0/24    nv_worker-23  10      geneve
+```
+
+---
+
+### policy
+
+Show compiled policy rules currently loaded in the eBPF map.
+
+```bash
+novanetctl policy
+```
+
+Example output:
+
+```
+SRC_IDENTITY  DST_IDENTITY  PROTOCOL  DST_PORT  ACTION
+1001          1002          TCP       80        ALLOW
+1001          1002          TCP       443       ALLOW
+0             1005          TCP       53        ALLOW
+0             1005          UDP       53        ALLOW
+```
+
+Identity `0` is the wildcard (matches any source).
+
+---
+
+### identity
+
+Show pod-to-identity mappings.
+
+```bash
+novanetctl identity
+```
+
+Example output:
+
+```
+IDENTITY  LABELS                                    PODS
+1001      app=frontend                              default/frontend-abc12, default/frontend-def34
+1002      app=backend                               default/backend-ghi56
+1003      app=redis                                 default/redis-jkl78
+1005      k8s-app=kube-dns                          kube-system/coredns-abc12
+```
+
+---
+
+### egress
+
+Show egress policy rules.
+
+```bash
+novanetctl egress
+```
+
+Example output:
+
+```
+SRC_IDENTITY  DST_CIDR          PROTOCOL  DST_PORT  ACTION  SNAT_IP
+1001          0.0.0.0/0         TCP       443       SNAT    192.168.100.21
+1002          10.0.0.0/8        ANY       0         ALLOW   -
+1003          0.0.0.0/0         ANY       0         DENY    -
+```
+
+---
+
+### metrics
+
+Show summary statistics.
+
+```bash
+novanetctl metrics
+```
+
+---
+
+### version
+
+Print the novanetctl version.
+
+```bash
+novanetctl version
+```
+
+```
+novanetctl version 0.1.0
+```
+
+---
+
+## Running from the Host
+
+To use novanetctl from outside the pod, find the socket path and connect:
+
+```bash
+# Find the novanet pod on this node
+POD=$(kubectl get pods -n novanet -l app.kubernetes.io/name=novanet \
+  --field-selector spec.nodeName=$(hostname) -o name | head -1)
+
+# Execute inside the pod
+kubectl exec -n novanet $POD -c agent -- novanetctl status
+kubectl exec -n novanet $POD -c agent -- novanetctl flows
+```
+
+---
+
+## Next Steps
+
+- [Configuration Reference](configuration.md) -- All config options
+- [Troubleshooting](troubleshooting.md) -- Debugging with novanetctl
+- [API Reference](api-reference.md) -- gRPC protocol details
