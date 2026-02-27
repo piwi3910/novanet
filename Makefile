@@ -1,22 +1,25 @@
 # NovaNet Makefile
-# Build automation for novanet-agent, novanet-cni, novanetctl, and novanet-dataplane.
+# Build automation for novanet-agent, novanet-cni, novanetctl, novanet-dataplane, and novanet-operator.
 
 BINARY_DIR    := bin
 AGENT_BINARY  := $(BINARY_DIR)/novanet-agent
 CNI_BINARY    := $(BINARY_DIR)/novanet-cni
 CTL_BINARY    := $(BINARY_DIR)/novanetctl
 DP_BINARY     := $(BINARY_DIR)/novanet-dataplane
+OPERATOR_BINARY := $(BINARY_DIR)/novanet-operator
 
-DOCKER_IMAGE_AGENT := ghcr.io/piwi3910/novanet/novanet-agent
-DOCKER_IMAGE_DP    := ghcr.io/piwi3910/novanet/novanet-dataplane
-DOCKER_TAG         := latest
+DOCKER_IMAGE_AGENT    := ghcr.io/piwi3910/novanet/novanet-agent
+DOCKER_IMAGE_DP       := ghcr.io/piwi3910/novanet/novanet-dataplane
+DOCKER_IMAGE_OPERATOR := ghcr.io/piwi3910/novanet/novanet-operator
+DOCKER_TAG            := latest
 
-GO       := go
-GOFLAGS  := -ldflags="-s -w"
-CARGO    := cargo
-PROTOC   := protoc
+GO            := go
+GOFLAGS       := -ldflags="-s -w"
+CARGO         := cargo
+PROTOC        := protoc
+CONTROLLER_GEN := controller-gen
 
-.PHONY: all build build-go build-rust build-ebpf build-docker test test-go test-rust lint proto docker-build docker-push clean help
+.PHONY: all build build-go build-rust build-ebpf build-docker test test-go test-rust lint proto docker-build docker-push clean help build-operator generate-crd
 
 ## build: Build Go binaries (agent, CNI, CLI). Use build-docker for Rust/eBPF.
 build: build-go
@@ -25,7 +28,7 @@ build: build-go
 build-all: build-go build-docker-rust
 
 ## build-go: Build all Go binaries
-build-go: build-agent build-cni build-ctl
+build-go: build-agent build-cni build-ctl build-operator
 
 build-agent:
 	@mkdir -p $(BINARY_DIR)
@@ -38,6 +41,16 @@ build-cni:
 build-ctl:
 	@mkdir -p $(BINARY_DIR)
 	$(GO) build $(GOFLAGS) -o $(CTL_BINARY) ./cmd/novanetctl/
+
+## build-operator: Build the novanet-operator binary
+build-operator:
+	@mkdir -p $(BINARY_DIR)
+	$(GO) build $(GOFLAGS) -o $(OPERATOR_BINARY) ./cmd/novanet-operator/
+
+## generate-crd: Generate deepcopy methods and CRD manifests
+generate-crd:
+	$(CONTROLLER_GEN) object paths=./api/v1alpha1/
+	$(CONTROLLER_GEN) crd paths=./api/v1alpha1/ output:crd:dir=config/crd
 
 ## build-docker-rust: Build Rust/eBPF in Docker (required on macOS)
 build-docker-rust:
@@ -96,6 +109,7 @@ proto:
 docker-build:
 	docker build -t $(DOCKER_IMAGE_AGENT):$(DOCKER_TAG) -f Dockerfile.agent .
 	docker build -t $(DOCKER_IMAGE_DP):$(DOCKER_TAG) -f Dockerfile.dataplane .
+	docker build -t $(DOCKER_IMAGE_OPERATOR):$(DOCKER_TAG) -f Dockerfile.operator .
 
 ## docker-push: Push Docker images to registry
 docker-push:
