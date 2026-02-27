@@ -1,0 +1,18 @@
+apiVersion: v2
+name: novanet-operator
+description: A Helm chart for deploying the NovaNet Operator - manages NovaNet clusters on Kubernetes
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+keywords:
+  - novanet
+  - operator
+  - cni
+  - networking
+  - kubernetes
+home: https://github.com/piwi3910/novanet
+sources:
+  - https://github.com/piwi3910/novanet
+maintainers:
+  - name: piwi3910
+    url: https://github.com/piwi3910

@@ -1,0 +1,12 @@
+FROM golang:1.26-alpine AS builder
+WORKDIR /app
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o novanet-operator ./cmd/novanet-operator/
+
+FROM gcr.io/distroless/static:nonroot
+WORKDIR /
+COPY --from=builder /app/novanet-operator .
+USER 65532:65532
+ENTRYPOINT ["/novanet-operator"]

@@ -28,3 +28,4 @@ credentials.json
 /novanet-agent
 /novanet-cni
 /novanetctl
+/novanet-operator
