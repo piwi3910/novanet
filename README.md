@@ -1,9 +1,15 @@
-# NovaNet
+<p align="center">
+  <img src="novanet-logo-light.svg" alt="NovaNet" width="480">
+</p>
 
-[![CI](https://github.com/piwi3910/novanet/actions/workflows/ci.yml/badge.svg)](https://github.com/piwi3910/novanet/actions/workflows/ci.yml)
-[![Release](https://github.com/piwi3910/novanet/actions/workflows/release.yml/badge.svg)](https://github.com/piwi3910/novanet/actions/workflows/release.yml)
-[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
-[![Go Version](https://img.shields.io/github/go-mod/go-version/piwi3910/novanet)](go.mod)
+<p align="center">
+  <a href="https://github.com/piwi3910/novanet/actions/workflows/ci.yml"><img src="https://github.com/piwi3910/novanet/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://github.com/piwi3910/novanet/actions/workflows/release.yml"><img src="https://github.com/piwi3910/novanet/actions/workflows/release.yml/badge.svg" alt="Release"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-Apache_2.0-blue.svg" alt="License"></a>
+  <a href="go.mod"><img src="https://img.shields.io/github/go-mod/go-version/piwi3910/novanet" alt="Go Version"></a>
+</p>
+
+---
 
 **NovaNet** is a high-performance, eBPF-based Kubernetes CNI (Container Network Interface) that provides secure pod-to-pod connectivity, identity-based L3/L4 network policy enforcement, and real-time flow visibility.
 

@@ -1,4 +1,6 @@
-# NovaNet Documentation
+<p align="center">
+  <img src="assets/novanet-logo-light.svg" alt="NovaNet" width="480">
+</p>
 
 **NovaNet** is a high-performance, eBPF-based Kubernetes CNI providing secure pod-to-pod connectivity, identity-based L3/L4 network policy enforcement, and real-time flow visibility.
 
