@@ -26,8 +26,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN rustup toolchain install nightly && \
     rustup component add rust-src --toolchain nightly
 
-# Always add cross-compilation target (unconditional to avoid cache issues).
-RUN rustup target add aarch64-unknown-linux-gnu
+# Always add cross-compilation target to both stable and nightly toolchains.
+# The dataplane workspace uses rust-toolchain.toml to force nightly, so the
+# target must be available on nightly for the userspace build.
+RUN rustup target add aarch64-unknown-linux-gnu && \
+    rustup target add aarch64-unknown-linux-gnu --toolchain nightly
 
 # Install bpf-linker for eBPF linking.
 RUN cargo install bpf-linker
