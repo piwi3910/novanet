@@ -10,27 +10,24 @@ FROM --platform=$BUILDPLATFORM rust:bookworm AS builder
 
 ARG TARGETARCH
 
-# Install system dependencies for eBPF compilation.
-# For arm64 targets, install the cross-compilation toolchain.
+# Install system dependencies for eBPF and cross-compilation.
+# gcc-aarch64-linux-gnu is always installed so both platform variants
+# share the same cached layers (avoids Docker BuildKit cache divergence).
 RUN apt-get update && apt-get install -y --no-install-recommends \
     clang \
     llvm \
     libelf-dev \
     pkg-config \
     protobuf-compiler \
-    && if [ "$TARGETARCH" = "arm64" ]; then \
-        apt-get install -y --no-install-recommends gcc-aarch64-linux-gnu; \
-    fi \
+    gcc-aarch64-linux-gnu \
     && rm -rf /var/lib/apt/lists/*
 
 # Install nightly toolchain (required for -Z build-std=core in eBPF builds).
 RUN rustup toolchain install nightly && \
     rustup component add rust-src --toolchain nightly
 
-# Add cross-compilation target for arm64.
-RUN if [ "$TARGETARCH" = "arm64" ]; then \
-        rustup target add aarch64-unknown-linux-gnu; \
-    fi
+# Always add cross-compilation target (unconditional to avoid cache issues).
+RUN rustup target add aarch64-unknown-linux-gnu
 
 # Install bpf-linker for eBPF linking.
 RUN cargo install bpf-linker
