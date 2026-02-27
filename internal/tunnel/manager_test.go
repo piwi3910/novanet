@@ -84,7 +84,7 @@ func TestNewManager(t *testing.T) {
 func TestAddGeneveTunnel(t *testing.T) {
 	m, dp := testManager("geneve")
 
-	err := m.AddTunnel("node-2", "10.0.0.2", "10.244.2.0/24")
+	err := m.AddTunnel(context.Background(), "node-2", "10.0.0.2", "10.244.2.0/24")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -117,7 +117,7 @@ func TestAddGeneveTunnel(t *testing.T) {
 func TestAddVxlanTunnel(t *testing.T) {
 	m, _ := testManager("vxlan")
 
-	err := m.AddTunnel("node-2", "10.0.0.2", "10.244.2.0/24")
+	err := m.AddTunnel(context.Background(), "node-2", "10.0.0.2", "10.244.2.0/24")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -130,7 +130,7 @@ func TestAddVxlanTunnel(t *testing.T) {
 func TestAddTunnelUnsupportedProtocol(t *testing.T) {
 	m := NewManager("wireguard", net.ParseIP("10.0.0.1"), 100, nil, testLogger())
 
-	err := m.AddTunnel("node-2", "10.0.0.2", "10.244.2.0/24")
+	err := m.AddTunnel(context.Background(), "node-2", "10.0.0.2", "10.244.2.0/24")
 	if err == nil {
 		t.Fatal("expected error for unsupported protocol")
 	}
@@ -139,8 +139,8 @@ func TestAddTunnelUnsupportedProtocol(t *testing.T) {
 func TestAddTunnelUpdate(t *testing.T) {
 	m, dp := testManager("geneve")
 
-	m.AddTunnel("node-2", "10.0.0.2", "10.244.2.0/24")
-	m.AddTunnel("node-2", "10.0.0.3", "10.244.2.0/24") // Update with new IP.
+	m.AddTunnel(context.Background(), "node-2", "10.0.0.2", "10.244.2.0/24")
+	m.AddTunnel(context.Background(), "node-2", "10.0.0.3", "10.244.2.0/24") // Update with new IP.
 
 	if m.Count() != 1 {
 		t.Fatalf("expected 1 tunnel after update, got %d", m.Count())
@@ -165,8 +165,8 @@ func TestAddTunnelUpdate(t *testing.T) {
 func TestRemoveTunnel(t *testing.T) {
 	m, dp := testManager("geneve")
 
-	m.AddTunnel("node-2", "10.0.0.2", "10.244.2.0/24")
-	err := m.RemoveTunnel("node-2")
+	m.AddTunnel(context.Background(), "node-2", "10.0.0.2", "10.244.2.0/24")
+	err := m.RemoveTunnel(context.Background(), "node-2")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -185,7 +185,7 @@ func TestRemoveTunnel(t *testing.T) {
 func TestRemoveNonExistentTunnel(t *testing.T) {
 	m, _ := testManager("geneve")
 
-	err := m.RemoveTunnel("nonexistent")
+	err := m.RemoveTunnel(context.Background(), "nonexistent")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -202,7 +202,7 @@ func TestGetTunnelNotFound(t *testing.T) {
 
 func TestGetTunnelReturnsCopy(t *testing.T) {
 	m, _ := testManager("geneve")
-	m.AddTunnel("node-2", "10.0.0.2", "10.244.2.0/24")
+	m.AddTunnel(context.Background(), "node-2", "10.0.0.2", "10.244.2.0/24")
 
 	info, _ := m.GetTunnel("node-2")
 	info.NodeIP = "modified"
@@ -216,9 +216,9 @@ func TestGetTunnelReturnsCopy(t *testing.T) {
 func TestListTunnels(t *testing.T) {
 	m, _ := testManager("geneve")
 
-	m.AddTunnel("node-2", "10.0.0.2", "10.244.2.0/24")
-	m.AddTunnel("node-3", "10.0.0.3", "10.244.3.0/24")
-	m.AddTunnel("node-4", "10.0.0.4", "10.244.4.0/24")
+	m.AddTunnel(context.Background(), "node-2", "10.0.0.2", "10.244.2.0/24")
+	m.AddTunnel(context.Background(), "node-3", "10.0.0.3", "10.244.3.0/24")
+	m.AddTunnel(context.Background(), "node-4", "10.0.0.4", "10.244.4.0/24")
 
 	tunnels := m.ListTunnels()
 	if len(tunnels) != 3 {
@@ -282,7 +282,7 @@ func TestConcurrentAccess(t *testing.T) {
 	for i := range 20 {
 		wg.Go(func() {
 			name := "node-" + string(rune('a'+i%26))
-			m.AddTunnel(name, "10.0.0."+string(rune('1'+i%9)), "10.244.0.0/24")
+			m.AddTunnel(context.Background(), name, "10.0.0."+string(rune('1'+i%9)), "10.244.0.0/24")
 		})
 	}
 
@@ -298,7 +298,7 @@ func TestConcurrentAccess(t *testing.T) {
 func TestAddTunnelWithNilDPClient(t *testing.T) {
 	m := NewManager("geneve", net.ParseIP("10.0.0.1"), 100, nil, testLogger())
 
-	err := m.AddTunnel("node-2", "10.0.0.2", "10.244.2.0/24")
+	err := m.AddTunnel(context.Background(), "node-2", "10.0.0.2", "10.244.2.0/24")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

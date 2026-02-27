@@ -60,29 +60,12 @@ type NovaRouteConfig struct {
 
 	// Protocol selects the routing protocol: "bgp" or "ospf".
 	Protocol string `json:"protocol"`
-
-	// TORPeers is a list of TOR/spine switch BGP peers that every node
-	// should establish eBGP sessions with (in addition to node-to-node mesh).
-	TORPeers []TORPeer `json:"tor_peers,omitempty"`
-}
-
-// TORPeer defines an external BGP peer (e.g., TOR switch or spine router).
-type TORPeer struct {
-	// Address is the peer's IP address.
-	Address string `json:"address"`
-
-	// AS is the peer's autonomous system number.
-	AS uint32 `json:"as"`
 }
 
 // EgressConfig holds egress control settings.
 type EgressConfig struct {
 	// MasqueradeEnabled controls whether SNAT is applied to pod→external traffic.
 	MasqueradeEnabled bool `json:"masquerade_enabled"`
-
-	// MasqueradeInterface is the interface whose IP is used for SNAT.
-	// Empty means use the node's default interface.
-	MasqueradeInterface string `json:"masquerade_interface"`
 }
 
 // PolicyConfig holds policy enforcement settings.

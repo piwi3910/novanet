@@ -59,7 +59,7 @@ build-ebpf-native:
 		--target bpfel-unknown-none -Z build-std=core --release
 
 ## test: Run all tests
-test: test-go
+test: test-go test-rust
 
 ## test-go: Run Go unit tests with race detection
 test-go:
@@ -71,7 +71,7 @@ test-rust:
 	cd dataplane && $(CARGO) test --package novanet-common
 
 ## lint: Run linters
-lint: lint-go
+lint: lint-go lint-rust
 
 lint-go:
 	$(GO) vet ./...
@@ -79,8 +79,10 @@ lint-go:
 		echo "Code is not formatted:"; gofmt -s -l .; exit 1; \
 	fi
 
+## lint-rust: Run Rust linters (clippy + fmt check)
 lint-rust:
-	cd dataplane && $(CARGO) clippy --all-targets -- -D warnings
+	cd dataplane && $(CARGO) fmt --all -- --check
+	cd dataplane && $(CARGO) clippy --package novanet-common --package novanet-dataplane -- -D warnings
 
 ## proto: Generate protobuf Go code
 proto:

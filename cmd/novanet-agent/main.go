@@ -64,8 +64,7 @@ const (
 	configKeyClusterCIDRPL    uint32 = 4
 	configKeyDefaultDeny      uint32 = 5
 	configKeyMasqueradeEnable uint32 = 6
-	configKeySNATIP           uint32 = 7 // Reserved for eBPF-level SNAT (currently using iptables fallback).
-	// Pod CIDR uses keys 8 and 9 (not defined in Rust yet, added here).
+	configKeySNATIP    uint32 = 7 // Reserved for eBPF-level SNAT (currently using iptables fallback).
 	configKeyPodCIDRIP uint32 = 8
 	configKeyPodCIDRPL uint32 = 9
 
@@ -1267,22 +1266,6 @@ func main() {
 			zap.Uint32("local_as", localAS),
 			zap.String("router_id", routerID))
 
-		// Establish eBGP sessions with TOR/spine switches.
-		for _, tor := range cfg.NovaRoute.TORPeers {
-			if err := nrClient.ApplyPeer(ctx, tor.Address, tor.AS); err != nil {
-				logger.Error("failed to apply TOR peer",
-					zap.Error(err),
-					zap.String("address", tor.Address),
-					zap.Uint32("as", tor.AS),
-				)
-			} else {
-				logger.Info("TOR eBGP peer configured",
-					zap.String("address", tor.Address),
-					zap.Uint32("as", tor.AS),
-				)
-			}
-		}
-
 		// Advertise this node's PodCIDR.
 		if err := nrClient.AdvertisePrefix(ctx, *podCIDR); err != nil {
 			logger.Fatal("failed to advertise PodCIDR", zap.Error(err))
@@ -1664,7 +1647,7 @@ func watchNodes(ctx context.Context, logger *zap.Logger, k8sClient *kubernetes.C
 			}
 
 			// Create tunnel to remote node.
-			if err := tunnelMgr.AddTunnel(node.Name, nodeIP, node.Spec.PodCIDR); err != nil {
+			if err := tunnelMgr.AddTunnel(ctx, node.Name, nodeIP, node.Spec.PodCIDR); err != nil {
 				logger.Error("failed to create tunnel",
 					zap.Error(err),
 					zap.String("node", node.Name),
@@ -1736,7 +1719,7 @@ func watchNodes(ctx context.Context, logger *zap.Logger, k8sClient *kubernetes.C
 					})
 				}
 
-				if err := tunnelMgr.RemoveTunnel(t.NodeName); err != nil {
+				if err := tunnelMgr.RemoveTunnel(ctx, t.NodeName); err != nil {
 					logger.Error("failed to remove tunnel for departed node",
 						zap.Error(err),
 						zap.String("node", t.NodeName),

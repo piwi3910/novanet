@@ -37,7 +37,7 @@ The following table lists all configurable values in the NovaNet Helm chart (`de
 | `novaroute.socket` | `"/run/novaroute/novaroute.sock"` | Path to the NovaRoute gRPC Unix socket. |
 | `novaroute.token` | `""` | Authentication token for registering with NovaRoute as the `"novanet"` owner. |
 | `novaroute.protocol` | `"bgp"` | Routing protocol to use. `"bgp"` for eBGP peering or `"ospf"` for OSPF area injection. |
-| `novaroute.torPeers` | `[]` | List of Top-of-Rack switch peers for BGP. Each entry has `address` and `asn` fields. |
+
 
 ### Egress Configuration
 
@@ -201,11 +201,6 @@ novaroute:
   socket: "/run/novaroute/novaroute.sock"
   token: "novanet-auth-token"
   protocol: "bgp"
-  torPeers:
-    - address: "10.0.0.1"
-      asn: 65000
-    - address: "10.0.0.2"
-      asn: 65000
 
 egress:
   masqueradeEnabled: true

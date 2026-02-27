@@ -82,11 +82,6 @@ novaroute:
   socket: "/run/novaroute/novaroute.sock"
   token: "novanet-auth-token"
   protocol: "bgp"
-  torPeers:
-    - address: "10.0.0.1"
-      asn: 65000
-    - address: "10.0.0.2"
-      asn: 65000
 ```
 
 ### Configuration Fields
@@ -97,7 +92,6 @@ novaroute:
 | `novaroute.socket` | Yes | Path to the NovaRoute gRPC Unix socket. Default: `/run/novaroute/novaroute.sock` |
 | `novaroute.token` | Yes | Authentication token. NovaRoute validates this when NovaNet registers as owner `"novanet"`. |
 | `novaroute.protocol` | Yes | Routing protocol: `"bgp"` or `"ospf"`. |
-| `novaroute.torPeers` | For BGP | List of ToR/spine switch peers with `address` and `asn` fields. |
 
 ### Authentication
 
