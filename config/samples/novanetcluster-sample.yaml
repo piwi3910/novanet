@@ -1,0 +1,33 @@
+apiVersion: novanet.io/v1alpha1
+kind: NovaNetCluster
+metadata:
+  name: novanet
+  namespace: nova-system
+spec:
+  version: "v0.1.0"
+  agent:
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+      limits:
+        cpu: 500m
+        memory: 256Mi
+    logLevel: info
+  dataplane:
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+      limits:
+        cpu: "1"
+        memory: 512Mi
+  networking:
+    clusterCIDR: "10.244.0.0/16"
+    tunnelProtocol: geneve
+    routingMode: overlay
+  novaRouteIntegration:
+    enabled: false
+  updateStrategy:
+    type: RollingUpdate
+    maxUnavailable: 1
