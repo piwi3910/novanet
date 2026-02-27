@@ -9,7 +9,7 @@
 #   docker cp novanet-extract:/build/dataplane/target/release/novanet-dataplane bin/
 #   docker rm novanet-extract
 
-FROM rustlang/rust:nightly-2025-02-01-bookworm AS builder
+FROM rust:bookworm AS builder
 
 # Install system dependencies for eBPF compilation and protobuf.
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -21,11 +21,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     protobuf-compiler \
     && rm -rf /var/lib/apt/lists/*
 
+# Install nightly toolchain (required for -Z build-std=core in eBPF builds).
+RUN rustup toolchain install nightly && \
+    rustup component add rust-src --toolchain nightly
+
 # Install bpf-linker for eBPF linking.
 RUN cargo install bpf-linker
-
-# Add the eBPF target.
-RUN rustup component add rust-src
 
 WORKDIR /build
 
@@ -35,11 +36,11 @@ COPY api/ api/
 
 WORKDIR /build/dataplane
 
-# Stage 1: Build eBPF programs targeting bpfel-unknown-none.
+# Stage 1: Build eBPF programs targeting bpfel-unknown-none (requires nightly).
 RUN cargo +nightly build --package novanet-ebpf \
     --target bpfel-unknown-none \
     -Z build-std=core \
     --release
 
-# Stage 2: Build the userspace dataplane binary.
+# Stage 2: Build the userspace dataplane binary (stable).
 RUN cargo build --package novanet-dataplane --release

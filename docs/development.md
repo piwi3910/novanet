@@ -21,7 +21,7 @@ go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
 Building the eBPF dataplane requires a Linux environment. On macOS, use Docker.
 
 **Native Linux requirements:**
-- Rust stable + nightly (`rustup toolchain install nightly-2025-02-01`)
+- Rust stable + nightly (`rustup toolchain install nightly`)
 - `bpf-linker` (`cargo install bpf-linker`)
 - `clang`, `llvm`, `libelf-dev`, `linux-headers`
 
