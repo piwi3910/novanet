@@ -149,12 +149,12 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Pull image
-        run: docker pull ${{ matrix.image }}:sha-${GITHUB_SHA::7}
+        run: docker pull ${{ matrix.image }}:latest
 
       - name: Run Trivy vulnerability scanner
         uses: aquasecurity/trivy-action@0.28.0
         with:
-          image-ref: ${{ matrix.image }}:sha-${GITHUB_SHA::7}
+          image-ref: ${{ matrix.image }}:latest
           format: table
           exit-code: 0
           severity: CRITICAL,HIGH
