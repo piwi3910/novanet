@@ -115,6 +115,7 @@ docker-build:
 docker-push:
 	docker push $(DOCKER_IMAGE_AGENT):$(DOCKER_TAG)
 	docker push $(DOCKER_IMAGE_DP):$(DOCKER_TAG)
+	docker push $(DOCKER_IMAGE_OPERATOR):$(DOCKER_TAG)
 
 ## clean: Remove build artifacts
 clean:
