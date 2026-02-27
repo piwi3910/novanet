@@ -87,7 +87,7 @@ git clone https://github.com/piwi3910/novanet.git
 cd novanet
 
 helm install novanet ./deploy/helm/novanet \
-  -n novanet --create-namespace \
+  -n nova-system --create-namespace \
   --set config.clusterCIDR="10.42.0.0/16"
 ```
 
@@ -95,10 +95,10 @@ helm install novanet ./deploy/helm/novanet \
 
 ```bash
 # All pods should be 2/2 Running
-kubectl get pods -n novanet -o wide
+kubectl get pods -n nova-system -o wide
 
 # Check agent status
-kubectl exec -n novanet ds/novanet -c agent -- novanetctl status
+kubectl exec -n nova-system ds/novanet -c agent -- novanetctl status
 
 # Test connectivity
 kubectl run test-a --image=busybox --restart=Never -- sleep 3600

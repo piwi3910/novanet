@@ -7,7 +7,7 @@ set -euo pipefail
 # Configuration
 ###############################################################################
 export KUBECONFIG="${KUBECONFIG:-/etc/rancher/k3s/k3s.yaml}"
-export NOVANET_NS="${NOVANET_NS:-novanet}"
+export NOVANET_NS="${NOVANET_NS:-nova-system}"
 export TEST_NS="${TEST_NS:-novanet-test}"
 export TEST_IMAGE="${TEST_IMAGE:-nicolaka/netshoot:latest}"
 export ALPINE_IMAGE="${ALPINE_IMAGE:-alpine:3.19}"

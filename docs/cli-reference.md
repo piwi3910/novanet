@@ -204,12 +204,12 @@ To use novanetctl from outside the pod, find the socket path and connect:
 
 ```bash
 # Find the novanet pod on this node
-POD=$(kubectl get pods -n novanet -l app.kubernetes.io/name=novanet \
+POD=$(kubectl get pods -n nova-system -l app.kubernetes.io/name=novanet \
   --field-selector spec.nodeName=$(hostname) -o name | head -1)
 
 # Execute inside the pod
-kubectl exec -n novanet $POD -c agent -- novanetctl status
-kubectl exec -n novanet $POD -c agent -- novanetctl flows
+kubectl exec -n nova-system $POD -c agent -- novanetctl status
+kubectl exec -n nova-system $POD -c agent -- novanetctl flows
 ```
 
 ---

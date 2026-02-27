@@ -754,7 +754,7 @@ collect_metadata() {
     node_count=$(kubectl get nodes --no-headers 2>/dev/null | wc -l | tr -d ' ')
 
     local novanet_image
-    novanet_image=$(kubectl get daemonset -n novanet -o jsonpath='{.items[0].spec.template.spec.containers[0].image}' 2>/dev/null || echo "unknown")
+    novanet_image=$(kubectl get daemonset -n nova-system -o jsonpath='{.items[0].spec.template.spec.containers[0].image}' 2>/dev/null || echo "unknown")
 
     jq -n \
         --arg ts "$TIMESTAMP" \

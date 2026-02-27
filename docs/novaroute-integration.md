@@ -333,7 +333,7 @@ If the socket does not exist:
 **NovaNet agent fails to connect to NovaRoute:**
 - Verify NovaRoute pod is running: `kubectl get pods -n novaroute`
 - Verify socket exists: `ls -la /run/novaroute/novaroute.sock`
-- Check agent logs for connection errors: `kubectl logs -n novanet <pod> -c novanet-agent`
+- Check agent logs for connection errors: `kubectl logs -n nova-system <pod> -c novanet-agent`
 
 **Authentication failure:**
 - Verify the token in NovaNet config matches the NovaRoute owner configuration

@@ -8,7 +8,7 @@ Integration test suite for NovaNet CNI. These tests run against a real multi-nod
   - Masters: `192.168.100.11-13`
   - Workers: `192.168.100.21-25`
 - K3s with `KUBECONFIG=/etc/rancher/k3s/k3s.yaml`
-- NovaNet deployed as a DaemonSet in namespace `novanet`
+- NovaNet deployed as a DaemonSet in namespace `nova-system`
 - `kubectl` configured and able to reach the cluster
 - `sshpass` installed on the machine running the tests
 - SSH root access to cluster nodes (for route/interface inspection)
@@ -59,7 +59,7 @@ Override defaults via environment variables:
 
 ```bash
 export KUBECONFIG=/path/to/kubeconfig
-export NOVANET_NS=novanet            # Namespace where NovaNet is deployed
+export NOVANET_NS=nova-system        # Namespace where NovaNet is deployed
 export TEST_NS=novanet-test          # Namespace for test pods (created/deleted by tests)
 export TEST_IMAGE=nicolaka/netshoot  # Image for test pods
 export POD_READY_TIMEOUT=120         # Seconds to wait for pods to become ready
