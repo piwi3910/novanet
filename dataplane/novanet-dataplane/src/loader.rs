@@ -26,11 +26,8 @@ use tracing::info;
 /// `RingBuf` handle for reading flow events. The ring buffer is returned
 /// separately because it needs to be polled in a dedicated task.
 #[cfg(target_os = "linux")]
-pub fn load_ebpf(
-    bpf_object_path: &Path,
-) -> Result<(MapManager, Option<RingBuf<MapData>>)> {
-    let mut ebpf = Ebpf::load_file(bpf_object_path)
-        .context("Failed to load eBPF object file")?;
+pub fn load_ebpf(bpf_object_path: &Path) -> Result<(MapManager, Option<RingBuf<MapData>>)> {
+    let mut ebpf = Ebpf::load_file(bpf_object_path).context("Failed to load eBPF object file")?;
 
     // Initialize aya-log for eBPF program logging.
     if let Err(e) = aya_log::EbpfLogger::init(&mut ebpf) {
@@ -99,7 +96,15 @@ pub fn load_ebpf(
         .try_into()
         .context("Failed to convert FLOW_EVENTS ring buffer")?;
 
-    let real_maps = RealMaps::new(endpoints, policies, tunnels, config, egress, drop_counters, ebpf);
+    let real_maps = RealMaps::new(
+        endpoints,
+        policies,
+        tunnels,
+        config,
+        egress,
+        drop_counters,
+        ebpf,
+    );
 
     let manager = MapManager::new_real(real_maps);
 

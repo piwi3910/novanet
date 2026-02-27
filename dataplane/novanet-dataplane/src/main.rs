@@ -75,8 +75,8 @@ async fn main() -> Result<()> {
         #[cfg(target_os = "linux")]
         {
             info!(path = %args.bpf_object.display(), "Loading eBPF programs");
-            let (mgr, flow_rx) = loader::load_ebpf(&args.bpf_object)
-                .context("Failed to load eBPF programs")?;
+            let (mgr, flow_rx) =
+                loader::load_ebpf(&args.bpf_object).context("Failed to load eBPF programs")?;
 
             // Start the flow event reader in the background.
             if let Some(rx) = flow_rx {
@@ -112,8 +112,7 @@ async fn main() -> Result<()> {
     }
 
     // Bind the Unix domain socket.
-    let uds = UnixListener::bind(&args.socket)
-        .context("Failed to bind Unix socket")?;
+    let uds = UnixListener::bind(&args.socket).context("Failed to bind Unix socket")?;
     let uds_stream = UnixListenerStream::new(uds);
 
     info!(socket = %args.socket.display(), "gRPC server listening");

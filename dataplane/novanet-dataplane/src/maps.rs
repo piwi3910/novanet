@@ -164,11 +164,7 @@ impl MapManager {
 
     // -- Egress policy operations --
 
-    pub fn upsert_egress_policy(
-        &self,
-        key: EgressKey,
-        value: EgressValue,
-    ) -> anyhow::Result<()> {
+    pub fn upsert_egress_policy(&self, key: EgressKey, value: EgressValue) -> anyhow::Result<()> {
         match &self.inner {
             MapManagerInner::Mock(m) => m.upsert_egress_policy(key, value),
             #[cfg(target_os = "linux")]
@@ -349,19 +345,32 @@ impl MockMaps {
     }
 
     fn upsert_endpoint(&self, key: EndpointKey, value: EndpointValue) -> anyhow::Result<()> {
-        debug!(ip = key.ip, identity = value.identity, "mock: upsert endpoint");
-        self.endpoints.write().expect("endpoints lock poisoned").insert(key.ip, value);
+        debug!(
+            ip = key.ip,
+            identity = value.identity,
+            "mock: upsert endpoint"
+        );
+        self.endpoints
+            .write()
+            .expect("endpoints lock poisoned")
+            .insert(key.ip, value);
         Ok(())
     }
 
     fn delete_endpoint(&self, key: &EndpointKey) -> anyhow::Result<()> {
         debug!(ip = key.ip, "mock: delete endpoint");
-        self.endpoints.write().expect("endpoints lock poisoned").remove(&key.ip);
+        self.endpoints
+            .write()
+            .expect("endpoints lock poisoned")
+            .remove(&key.ip);
         Ok(())
     }
 
     fn endpoint_count(&self) -> usize {
-        self.endpoints.read().expect("endpoints lock poisoned").len()
+        self.endpoints
+            .read()
+            .expect("endpoints lock poisoned")
+            .len()
     }
 
     fn upsert_policy(&self, key: PolicyKey, value: PolicyValue) -> anyhow::Result<()> {
@@ -374,7 +383,10 @@ impl MockMaps {
             "mock: upsert policy"
         );
         let flat: PolicyKeyFlat = (&key).into();
-        self.policies.write().expect("policies lock poisoned").insert(flat, value);
+        self.policies
+            .write()
+            .expect("policies lock poisoned")
+            .insert(flat, value);
         Ok(())
     }
 
@@ -385,14 +397,22 @@ impl MockMaps {
             "mock: delete policy"
         );
         let flat: PolicyKeyFlat = key.into();
-        self.policies.write().expect("policies lock poisoned").remove(&flat);
+        self.policies
+            .write()
+            .expect("policies lock poisoned")
+            .remove(&flat);
         Ok(())
     }
 
     #[cfg(test)]
     fn get_policy(&self, key: &PolicyKey) -> anyhow::Result<Option<PolicyValue>> {
         let flat: PolicyKeyFlat = key.into();
-        Ok(self.policies.read().expect("policies lock poisoned").get(&flat).copied())
+        Ok(self
+            .policies
+            .read()
+            .expect("policies lock poisoned")
+            .get(&flat)
+            .copied())
     }
 
     fn policy_count(&self) -> usize {
@@ -440,14 +460,24 @@ impl MockMaps {
     }
 
     fn upsert_tunnel(&self, key: TunnelKey, value: TunnelValue) -> anyhow::Result<()> {
-        debug!(node_ip = key.node_ip, vni = value.vni, "mock: upsert tunnel");
-        self.tunnels.write().expect("tunnels lock poisoned").insert(key.node_ip, value);
+        debug!(
+            node_ip = key.node_ip,
+            vni = value.vni,
+            "mock: upsert tunnel"
+        );
+        self.tunnels
+            .write()
+            .expect("tunnels lock poisoned")
+            .insert(key.node_ip, value);
         Ok(())
     }
 
     fn delete_tunnel(&self, key: &TunnelKey) -> anyhow::Result<()> {
         debug!(node_ip = key.node_ip, "mock: delete tunnel");
-        self.tunnels.write().expect("tunnels lock poisoned").remove(&key.node_ip);
+        self.tunnels
+            .write()
+            .expect("tunnels lock poisoned")
+            .remove(&key.node_ip);
         Ok(())
     }
 
@@ -465,7 +495,12 @@ impl MockMaps {
     }
 
     fn get_config(&self, key: u32) -> anyhow::Result<Option<u64>> {
-        Ok(self.config.read().expect("config lock poisoned").get(&key).copied())
+        Ok(self
+            .config
+            .read()
+            .expect("config lock poisoned")
+            .get(&key)
+            .copied())
     }
 
     fn upsert_egress_policy(&self, key: EgressKey, value: EgressValue) -> anyhow::Result<()> {
@@ -477,7 +512,10 @@ impl MockMaps {
             "mock: upsert egress policy"
         );
         let flat: EgressKeyFlat = (&key).into();
-        self.egress.write().expect("egress lock poisoned").insert(flat, value);
+        self.egress
+            .write()
+            .expect("egress lock poisoned")
+            .insert(flat, value);
         Ok(())
     }
 
@@ -488,32 +526,41 @@ impl MockMaps {
             "mock: delete egress policy"
         );
         let flat: EgressKeyFlat = key.into();
-        self.egress.write().expect("egress lock poisoned").remove(&flat);
+        self.egress
+            .write()
+            .expect("egress lock poisoned")
+            .remove(&flat);
         Ok(())
     }
 
     fn attached_programs(&self) -> Vec<AttachedProgramInfo> {
-        self.attached.read().expect("attached lock poisoned").clone()
+        self.attached
+            .read()
+            .expect("attached lock poisoned")
+            .clone()
     }
 
-    fn attach_program(
-        &self,
-        interface: &str,
-        attach_type: AttachDirection,
-    ) -> anyhow::Result<()> {
+    fn attach_program(&self, interface: &str, attach_type: AttachDirection) -> anyhow::Result<()> {
         let type_str = match attach_type {
             AttachDirection::Ingress => "ingress",
             AttachDirection::Egress => "egress",
         };
         let mut attached = self.attached.write().expect("attached lock poisoned");
-        let mut prog_id = self.next_prog_id.write().expect("next_prog_id lock poisoned");
+        let mut prog_id = self
+            .next_prog_id
+            .write()
+            .expect("next_prog_id lock poisoned");
 
         // Check if already attached.
         if attached
             .iter()
             .any(|p| p.interface == interface && p.attach_type == type_str)
         {
-            warn!(interface, attach_type = type_str, "mock: program already attached");
+            warn!(
+                interface,
+                attach_type = type_str,
+                "mock: program already attached"
+            );
             return Ok(());
         }
 
@@ -524,15 +571,16 @@ impl MockMaps {
             attach_type: type_str.to_string(),
             program_id: id,
         });
-        info!(interface, attach_type = type_str, program_id = id, "mock: attached program");
+        info!(
+            interface,
+            attach_type = type_str,
+            program_id = id,
+            "mock: attached program"
+        );
         Ok(())
     }
 
-    fn detach_program(
-        &self,
-        interface: &str,
-        attach_type: AttachDirection,
-    ) -> anyhow::Result<()> {
+    fn detach_program(&self, interface: &str, attach_type: AttachDirection) -> anyhow::Result<()> {
         let type_str = match attach_type {
             AttachDirection::Ingress => "ingress",
             AttachDirection::Egress => "egress",
@@ -542,7 +590,11 @@ impl MockMaps {
         attached.retain(|p| !(p.interface == interface && p.attach_type == type_str));
         let after = attached.len();
         if before == after {
-            warn!(interface, attach_type = type_str, "mock: program not found for detach");
+            warn!(
+                interface,
+                attach_type = type_str,
+                "mock: program not found for detach"
+            );
         } else {
             info!(interface, attach_type = type_str, "mock: detached program");
         }
@@ -705,8 +757,14 @@ mod tests {
             _pad: [0],
             dst_port: 80,
         };
-        mgr.upsert_policy(key, PolicyValue { action: ACTION_ALLOW, _pad: [0; 3] })
-            .unwrap();
+        mgr.upsert_policy(
+            key,
+            PolicyValue {
+                action: ACTION_ALLOW,
+                _pad: [0; 3],
+            },
+        )
+        .unwrap();
         assert_eq!(mgr.policy_count(), 1);
 
         mgr.delete_policy(&key).unwrap();
@@ -720,16 +778,43 @@ mod tests {
         // Initial sync: add 3 policies.
         let initial = vec![
             (
-                PolicyKey { src_identity: 1, dst_identity: 2, protocol: 6, _pad: [0], dst_port: 80 },
-                PolicyValue { action: ACTION_ALLOW, _pad: [0; 3] },
+                PolicyKey {
+                    src_identity: 1,
+                    dst_identity: 2,
+                    protocol: 6,
+                    _pad: [0],
+                    dst_port: 80,
+                },
+                PolicyValue {
+                    action: ACTION_ALLOW,
+                    _pad: [0; 3],
+                },
             ),
             (
-                PolicyKey { src_identity: 1, dst_identity: 3, protocol: 6, _pad: [0], dst_port: 443 },
-                PolicyValue { action: ACTION_ALLOW, _pad: [0; 3] },
+                PolicyKey {
+                    src_identity: 1,
+                    dst_identity: 3,
+                    protocol: 6,
+                    _pad: [0],
+                    dst_port: 443,
+                },
+                PolicyValue {
+                    action: ACTION_ALLOW,
+                    _pad: [0; 3],
+                },
             ),
             (
-                PolicyKey { src_identity: 2, dst_identity: 3, protocol: 17, _pad: [0], dst_port: 53 },
-                PolicyValue { action: ACTION_DENY, _pad: [0; 3] },
+                PolicyKey {
+                    src_identity: 2,
+                    dst_identity: 3,
+                    protocol: 17,
+                    _pad: [0],
+                    dst_port: 53,
+                },
+                PolicyValue {
+                    action: ACTION_DENY,
+                    _pad: [0; 3],
+                },
             ),
         ];
         let (added, removed, updated) = mgr.sync_policies(initial).unwrap();
@@ -741,16 +826,43 @@ mod tests {
         // Second sync: keep first, update second, remove third, add new.
         let second = vec![
             (
-                PolicyKey { src_identity: 1, dst_identity: 2, protocol: 6, _pad: [0], dst_port: 80 },
-                PolicyValue { action: ACTION_ALLOW, _pad: [0; 3] },
+                PolicyKey {
+                    src_identity: 1,
+                    dst_identity: 2,
+                    protocol: 6,
+                    _pad: [0],
+                    dst_port: 80,
+                },
+                PolicyValue {
+                    action: ACTION_ALLOW,
+                    _pad: [0; 3],
+                },
             ),
             (
-                PolicyKey { src_identity: 1, dst_identity: 3, protocol: 6, _pad: [0], dst_port: 443 },
-                PolicyValue { action: ACTION_DENY, _pad: [0; 3] },
+                PolicyKey {
+                    src_identity: 1,
+                    dst_identity: 3,
+                    protocol: 6,
+                    _pad: [0],
+                    dst_port: 443,
+                },
+                PolicyValue {
+                    action: ACTION_DENY,
+                    _pad: [0; 3],
+                },
             ),
             (
-                PolicyKey { src_identity: 5, dst_identity: 6, protocol: 6, _pad: [0], dst_port: 8080 },
-                PolicyValue { action: ACTION_ALLOW, _pad: [0; 3] },
+                PolicyKey {
+                    src_identity: 5,
+                    dst_identity: 6,
+                    protocol: 6,
+                    _pad: [0],
+                    dst_port: 8080,
+                },
+                PolicyValue {
+                    action: ACTION_ALLOW,
+                    _pad: [0; 3],
+                },
             ),
         ];
         let (added, removed, updated) = mgr.sync_policies(second).unwrap();
@@ -768,8 +880,14 @@ mod tests {
         assert_eq!(mgr.tunnel_count(), 0);
 
         mgr.upsert_tunnel(
-            TunnelKey { node_ip: 0xC0A86416 },
-            TunnelValue { ifindex: 5, remote_ip: 0xC0A86416, vni: 1 },
+            TunnelKey {
+                node_ip: 0xC0A86416,
+            },
+            TunnelValue {
+                ifindex: 5,
+                remote_ip: 0xC0A86416,
+                vni: 1,
+            },
         )
         .unwrap();
         assert_eq!(mgr.tunnel_count(), 1);
@@ -778,9 +896,18 @@ mod tests {
     #[test]
     fn tunnel_delete() {
         let mgr = mock_manager();
-        let key = TunnelKey { node_ip: 0xC0A86416 };
-        mgr.upsert_tunnel(key, TunnelValue { ifindex: 5, remote_ip: key.node_ip, vni: 1 })
-            .unwrap();
+        let key = TunnelKey {
+            node_ip: 0xC0A86416,
+        };
+        mgr.upsert_tunnel(
+            key,
+            TunnelValue {
+                ifindex: 5,
+                remote_ip: key.node_ip,
+                vni: 1,
+            },
+        )
+        .unwrap();
         mgr.delete_tunnel(&key).unwrap();
         assert_eq!(mgr.tunnel_count(), 0);
     }
@@ -797,7 +924,10 @@ mod tests {
         mgr.update_config(entries).unwrap();
 
         assert_eq!(mgr.get_config(CONFIG_KEY_MODE).unwrap(), Some(MODE_NATIVE));
-        assert_eq!(mgr.get_config(CONFIG_KEY_NODE_IP).unwrap(), Some(0xC0A86411));
+        assert_eq!(
+            mgr.get_config(CONFIG_KEY_NODE_IP).unwrap(),
+            Some(0xC0A86411)
+        );
         assert_eq!(mgr.get_config(CONFIG_KEY_SNAT_IP).unwrap(), None);
     }
 
@@ -836,7 +966,11 @@ mod tests {
         };
         mgr.upsert_egress_policy(
             key,
-            EgressValue { action: EGRESS_SNAT, _pad: [0; 3], snat_ip: 0xC0A86401 },
+            EgressValue {
+                action: EGRESS_SNAT,
+                _pad: [0; 3],
+                snat_ip: 0xC0A86401,
+            },
         )
         .unwrap();
         mgr.delete_egress_policy(&key).unwrap();
@@ -849,8 +983,10 @@ mod tests {
         let mgr = mock_manager();
         assert_eq!(mgr.attached_programs().len(), 0);
 
-        mgr.attach_program("nv12345678901", AttachDirection::Ingress).unwrap();
-        mgr.attach_program("nv12345678901", AttachDirection::Egress).unwrap();
+        mgr.attach_program("nv12345678901", AttachDirection::Ingress)
+            .unwrap();
+        mgr.attach_program("nv12345678901", AttachDirection::Egress)
+            .unwrap();
 
         let progs = mgr.attached_programs();
         assert_eq!(progs.len(), 2);
@@ -863,19 +999,24 @@ mod tests {
     #[test]
     fn attach_duplicate_is_idempotent() {
         let mgr = mock_manager();
-        mgr.attach_program("eth0", AttachDirection::Ingress).unwrap();
-        mgr.attach_program("eth0", AttachDirection::Ingress).unwrap();
+        mgr.attach_program("eth0", AttachDirection::Ingress)
+            .unwrap();
+        mgr.attach_program("eth0", AttachDirection::Ingress)
+            .unwrap();
         assert_eq!(mgr.attached_programs().len(), 1);
     }
 
     #[test]
     fn detach_program_removes_entry() {
         let mgr = mock_manager();
-        mgr.attach_program("nv12345678901", AttachDirection::Ingress).unwrap();
-        mgr.attach_program("nv12345678901", AttachDirection::Egress).unwrap();
+        mgr.attach_program("nv12345678901", AttachDirection::Ingress)
+            .unwrap();
+        mgr.attach_program("nv12345678901", AttachDirection::Egress)
+            .unwrap();
         assert_eq!(mgr.attached_programs().len(), 2);
 
-        mgr.detach_program("nv12345678901", AttachDirection::Ingress).unwrap();
+        mgr.detach_program("nv12345678901", AttachDirection::Ingress)
+            .unwrap();
         let progs = mgr.attached_programs();
         assert_eq!(progs.len(), 1);
         assert_eq!(progs[0].attach_type, "egress");
@@ -884,7 +1025,8 @@ mod tests {
     #[test]
     fn detach_nonexistent_is_ok() {
         let mgr = mock_manager();
-        mgr.detach_program("nonexistent", AttachDirection::Ingress).unwrap();
+        mgr.detach_program("nonexistent", AttachDirection::Ingress)
+            .unwrap();
     }
 
     // -- Full lifecycle test --
@@ -936,21 +1078,29 @@ mod tests {
                 _pad: [0],
                 dst_port: 0,
             },
-            PolicyValue { action: ACTION_ALLOW, _pad: [0; 3] },
+            PolicyValue {
+                action: ACTION_ALLOW,
+                _pad: [0; 3],
+            },
         )
         .unwrap();
         assert_eq!(mgr.policy_count(), 1);
 
         // Attach programs.
-        mgr.attach_program("nv12345678901", AttachDirection::Ingress).unwrap();
-        mgr.attach_program("nv12345678901", AttachDirection::Egress).unwrap();
+        mgr.attach_program("nv12345678901", AttachDirection::Ingress)
+            .unwrap();
+        mgr.attach_program("nv12345678901", AttachDirection::Egress)
+            .unwrap();
         assert_eq!(mgr.attached_programs().len(), 2);
 
         // Clean up.
-        mgr.delete_endpoint(&EndpointKey { ip: 0x0A2A0501 }).unwrap();
+        mgr.delete_endpoint(&EndpointKey { ip: 0x0A2A0501 })
+            .unwrap();
         assert_eq!(mgr.endpoint_count(), 1);
-        mgr.detach_program("nv12345678901", AttachDirection::Ingress).unwrap();
-        mgr.detach_program("nv12345678901", AttachDirection::Egress).unwrap();
+        mgr.detach_program("nv12345678901", AttachDirection::Ingress)
+            .unwrap();
+        mgr.detach_program("nv12345678901", AttachDirection::Egress)
+            .unwrap();
         assert_eq!(mgr.attached_programs().len(), 0);
     }
 }
@@ -1191,7 +1341,10 @@ impl RealMaps {
     }
 
     fn get_drop_counters(&self) -> StdHashMap<u32, u64> {
-        let map = self.drop_counters.read().expect("drop_counters lock poisoned");
+        let map = self
+            .drop_counters
+            .read()
+            .expect("drop_counters lock poisoned");
         let mut result = StdHashMap::new();
         for idx in 0..DROP_REASON_MAX {
             match map.get(&idx, 0) {
@@ -1211,14 +1364,13 @@ impl RealMaps {
     }
 
     fn attached_programs(&self) -> Vec<AttachedProgramInfo> {
-        self.attached.read().expect("attached lock poisoned").clone()
+        self.attached
+            .read()
+            .expect("attached lock poisoned")
+            .clone()
     }
 
-    fn attach_program(
-        &self,
-        interface: &str,
-        attach_type: AttachDirection,
-    ) -> anyhow::Result<()> {
+    fn attach_program(&self, interface: &str, attach_type: AttachDirection) -> anyhow::Result<()> {
         use aya::programs::{tc, SchedClassifier, TcAttachType};
 
         let type_str = match attach_type {
@@ -1247,8 +1399,8 @@ impl RealMaps {
             }
         } else {
             match attach_type {
-                AttachDirection::Ingress => "tc_egress",  // TC ingress = from pod = K8s egress
-                AttachDirection::Egress => "tc_ingress",  // TC egress = to pod = K8s ingress
+                AttachDirection::Ingress => "tc_egress", // TC ingress = from pod = K8s egress
+                AttachDirection::Egress => "tc_ingress", // TC egress = to pod = K8s ingress
             }
         };
 
@@ -1270,7 +1422,10 @@ impl RealMaps {
         // Without this, the link is stored inside the Program object and
         // could be dropped when the Ebpf mutex guard is released.
         let link = prog.take_link(link_id)?;
-        self._tc_links.lock().expect("tc_links lock poisoned").push((interface.to_string(), type_str.to_string(), link));
+        self._tc_links
+            .lock()
+            .expect("tc_links lock poisoned")
+            .push((interface.to_string(), type_str.to_string(), link));
 
         let mut attached = self.attached.write().expect("attached lock poisoned");
         attached.push(AttachedProgramInfo {
@@ -1290,11 +1445,7 @@ impl RealMaps {
         Ok(())
     }
 
-    fn detach_program(
-        &self,
-        interface: &str,
-        attach_type: AttachDirection,
-    ) -> anyhow::Result<()> {
+    fn detach_program(&self, interface: &str, attach_type: AttachDirection) -> anyhow::Result<()> {
         let type_str = match attach_type {
             AttachDirection::Ingress => "ingress",
             AttachDirection::Egress => "egress",
@@ -1311,9 +1462,17 @@ impl RealMaps {
         links.retain(|(iface, at, _link)| !(iface == interface && at == type_str));
 
         if before == after {
-            warn!(interface, attach_type = type_str, "program not found for detach");
+            warn!(
+                interface,
+                attach_type = type_str,
+                "program not found for detach"
+            );
         } else {
-            info!(interface, attach_type = type_str, "detached program (link dropped)");
+            info!(
+                interface,
+                attach_type = type_str,
+                "detached program (link dropped)"
+            );
         }
 
         Ok(())

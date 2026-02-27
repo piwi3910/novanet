@@ -32,8 +32,7 @@ use novanet_common::*;
 // ---------------------------------------------------------------------------
 
 #[map]
-static ENDPOINTS: HashMap<EndpointKey, EndpointValue> =
-    HashMap::with_max_entries(MAX_ENDPOINTS, 0);
+static ENDPOINTS: HashMap<EndpointKey, EndpointValue> = HashMap::with_max_entries(MAX_ENDPOINTS, 0);
 
 #[map]
 static POLICIES: HashMap<PolicyKey, PolicyValue> = HashMap::with_max_entries(MAX_POLICIES, 0);
@@ -74,9 +73,9 @@ fn check_policy(src_id: u32, dst_id: u32, proto: u8, dst_port: u16) -> Option<u8
     // Try identity pairs: (exact, exact), then (exact, wildcard), then (wildcard, exact).
     // For each pair, try port specificity: (proto, port), (proto, 0), (0, 0).
     let id_pairs: [(u32, u32); 3] = [
-        (src_id, dst_id),  // exact match
-        (src_id, 0),       // wildcard destination (egress deny-all)
-        (0, dst_id),       // wildcard source (ingress deny-all)
+        (src_id, dst_id), // exact match
+        (src_id, 0),      // wildcard destination (egress deny-all)
+        (0, dst_id),      // wildcard source (ingress deny-all)
     ];
 
     // SAFETY: All POLICIES.get() calls below are eBPF map lookups via aya-ebpf;
@@ -366,8 +365,17 @@ fn try_tc_ingress(ctx: &TcContext) -> Result<i32, ()> {
             if default_deny == 1 {
                 inc_drop_counter(DROP_REASON_NO_IDENTITY);
                 emit_flow_event(
-                    src_ip, dst_ip, 0, 0, protocol, src_port, dst_port,
-                    ACTION_DENY, DROP_REASON_NO_IDENTITY, tcp_flags, total_len,
+                    src_ip,
+                    dst_ip,
+                    0,
+                    0,
+                    protocol,
+                    src_port,
+                    dst_port,
+                    ACTION_DENY,
+                    DROP_REASON_NO_IDENTITY,
+                    tcp_flags,
+                    total_len,
                 );
                 return Ok(BPF_TC_ACT_SHOT as i32);
             }
@@ -383,15 +391,33 @@ fn try_tc_ingress(ctx: &TcContext) -> Result<i32, ()> {
         Some(ACTION_DENY) => {
             inc_drop_counter(DROP_REASON_POLICY_DENIED);
             emit_flow_event(
-                src_ip, dst_ip, src_identity, dst_identity, protocol,
-                src_port, dst_port, ACTION_DENY, DROP_REASON_POLICY_DENIED, tcp_flags, total_len,
+                src_ip,
+                dst_ip,
+                src_identity,
+                dst_identity,
+                protocol,
+                src_port,
+                dst_port,
+                ACTION_DENY,
+                DROP_REASON_POLICY_DENIED,
+                tcp_flags,
+                total_len,
             );
             Ok(BPF_TC_ACT_SHOT as i32)
         }
         Some(ACTION_ALLOW) => {
             emit_flow_event(
-                src_ip, dst_ip, src_identity, dst_identity, protocol,
-                src_port, dst_port, ACTION_ALLOW, DROP_REASON_NONE, tcp_flags, total_len,
+                src_ip,
+                dst_ip,
+                src_identity,
+                dst_identity,
+                protocol,
+                src_port,
+                dst_port,
+                ACTION_ALLOW,
+                DROP_REASON_NONE,
+                tcp_flags,
+                total_len,
             );
             Ok(BPF_TC_ACT_OK as i32)
         }
@@ -401,8 +427,17 @@ fn try_tc_ingress(ctx: &TcContext) -> Result<i32, ()> {
             if default_deny == 1 {
                 inc_drop_counter(DROP_REASON_POLICY_DENIED);
                 emit_flow_event(
-                    src_ip, dst_ip, src_identity, dst_identity, protocol,
-                    src_port, dst_port, ACTION_DENY, DROP_REASON_POLICY_DENIED, tcp_flags, total_len,
+                    src_ip,
+                    dst_ip,
+                    src_identity,
+                    dst_identity,
+                    protocol,
+                    src_port,
+                    dst_port,
+                    ACTION_DENY,
+                    DROP_REASON_POLICY_DENIED,
+                    tcp_flags,
+                    total_len,
                 );
                 Ok(BPF_TC_ACT_SHOT as i32)
             } else {
@@ -465,15 +500,33 @@ fn try_tc_egress(ctx: &TcContext) -> Result<i32, ()> {
                 Some(ACTION_DENY) => {
                     inc_drop_counter(DROP_REASON_POLICY_DENIED);
                     emit_flow_event(
-                        src_ip, dst_ip, src_identity, dst_identity, protocol,
-                        src_port, dst_port, ACTION_DENY, DROP_REASON_POLICY_DENIED, tcp_flags, total_len,
+                        src_ip,
+                        dst_ip,
+                        src_identity,
+                        dst_identity,
+                        protocol,
+                        src_port,
+                        dst_port,
+                        ACTION_DENY,
+                        DROP_REASON_POLICY_DENIED,
+                        tcp_flags,
+                        total_len,
                     );
                     return Ok(BPF_TC_ACT_SHOT as i32);
                 }
                 Some(ACTION_ALLOW) => {
                     emit_flow_event(
-                        src_ip, dst_ip, src_identity, dst_identity, protocol,
-                        src_port, dst_port, ACTION_ALLOW, DROP_REASON_NONE, tcp_flags, total_len,
+                        src_ip,
+                        dst_ip,
+                        src_identity,
+                        dst_identity,
+                        protocol,
+                        src_port,
+                        dst_port,
+                        ACTION_ALLOW,
+                        DROP_REASON_NONE,
+                        tcp_flags,
+                        total_len,
                     );
                     return Ok(BPF_TC_ACT_OK as i32);
                 }
@@ -483,8 +536,17 @@ fn try_tc_egress(ctx: &TcContext) -> Result<i32, ()> {
                     if default_deny == 1 {
                         inc_drop_counter(DROP_REASON_POLICY_DENIED);
                         emit_flow_event(
-                            src_ip, dst_ip, src_identity, dst_identity, protocol,
-                            src_port, dst_port, ACTION_DENY, DROP_REASON_POLICY_DENIED, tcp_flags, total_len,
+                            src_ip,
+                            dst_ip,
+                            src_identity,
+                            dst_identity,
+                            protocol,
+                            src_port,
+                            dst_port,
+                            ACTION_DENY,
+                            DROP_REASON_POLICY_DENIED,
+                            tcp_flags,
+                            total_len,
                         );
                         return Ok(BPF_TC_ACT_SHOT as i32);
                     }
@@ -505,8 +567,17 @@ fn try_tc_egress(ctx: &TcContext) -> Result<i32, ()> {
                 // Redirect to tunnel interface for kernel encapsulation.
                 // Identity is resolved on the receiving side via endpoint map lookup.
                 emit_flow_event(
-                    src_ip, dst_ip, src_identity, dst_identity, protocol,
-                    src_port, dst_port, ACTION_ALLOW, DROP_REASON_NONE, tcp_flags, total_len,
+                    src_ip,
+                    dst_ip,
+                    src_identity,
+                    dst_identity,
+                    protocol,
+                    src_port,
+                    dst_port,
+                    ACTION_ALLOW,
+                    DROP_REASON_NONE,
+                    tcp_flags,
+                    total_len,
                 );
                 unsafe {
                     return Ok(bpf_redirect(tunnel.ifindex, 0) as i32);
@@ -515,8 +586,17 @@ fn try_tc_egress(ctx: &TcContext) -> Result<i32, ()> {
                 // No tunnel entry for remote node.
                 inc_drop_counter(DROP_REASON_NO_TUNNEL);
                 emit_flow_event(
-                    src_ip, dst_ip, src_identity, dst_identity, protocol,
-                    src_port, dst_port, ACTION_DENY, DROP_REASON_NO_TUNNEL, tcp_flags, total_len,
+                    src_ip,
+                    dst_ip,
+                    src_identity,
+                    dst_identity,
+                    protocol,
+                    src_port,
+                    dst_port,
+                    ACTION_DENY,
+                    DROP_REASON_NO_TUNNEL,
+                    tcp_flags,
+                    total_len,
                 );
                 return Ok(BPF_TC_ACT_SHOT as i32);
             }
@@ -527,15 +607,33 @@ fn try_tc_egress(ctx: &TcContext) -> Result<i32, ()> {
             Some(ACTION_DENY) => {
                 inc_drop_counter(DROP_REASON_POLICY_DENIED);
                 emit_flow_event(
-                    src_ip, dst_ip, src_identity, dst_identity, protocol,
-                    src_port, dst_port, ACTION_DENY, DROP_REASON_POLICY_DENIED, tcp_flags, total_len,
+                    src_ip,
+                    dst_ip,
+                    src_identity,
+                    dst_identity,
+                    protocol,
+                    src_port,
+                    dst_port,
+                    ACTION_DENY,
+                    DROP_REASON_POLICY_DENIED,
+                    tcp_flags,
+                    total_len,
                 );
                 return Ok(BPF_TC_ACT_SHOT as i32);
             }
             Some(ACTION_ALLOW) => {
                 emit_flow_event(
-                    src_ip, dst_ip, src_identity, dst_identity, protocol,
-                    src_port, dst_port, ACTION_ALLOW, DROP_REASON_NONE, tcp_flags, total_len,
+                    src_ip,
+                    dst_ip,
+                    src_identity,
+                    dst_identity,
+                    protocol,
+                    src_port,
+                    dst_port,
+                    ACTION_ALLOW,
+                    DROP_REASON_NONE,
+                    tcp_flags,
+                    total_len,
                 );
                 return Ok(BPF_TC_ACT_OK as i32);
             }
@@ -544,8 +642,17 @@ fn try_tc_egress(ctx: &TcContext) -> Result<i32, ()> {
                 if default_deny == 1 {
                     inc_drop_counter(DROP_REASON_POLICY_DENIED);
                     emit_flow_event(
-                        src_ip, dst_ip, src_identity, dst_identity, protocol,
-                        src_port, dst_port, ACTION_DENY, DROP_REASON_POLICY_DENIED, tcp_flags, total_len,
+                        src_ip,
+                        dst_ip,
+                        src_identity,
+                        dst_identity,
+                        protocol,
+                        src_port,
+                        dst_port,
+                        ACTION_DENY,
+                        DROP_REASON_POLICY_DENIED,
+                        tcp_flags,
+                        total_len,
                     );
                     return Ok(BPF_TC_ACT_SHOT as i32);
                 }
@@ -561,8 +668,17 @@ fn try_tc_egress(ctx: &TcContext) -> Result<i32, ()> {
         if !allowed {
             inc_drop_counter(DROP_REASON_POLICY_DENIED);
             emit_flow_event(
-                src_ip, dst_ip, src_identity, 0, protocol,
-                src_port, dst_port, ACTION_DENY, DROP_REASON_POLICY_DENIED, tcp_flags, total_len,
+                src_ip,
+                dst_ip,
+                src_identity,
+                0,
+                protocol,
+                src_port,
+                dst_port,
+                ACTION_DENY,
+                DROP_REASON_POLICY_DENIED,
+                tcp_flags,
+                total_len,
             );
             return Ok(BPF_TC_ACT_SHOT as i32);
         }
@@ -570,8 +686,17 @@ fn try_tc_egress(ctx: &TcContext) -> Result<i32, ()> {
         // SNAT is handled by netfilter/iptables in userspace for now.
         // We just allow the traffic through.
         emit_flow_event(
-            src_ip, dst_ip, src_identity, 0, protocol,
-            src_port, dst_port, ACTION_ALLOW, DROP_REASON_NONE, tcp_flags, total_len,
+            src_ip,
+            dst_ip,
+            src_identity,
+            0,
+            protocol,
+            src_port,
+            dst_port,
+            ACTION_ALLOW,
+            DROP_REASON_NONE,
+            tcp_flags,
+            total_len,
         );
         return Ok(BPF_TC_ACT_OK as i32);
     }
@@ -582,8 +707,17 @@ fn try_tc_egress(ctx: &TcContext) -> Result<i32, ()> {
     if mode == MODE_OVERLAY {
         inc_drop_counter(DROP_REASON_NO_ROUTE);
         emit_flow_event(
-            src_ip, dst_ip, src_identity, 0, protocol,
-            src_port, dst_port, ACTION_DENY, DROP_REASON_NO_ROUTE, tcp_flags, total_len,
+            src_ip,
+            dst_ip,
+            src_identity,
+            0,
+            protocol,
+            src_port,
+            dst_port,
+            ACTION_DENY,
+            DROP_REASON_NO_ROUTE,
+            tcp_flags,
+            total_len,
         );
         return Ok(BPF_TC_ACT_SHOT as i32);
     }
@@ -744,7 +878,8 @@ fn try_tc_tunnel_ingress(ctx: &TcContext) -> Result<i32, ()> {
         let inner_tot_len = inner_ipv4.tot_len;
         let inner_total_len = u16::from_be(inner_tot_len) as u64;
 
-        let (inner_src_port, inner_dst_port, inner_tcp_flags) = parse_l4_ports(ctx, inner_l4_offset, inner_proto);
+        let (inner_src_port, inner_dst_port, inner_tcp_flags) =
+            parse_l4_ports(ctx, inner_l4_offset, inner_proto);
 
         // If we didn't find identity in TLV, fall back to endpoint lookup.
         if resolved_identity == 0 {
@@ -788,7 +923,8 @@ fn try_tc_tunnel_ingress(ctx: &TcContext) -> Result<i32, ()> {
         let inner_tot_len = inner_ipv4.tot_len;
         let inner_total_len = u16::from_be(inner_tot_len) as u64;
 
-        let (inner_src_port, inner_dst_port, inner_tcp_flags) = parse_l4_ports(ctx, inner_l4_offset, inner_proto);
+        let (inner_src_port, inner_dst_port, inner_tcp_flags) =
+            parse_l4_ports(ctx, inner_l4_offset, inner_proto);
 
         // VXLAN has no identity TLV — look up source IP in endpoint map.
         resolved_identity = lookup_identity(inner_src_ip).map(|(id, _)| id).unwrap_or(0);
@@ -831,8 +967,17 @@ fn enforce_tunnel_policy(
         if default_deny == 1 {
             inc_drop_counter(DROP_REASON_NO_IDENTITY);
             emit_flow_event(
-                src_ip, dst_ip, 0, dst_identity, protocol,
-                src_port, dst_port, ACTION_DENY, DROP_REASON_NO_IDENTITY, tcp_flags, total_len,
+                src_ip,
+                dst_ip,
+                0,
+                dst_identity,
+                protocol,
+                src_port,
+                dst_port,
+                ACTION_DENY,
+                DROP_REASON_NO_IDENTITY,
+                tcp_flags,
+                total_len,
             );
             return Ok(BPF_TC_ACT_SHOT as i32);
         }
@@ -843,15 +988,33 @@ fn enforce_tunnel_policy(
         Some(ACTION_DENY) => {
             inc_drop_counter(DROP_REASON_POLICY_DENIED);
             emit_flow_event(
-                src_ip, dst_ip, src_identity, dst_identity, protocol,
-                src_port, dst_port, ACTION_DENY, DROP_REASON_POLICY_DENIED, tcp_flags, total_len,
+                src_ip,
+                dst_ip,
+                src_identity,
+                dst_identity,
+                protocol,
+                src_port,
+                dst_port,
+                ACTION_DENY,
+                DROP_REASON_POLICY_DENIED,
+                tcp_flags,
+                total_len,
             );
             Ok(BPF_TC_ACT_SHOT as i32)
         }
         Some(ACTION_ALLOW) => {
             emit_flow_event(
-                src_ip, dst_ip, src_identity, dst_identity, protocol,
-                src_port, dst_port, ACTION_ALLOW, DROP_REASON_NONE, tcp_flags, total_len,
+                src_ip,
+                dst_ip,
+                src_identity,
+                dst_identity,
+                protocol,
+                src_port,
+                dst_port,
+                ACTION_ALLOW,
+                DROP_REASON_NONE,
+                tcp_flags,
+                total_len,
             );
             // Look up destination endpoint to redirect to pod veth.
             if let Some((_, dst_ep)) = lookup_identity(dst_ip) {
@@ -867,8 +1030,17 @@ fn enforce_tunnel_policy(
             if default_deny == 1 {
                 inc_drop_counter(DROP_REASON_POLICY_DENIED);
                 emit_flow_event(
-                    src_ip, dst_ip, src_identity, dst_identity, protocol,
-                    src_port, dst_port, ACTION_DENY, DROP_REASON_POLICY_DENIED, tcp_flags, total_len,
+                    src_ip,
+                    dst_ip,
+                    src_identity,
+                    dst_identity,
+                    protocol,
+                    src_port,
+                    dst_port,
+                    ACTION_DENY,
+                    DROP_REASON_POLICY_DENIED,
+                    tcp_flags,
+                    total_len,
                 );
                 Ok(BPF_TC_ACT_SHOT as i32)
             } else {
