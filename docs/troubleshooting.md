@@ -13,16 +13,16 @@ This guide covers common issues, diagnostic commands, and debugging techniques f
 novanetctl status
 
 # Check NovaNet pod status across all nodes
-kubectl get pods -n novanet -o wide
+kubectl get pods -n nova-system -o wide
 
 # View agent logs
-kubectl logs -n novanet <pod-name> -c novanet-agent
+kubectl logs -n nova-system <pod-name> -c novanet-agent
 
 # View dataplane logs
-kubectl logs -n novanet <pod-name> -c novanet-dataplane
+kubectl logs -n nova-system <pod-name> -c novanet-dataplane
 
 # Follow logs in real time
-kubectl logs -n novanet <pod-name> -c novanet-agent -f
+kubectl logs -n nova-system <pod-name> -c novanet-agent -f
 ```
 
 ### Flow Inspection
@@ -99,7 +99,7 @@ novanetctl status
 4. Check agent logs for CNI setup errors:
 
 ```bash
-kubectl logs -n novanet <pod-name> -c novanet-agent | grep -i "error\|fail"
+kubectl logs -n nova-system <pod-name> -c novanet-agent | grep -i "error\|fail"
 ```
 
 5. Watch for flow events:
@@ -118,7 +118,7 @@ novanetctl flows
 
 **Resolution:**
 
-- Restart the NovaNet pod on the affected node: `kubectl delete pod -n novanet <pod-name>`
+- Restart the NovaNet pod on the affected node: `kubectl delete pod -n nova-system <pod-name>`
 - eBPF programs are pinned and survive restarts; existing pods retain connectivity
 
 ---
@@ -325,7 +325,7 @@ kubectl exec <pod-a> -- ping -c 100 <pod-b-ip>
 3. Check for CPU throttling on NovaNet pods:
 
 ```bash
-kubectl top pods -n novanet
+kubectl top pods -n nova-system
 ```
 
 4. Check eBPF program execution statistics:
@@ -661,7 +661,7 @@ novaroutectl routes show --owner novanet
 5. **Review agent logs for startup errors**:
 
 ```bash
-kubectl logs -n novanet <pod-name> -c novanet-agent --tail=100
+kubectl logs -n nova-system <pod-name> -c novanet-agent --tail=100
 # Look for: fatal, panic, cannot attach, failed to load
 # Positive indicators: started, ready, attached, reconciling
 ```
@@ -697,13 +697,13 @@ When filing a bug report or asking for help, collect the following information:
 
 ```bash
 # 1. NovaNet pod status
-kubectl get pods -n novanet -o wide
+kubectl get pods -n nova-system -o wide
 
 # 2. Agent logs (last 500 lines)
-kubectl logs -n novanet <pod-name> -c novanet-agent --tail=500
+kubectl logs -n nova-system <pod-name> -c novanet-agent --tail=500
 
 # 3. Dataplane logs (last 500 lines)
-kubectl logs -n novanet <pod-name> -c novanet-dataplane --tail=500
+kubectl logs -n nova-system <pod-name> -c novanet-dataplane --tail=500
 
 # 4. NovaNet status
 novanetctl status
@@ -730,7 +730,7 @@ ip link show type vxlan
 kubectl get networkpolicy -A -o yaml
 
 # 11. Kubernetes events
-kubectl get events -n novanet --sort-by='.lastTimestamp'
+kubectl get events -n nova-system --sort-by='.lastTimestamp'
 ```
 
 ---

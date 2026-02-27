@@ -223,7 +223,7 @@ jobs:
     timeout-minutes: 30
     env:
       KUBECONFIG: /etc/rancher/k3s/k3s.yaml
-      NOVANET_NS: novanet
+      NOVANET_NS: nova-system
       TEST_NS: novanet-test
     steps:
       - uses: actions/checkout@v4
@@ -243,8 +243,8 @@ jobs:
 
       - name: Verify NovaNet DaemonSet
         run: |
-          kubectl get daemonset -n novanet -o wide
-          kubectl get pods -n novanet -o wide
+          kubectl get daemonset -n nova-system -o wide
+          kubectl get pods -n nova-system -o wide
 
       - name: Make test scripts executable
         run: chmod +x tests/integration/*.sh

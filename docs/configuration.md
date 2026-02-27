@@ -179,7 +179,7 @@ Install:
 
 ```bash
 helm install novanet ./deploy/helm/novanet \
-  -n novanet \
+  -n nova-system \
   --create-namespace \
   -f values-overlay-geneve.yaml
 ```
@@ -217,7 +217,7 @@ Install:
 
 ```bash
 helm install novanet ./deploy/helm/novanet \
-  -n novanet \
+  -n nova-system \
   --create-namespace \
   -f values-native-bgp.yaml
 ```

@@ -91,7 +91,7 @@ See the [Configuration Reference](configuration.md) for all available options.
 
 ```bash
 helm install novanet ./deploy/helm/novanet \
-  -n novanet \
+  -n nova-system \
   --create-namespace \
   -f custom-values.yaml
 ```
@@ -101,7 +101,7 @@ helm install novanet ./deploy/helm/novanet \
 Check that all NovaNet pods are running (one per node):
 
 ```bash
-kubectl get pods -n novanet -o wide
+kubectl get pods -n nova-system -o wide
 ```
 
 Expected output:
@@ -149,7 +149,7 @@ Overlay mode is the simplest deployment. It works on any network fabric without 
 
 ```bash
 helm install novanet ./deploy/helm/novanet \
-  -n novanet \
+  -n nova-system \
   --create-namespace \
   --set config.routingMode=overlay \
   --set config.tunnelProtocol=geneve
@@ -161,7 +161,7 @@ To use VXLAN instead of Geneve (for broader hardware compatibility):
 
 ```bash
 helm install novanet ./deploy/helm/novanet \
-  -n novanet \
+  -n nova-system \
   --create-namespace \
   --set config.routingMode=overlay \
   --set config.tunnelProtocol=vxlan
@@ -183,7 +183,7 @@ Native routing mode eliminates encapsulation overhead by using BGP or OSPF to di
 
 ```bash
 helm install novanet ./deploy/helm/novanet \
-  -n novanet \
+  -n nova-system \
   --create-namespace \
   --set config.routingMode=native \
   --set novaroute.enabled=true \
@@ -212,7 +212,7 @@ Update the Helm values if needed, then run:
 
 ```bash
 helm upgrade novanet ./deploy/helm/novanet \
-  -n novanet \
+  -n nova-system \
   -f custom-values.yaml
 ```
 
@@ -228,7 +228,7 @@ NovaNet uses a DaemonSet with `RollingUpdate` strategy by default:
 ### Checking Upgrade Status
 
 ```bash
-kubectl rollout status daemonset/novanet -n novanet
+kubectl rollout status daemonset/novanet -n nova-system
 ```
 
 ### Upgrading from a Specific Version
@@ -237,7 +237,7 @@ If upgrading across major versions, check the release notes for any required mig
 
 ```bash
 helm upgrade novanet ./deploy/helm/novanet \
-  -n novanet \
+  -n nova-system \
   -f custom-values.yaml \
   --version <target-version>
 ```
@@ -249,7 +249,7 @@ helm upgrade novanet ./deploy/helm/novanet \
 ### Remove NovaNet
 
 ```bash
-helm uninstall novanet -n novanet
+helm uninstall novanet -n nova-system
 ```
 
 ### Clean Up Resources
@@ -258,7 +258,7 @@ After uninstalling, you may want to remove leftover resources:
 
 ```bash
 # Remove the namespace
-kubectl delete namespace novanet
+kubectl delete namespace nova-system
 
 # On each node, clean up pinned BPF programs (optional)
 rm -rf /sys/fs/bpf/novanet/
@@ -289,7 +289,7 @@ Then install NovaNet:
 
 ```bash
 helm install novanet ./deploy/helm/novanet \
-  -n novanet \
+  -n nova-system \
   --create-namespace \
   --set config.clusterCIDR="10.42.0.0/16"
 ```
@@ -314,7 +314,7 @@ nodes:
 ```bash
 kind create cluster --config kind-config.yaml
 helm install novanet ./deploy/helm/novanet \
-  -n novanet \
+  -n nova-system \
   --create-namespace \
   --set config.clusterCIDR="10.244.0.0/16"
 ```
