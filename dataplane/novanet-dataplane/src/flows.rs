@@ -87,7 +87,10 @@ pub async fn flow_reader_task(mut ring_buf: aya::maps::RingBuf<aya::maps::MapDat
     ) {
         Ok(afd) => afd,
         Err(e) => {
-            tracing::warn!("Failed to create AsyncFd for ring buffer, falling back to polling: {}", e);
+            tracing::warn!(
+                "Failed to create AsyncFd for ring buffer, falling back to polling: {}",
+                e
+            );
             // Fallback to polling mode.
             flow_reader_task_polling(ring_buf).await;
             return;

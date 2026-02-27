@@ -461,8 +461,14 @@ mod tests {
 
     #[test]
     fn policy_value_allow_deny() {
-        let allow = PolicyValue { action: ACTION_ALLOW, _pad: [0; 3] };
-        let deny = PolicyValue { action: ACTION_DENY, _pad: [0; 3] };
+        let allow = PolicyValue {
+            action: ACTION_ALLOW,
+            _pad: [0; 3],
+        };
+        let deny = PolicyValue {
+            action: ACTION_DENY,
+            _pad: [0; 3],
+        };
         assert_eq!(allow.action, 1);
         assert_eq!(deny.action, 0);
         assert_ne!(allow, deny);
@@ -651,13 +657,20 @@ mod tests {
 
     #[test]
     fn zero_policy_value_is_deny() {
-        let val = PolicyValue { action: 0, _pad: [0; 3] };
+        let val = PolicyValue {
+            action: 0,
+            _pad: [0; 3],
+        };
         assert_eq!(val.action, ACTION_DENY);
     }
 
     #[test]
     fn zero_egress_value_is_deny() {
-        let val = EgressValue { action: 0, _pad: [0; 3], snat_ip: 0 };
+        let val = EgressValue {
+            action: 0,
+            _pad: [0; 3],
+            snat_ip: 0,
+        };
         assert_eq!(val.action, EGRESS_DENY);
     }
 }
