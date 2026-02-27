@@ -29,6 +29,15 @@ var (
 		Help:      "Total policy verdict evaluations by action.",
 	}, []string{"action"})
 
+	// TCPConnectionTotal counts TCP connection events by flag type
+	// (SYN, FIN, RST) for connection lifecycle observability.
+	TCPConnectionTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Namespace: "novanet",
+		Subsystem: "dataplane",
+		Name:      "tcp_connection_total",
+		Help:      "Total TCP connection events by flag type.",
+	}, []string{"flag"})
+
 	// TCPLatencySeconds observes estimated TCP round-trip latency derived from
 	// flow events. Buckets span datacenter-range latencies (10µs to 100ms).
 	TCPLatencySeconds = prometheus.NewHistogram(prometheus.HistogramOpts{
@@ -60,6 +69,7 @@ func Register() {
 		FlowTotal,
 		DropsTotal,
 		PolicyVerdictTotal,
+		TCPConnectionTotal,
 		TCPLatencySeconds,
 	)
 }

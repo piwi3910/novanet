@@ -138,6 +138,7 @@ fn emit_flow_event(
     dst_port: u16,
     verdict: u8,
     drop_reason: u8,
+    tcp_flags: u8,
     bytes: u64,
 ) {
     if let Some(mut entry) = FLOW_EVENTS.reserve::<FlowEvent>(0) {
@@ -153,7 +154,8 @@ fn emit_flow_event(
             _pad2: [0; 2],
             verdict,
             drop_reason,
-            _pad3: [0; 2],
+            tcp_flags,
+            _pad3: 0,
             bytes,
             packets: 1,
             timestamp_ns: unsafe { aya_ebpf::helpers::bpf_ktime_get_ns() },
@@ -166,21 +168,27 @@ fn emit_flow_event(
 }
 
 // ---------------------------------------------------------------------------
-// Helper: parse L4 ports from IPv4 packet
-// Returns (src_port, dst_port) or (0, 0) if not TCP/UDP
+// Helper: parse L4 ports and TCP flags from IPv4 packet
+// Returns (src_port, dst_port, tcp_flags) or (0, 0, 0) if not TCP/UDP
 // ---------------------------------------------------------------------------
 
 #[inline(always)]
-fn parse_l4_ports(ctx: &TcContext, l4_offset: usize, protocol: u8) -> (u16, u16) {
+fn parse_l4_ports(ctx: &TcContext, l4_offset: usize, protocol: u8) -> (u16, u16, u8) {
     match protocol {
         6 => {
-            // TCP
+            // TCP: extract ports and flags
             if let Ok(tcp) = ctx.load::<TcpHdr>(l4_offset) {
                 let src = tcp.source;
                 let dst = tcp.dest;
-                (u16::from_be(src), u16::from_be(dst))
+                // TCP flags are in byte 13 of the TCP header (offset 13 from l4_offset).
+                let flags = if let Ok(f) = ctx.load::<u8>(l4_offset + 13) {
+                    f
+                } else {
+                    0
+                };
+                (u16::from_be(src), u16::from_be(dst), flags)
             } else {
-                (0, 0)
+                (0, 0, 0)
             }
         }
         17 => {
@@ -188,12 +196,12 @@ fn parse_l4_ports(ctx: &TcContext, l4_offset: usize, protocol: u8) -> (u16, u16)
             if let Ok(udp) = ctx.load::<UdpHdr>(l4_offset) {
                 let src = udp.source;
                 let dst = udp.dest;
-                (u16::from_be(src), u16::from_be(dst))
+                (u16::from_be(src), u16::from_be(dst), 0)
             } else {
-                (0, 0)
+                (0, 0, 0)
             }
         }
-        _ => (0, 0),
+        _ => (0, 0, 0),
     }
 }
 
@@ -311,7 +319,7 @@ fn try_tc_ingress(ctx: &TcContext) -> Result<i32, ()> {
     let tot_len = ipv4.tot_len;
     let total_len = u16::from_be(tot_len) as u64;
 
-    let (src_port, dst_port) = parse_l4_ports(ctx, l4_offset, protocol);
+    let (src_port, dst_port, tcp_flags) = parse_l4_ports(ctx, l4_offset, protocol);
 
     let mode = get_config(CONFIG_KEY_MODE);
 
@@ -334,7 +342,7 @@ fn try_tc_ingress(ctx: &TcContext) -> Result<i32, ()> {
                 inc_drop_counter(DROP_REASON_NO_IDENTITY);
                 emit_flow_event(
                     src_ip, dst_ip, 0, 0, protocol, src_port, dst_port,
-                    ACTION_DENY, DROP_REASON_NO_IDENTITY, total_len,
+                    ACTION_DENY, DROP_REASON_NO_IDENTITY, tcp_flags, total_len,
                 );
                 return Ok(BPF_TC_ACT_SHOT as i32);
             }
@@ -351,14 +359,14 @@ fn try_tc_ingress(ctx: &TcContext) -> Result<i32, ()> {
             inc_drop_counter(DROP_REASON_POLICY_DENIED);
             emit_flow_event(
                 src_ip, dst_ip, src_identity, dst_identity, protocol,
-                src_port, dst_port, ACTION_DENY, DROP_REASON_POLICY_DENIED, total_len,
+                src_port, dst_port, ACTION_DENY, DROP_REASON_POLICY_DENIED, tcp_flags, total_len,
             );
             Ok(BPF_TC_ACT_SHOT as i32)
         }
         Some(ACTION_ALLOW) => {
             emit_flow_event(
                 src_ip, dst_ip, src_identity, dst_identity, protocol,
-                src_port, dst_port, ACTION_ALLOW, DROP_REASON_NONE, total_len,
+                src_port, dst_port, ACTION_ALLOW, DROP_REASON_NONE, tcp_flags, total_len,
             );
             Ok(BPF_TC_ACT_OK as i32)
         }
@@ -369,7 +377,7 @@ fn try_tc_ingress(ctx: &TcContext) -> Result<i32, ()> {
                 inc_drop_counter(DROP_REASON_POLICY_DENIED);
                 emit_flow_event(
                     src_ip, dst_ip, src_identity, dst_identity, protocol,
-                    src_port, dst_port, ACTION_DENY, DROP_REASON_POLICY_DENIED, total_len,
+                    src_port, dst_port, ACTION_DENY, DROP_REASON_POLICY_DENIED, tcp_flags, total_len,
                 );
                 Ok(BPF_TC_ACT_SHOT as i32)
             } else {
@@ -414,7 +422,7 @@ fn try_tc_egress(ctx: &TcContext) -> Result<i32, ()> {
     let tot_len = ipv4.tot_len;
     let total_len = u16::from_be(tot_len) as u64;
 
-    let (src_port, dst_port) = parse_l4_ports(ctx, l4_offset, protocol);
+    let (src_port, dst_port, tcp_flags) = parse_l4_ports(ctx, l4_offset, protocol);
 
     // Resolve source identity (the pod sending traffic).
     let src_identity = lookup_identity(src_ip).map(|(id, _)| id).unwrap_or(0);
@@ -433,14 +441,14 @@ fn try_tc_egress(ctx: &TcContext) -> Result<i32, ()> {
                     inc_drop_counter(DROP_REASON_POLICY_DENIED);
                     emit_flow_event(
                         src_ip, dst_ip, src_identity, dst_identity, protocol,
-                        src_port, dst_port, ACTION_DENY, DROP_REASON_POLICY_DENIED, total_len,
+                        src_port, dst_port, ACTION_DENY, DROP_REASON_POLICY_DENIED, tcp_flags, total_len,
                     );
                     return Ok(BPF_TC_ACT_SHOT as i32);
                 }
                 Some(ACTION_ALLOW) => {
                     emit_flow_event(
                         src_ip, dst_ip, src_identity, dst_identity, protocol,
-                        src_port, dst_port, ACTION_ALLOW, DROP_REASON_NONE, total_len,
+                        src_port, dst_port, ACTION_ALLOW, DROP_REASON_NONE, tcp_flags, total_len,
                     );
                     return Ok(BPF_TC_ACT_OK as i32);
                 }
@@ -451,8 +459,7 @@ fn try_tc_egress(ctx: &TcContext) -> Result<i32, ()> {
                         inc_drop_counter(DROP_REASON_POLICY_DENIED);
                         emit_flow_event(
                             src_ip, dst_ip, src_identity, dst_identity, protocol,
-                            src_port, dst_port, ACTION_DENY, DROP_REASON_POLICY_DENIED,
-                            total_len,
+                            src_port, dst_port, ACTION_DENY, DROP_REASON_POLICY_DENIED, tcp_flags, total_len,
                         );
                         return Ok(BPF_TC_ACT_SHOT as i32);
                     }
@@ -473,7 +480,7 @@ fn try_tc_egress(ctx: &TcContext) -> Result<i32, ()> {
                 // Identity is resolved on the receiving side via endpoint map lookup.
                 emit_flow_event(
                     src_ip, dst_ip, src_identity, dst_identity, protocol,
-                    src_port, dst_port, ACTION_ALLOW, DROP_REASON_NONE, total_len,
+                    src_port, dst_port, ACTION_ALLOW, DROP_REASON_NONE, tcp_flags, total_len,
                 );
                 unsafe {
                     return Ok(bpf_redirect(tunnel.ifindex, 0) as i32);
@@ -483,7 +490,7 @@ fn try_tc_egress(ctx: &TcContext) -> Result<i32, ()> {
                 inc_drop_counter(DROP_REASON_NO_TUNNEL);
                 emit_flow_event(
                     src_ip, dst_ip, src_identity, dst_identity, protocol,
-                    src_port, dst_port, ACTION_DENY, DROP_REASON_NO_TUNNEL, total_len,
+                    src_port, dst_port, ACTION_DENY, DROP_REASON_NO_TUNNEL, tcp_flags, total_len,
                 );
                 return Ok(BPF_TC_ACT_SHOT as i32);
             }
@@ -495,14 +502,14 @@ fn try_tc_egress(ctx: &TcContext) -> Result<i32, ()> {
                 inc_drop_counter(DROP_REASON_POLICY_DENIED);
                 emit_flow_event(
                     src_ip, dst_ip, src_identity, dst_identity, protocol,
-                    src_port, dst_port, ACTION_DENY, DROP_REASON_POLICY_DENIED, total_len,
+                    src_port, dst_port, ACTION_DENY, DROP_REASON_POLICY_DENIED, tcp_flags, total_len,
                 );
                 return Ok(BPF_TC_ACT_SHOT as i32);
             }
             Some(ACTION_ALLOW) => {
                 emit_flow_event(
                     src_ip, dst_ip, src_identity, dst_identity, protocol,
-                    src_port, dst_port, ACTION_ALLOW, DROP_REASON_NONE, total_len,
+                    src_port, dst_port, ACTION_ALLOW, DROP_REASON_NONE, tcp_flags, total_len,
                 );
                 return Ok(BPF_TC_ACT_OK as i32);
             }
@@ -512,8 +519,7 @@ fn try_tc_egress(ctx: &TcContext) -> Result<i32, ()> {
                     inc_drop_counter(DROP_REASON_POLICY_DENIED);
                     emit_flow_event(
                         src_ip, dst_ip, src_identity, dst_identity, protocol,
-                        src_port, dst_port, ACTION_DENY, DROP_REASON_POLICY_DENIED,
-                        total_len,
+                        src_port, dst_port, ACTION_DENY, DROP_REASON_POLICY_DENIED, tcp_flags, total_len,
                     );
                     return Ok(BPF_TC_ACT_SHOT as i32);
                 }
@@ -530,7 +536,7 @@ fn try_tc_egress(ctx: &TcContext) -> Result<i32, ()> {
             inc_drop_counter(DROP_REASON_POLICY_DENIED);
             emit_flow_event(
                 src_ip, dst_ip, src_identity, 0, protocol,
-                src_port, dst_port, ACTION_DENY, DROP_REASON_POLICY_DENIED, total_len,
+                src_port, dst_port, ACTION_DENY, DROP_REASON_POLICY_DENIED, tcp_flags, total_len,
             );
             return Ok(BPF_TC_ACT_SHOT as i32);
         }
@@ -539,7 +545,7 @@ fn try_tc_egress(ctx: &TcContext) -> Result<i32, ()> {
         // We just allow the traffic through.
         emit_flow_event(
             src_ip, dst_ip, src_identity, 0, protocol,
-            src_port, dst_port, ACTION_ALLOW, DROP_REASON_NONE, total_len,
+            src_port, dst_port, ACTION_ALLOW, DROP_REASON_NONE, tcp_flags, total_len,
         );
         return Ok(BPF_TC_ACT_OK as i32);
     }
@@ -551,7 +557,7 @@ fn try_tc_egress(ctx: &TcContext) -> Result<i32, ()> {
         inc_drop_counter(DROP_REASON_NO_ROUTE);
         emit_flow_event(
             src_ip, dst_ip, src_identity, 0, protocol,
-            src_port, dst_port, ACTION_DENY, DROP_REASON_NO_ROUTE, total_len,
+            src_port, dst_port, ACTION_DENY, DROP_REASON_NO_ROUTE, tcp_flags, total_len,
         );
         return Ok(BPF_TC_ACT_SHOT as i32);
     }
@@ -712,7 +718,7 @@ fn try_tc_tunnel_ingress(ctx: &TcContext) -> Result<i32, ()> {
         let inner_tot_len = inner_ipv4.tot_len;
         let inner_total_len = u16::from_be(inner_tot_len) as u64;
 
-        let (inner_src_port, inner_dst_port) = parse_l4_ports(ctx, inner_l4_offset, inner_proto);
+        let (inner_src_port, inner_dst_port, inner_tcp_flags) = parse_l4_ports(ctx, inner_l4_offset, inner_proto);
 
         // If we didn't find identity in TLV, fall back to endpoint lookup.
         if resolved_identity == 0 {
@@ -732,6 +738,7 @@ fn try_tc_tunnel_ingress(ctx: &TcContext) -> Result<i32, ()> {
             inner_proto,
             inner_src_port,
             inner_dst_port,
+            inner_tcp_flags,
             inner_total_len,
         );
     } else if dst_port == VXLAN_PORT && tunnel_type == TUNNEL_VXLAN {
@@ -755,7 +762,7 @@ fn try_tc_tunnel_ingress(ctx: &TcContext) -> Result<i32, ()> {
         let inner_tot_len = inner_ipv4.tot_len;
         let inner_total_len = u16::from_be(inner_tot_len) as u64;
 
-        let (inner_src_port, inner_dst_port) = parse_l4_ports(ctx, inner_l4_offset, inner_proto);
+        let (inner_src_port, inner_dst_port, inner_tcp_flags) = parse_l4_ports(ctx, inner_l4_offset, inner_proto);
 
         // VXLAN has no identity TLV — look up source IP in endpoint map.
         resolved_identity = lookup_identity(inner_src_ip).map(|(id, _)| id).unwrap_or(0);
@@ -770,6 +777,7 @@ fn try_tc_tunnel_ingress(ctx: &TcContext) -> Result<i32, ()> {
             inner_proto,
             inner_src_port,
             inner_dst_port,
+            inner_tcp_flags,
             inner_total_len,
         );
     }
@@ -789,6 +797,7 @@ fn enforce_tunnel_policy(
     protocol: u8,
     src_port: u16,
     dst_port: u16,
+    tcp_flags: u8,
     total_len: u64,
 ) -> Result<i32, ()> {
     if src_identity == 0 {
@@ -797,7 +806,7 @@ fn enforce_tunnel_policy(
             inc_drop_counter(DROP_REASON_NO_IDENTITY);
             emit_flow_event(
                 src_ip, dst_ip, 0, dst_identity, protocol,
-                src_port, dst_port, ACTION_DENY, DROP_REASON_NO_IDENTITY, total_len,
+                src_port, dst_port, ACTION_DENY, DROP_REASON_NO_IDENTITY, tcp_flags, total_len,
             );
             return Ok(BPF_TC_ACT_SHOT as i32);
         }
@@ -809,14 +818,14 @@ fn enforce_tunnel_policy(
             inc_drop_counter(DROP_REASON_POLICY_DENIED);
             emit_flow_event(
                 src_ip, dst_ip, src_identity, dst_identity, protocol,
-                src_port, dst_port, ACTION_DENY, DROP_REASON_POLICY_DENIED, total_len,
+                src_port, dst_port, ACTION_DENY, DROP_REASON_POLICY_DENIED, tcp_flags, total_len,
             );
             Ok(BPF_TC_ACT_SHOT as i32)
         }
         Some(ACTION_ALLOW) => {
             emit_flow_event(
                 src_ip, dst_ip, src_identity, dst_identity, protocol,
-                src_port, dst_port, ACTION_ALLOW, DROP_REASON_NONE, total_len,
+                src_port, dst_port, ACTION_ALLOW, DROP_REASON_NONE, tcp_flags, total_len,
             );
             // Look up destination endpoint to redirect to pod veth.
             if let Some((_, dst_ep)) = lookup_identity(dst_ip) {
@@ -832,7 +841,7 @@ fn enforce_tunnel_policy(
                 inc_drop_counter(DROP_REASON_POLICY_DENIED);
                 emit_flow_event(
                     src_ip, dst_ip, src_identity, dst_identity, protocol,
-                    src_port, dst_port, ACTION_DENY, DROP_REASON_POLICY_DENIED, total_len,
+                    src_port, dst_port, ACTION_DENY, DROP_REASON_POLICY_DENIED, tcp_flags, total_len,
                 );
                 Ok(BPF_TC_ACT_SHOT as i32)
             } else {

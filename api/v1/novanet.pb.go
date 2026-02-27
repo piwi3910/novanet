@@ -1314,6 +1314,7 @@ type FlowEvent struct {
 	Packets       uint64                 `protobuf:"varint,10,opt,name=packets,proto3" json:"packets,omitempty"`
 	TimestampNs   int64                  `protobuf:"varint,11,opt,name=timestamp_ns,json=timestampNs,proto3" json:"timestamp_ns,omitempty"`
 	DropReason    DropReason             `protobuf:"varint,12,opt,name=drop_reason,json=dropReason,proto3,enum=novanet.v1.DropReason" json:"drop_reason,omitempty"`
+	TcpFlags      uint32                 `protobuf:"varint,13,opt,name=tcp_flags,json=tcpFlags,proto3" json:"tcp_flags,omitempty"` // TCP flags (SYN=0x02, ACK=0x10, FIN=0x01, RST=0x04)
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1430,6 +1431,13 @@ func (x *FlowEvent) GetDropReason() DropReason {
 		return x.DropReason
 	}
 	return DropReason_DROP_REASON_NONE
+}
+
+func (x *FlowEvent) GetTcpFlags() uint32 {
+	if x != nil {
+		return x.TcpFlags
+	}
+	return 0
 }
 
 type GetDataplaneStatusRequest struct {
@@ -2156,6 +2164,7 @@ type UpsertEgressPolicyRequest struct {
 	Protocol         uint32                 `protobuf:"varint,4,opt,name=protocol,proto3" json:"protocol,omitempty"`
 	DstPort          uint32                 `protobuf:"varint,5,opt,name=dst_port,json=dstPort,proto3" json:"dst_port,omitempty"`
 	Action           EgressAction           `protobuf:"varint,6,opt,name=action,proto3,enum=novanet.v1.EgressAction" json:"action,omitempty"`
+	SnatIp           uint32                 `protobuf:"varint,7,opt,name=snat_ip,json=snatIp,proto3" json:"snat_ip,omitempty"` // SNAT target IP (used when action == EGRESS_ACTION_SNAT)
 	unknownFields    protoimpl.UnknownFields
 	sizeCache        protoimpl.SizeCache
 }
@@ -2230,6 +2239,13 @@ func (x *UpsertEgressPolicyRequest) GetAction() EgressAction {
 		return x.Action
 	}
 	return EgressAction_EGRESS_ACTION_DENY
+}
+
+func (x *UpsertEgressPolicyRequest) GetSnatIp() uint32 {
+	if x != nil {
+		return x.SnatIp
+	}
+	return 0
 }
 
 type UpsertEgressPolicyResponse struct {
@@ -3081,7 +3097,7 @@ const file_api_v1_novanet_proto_rawDesc = "" +
 	"attachType\"\x17\n" +
 	"\x15DetachProgramResponse\"=\n" +
 	"\x12StreamFlowsRequest\x12'\n" +
-	"\x0fidentity_filter\x18\x01 \x01(\rR\x0eidentityFilter\"\x91\x03\n" +
+	"\x0fidentity_filter\x18\x01 \x01(\rR\x0eidentityFilter\"\xae\x03\n" +
 	"\tFlowEvent\x12\x15\n" +
 	"\x06src_ip\x18\x01 \x01(\rR\x05srcIp\x12\x15\n" +
 	"\x06dst_ip\x18\x02 \x01(\rR\x05dstIp\x12!\n" +
@@ -3096,7 +3112,8 @@ const file_api_v1_novanet_proto_rawDesc = "" +
 	" \x01(\x04R\apackets\x12!\n" +
 	"\ftimestamp_ns\x18\v \x01(\x03R\vtimestampNs\x127\n" +
 	"\vdrop_reason\x18\f \x01(\x0e2\x16.novanet.v1.DropReasonR\n" +
-	"dropReason\"\x1b\n" +
+	"dropReason\x12\x1b\n" +
+	"\ttcp_flags\x18\r \x01(\rR\btcpFlags\"\x1b\n" +
 	"\x19GetDataplaneStatusRequest\"\x9f\x03\n" +
 	"\x1aGetDataplaneStatusResponse\x12%\n" +
 	"\x0eendpoint_count\x18\x01 \x01(\rR\rendpointCount\x12!\n" +
@@ -3157,14 +3174,15 @@ const file_api_v1_novanet_proto_rawDesc = "" +
 	"\x17StreamAgentFlowsRequest\x12'\n" +
 	"\x0fidentity_filter\x18\x01 \x01(\rR\x0eidentityFilter\x12\x1d\n" +
 	"\n" +
-	"drops_only\x18\x02 \x01(\bR\tdropsOnly\"\xf6\x01\n" +
+	"drops_only\x18\x02 \x01(\bR\tdropsOnly\"\x8f\x02\n" +
 	"\x19UpsertEgressPolicyRequest\x12!\n" +
 	"\fsrc_identity\x18\x01 \x01(\rR\vsrcIdentity\x12\x1e\n" +
 	"\vdst_cidr_ip\x18\x02 \x01(\rR\tdstCidrIp\x12-\n" +
 	"\x13dst_cidr_prefix_len\x18\x03 \x01(\rR\x10dstCidrPrefixLen\x12\x1a\n" +
 	"\bprotocol\x18\x04 \x01(\rR\bprotocol\x12\x19\n" +
 	"\bdst_port\x18\x05 \x01(\rR\adstPort\x120\n" +
-	"\x06action\x18\x06 \x01(\x0e2\x18.novanet.v1.EgressActionR\x06action\"\x1c\n" +
+	"\x06action\x18\x06 \x01(\x0e2\x18.novanet.v1.EgressActionR\x06action\x12\x17\n" +
+	"\asnat_ip\x18\a \x01(\rR\x06snatIp\"\x1c\n" +
 	"\x1aUpsertEgressPolicyResponse\"\xc4\x01\n" +
 	"\x19DeleteEgressPolicyRequest\x12!\n" +
 	"\fsrc_identity\x18\x01 \x01(\rR\vsrcIdentity\x12\x1e\n" +

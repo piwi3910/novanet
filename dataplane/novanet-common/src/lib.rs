@@ -161,8 +161,10 @@ pub struct FlowEvent {
     pub verdict: u8,
     /// Drop reason (non-zero if dropped). See DROP_REASON_* constants.
     pub drop_reason: u8,
+    /// TCP flags (SYN=0x02, ACK=0x10, FIN=0x01, RST=0x04). Zero for non-TCP.
+    pub tcp_flags: u8,
     /// Padding.
-    pub _pad3: [u8; 2],
+    pub _pad3: u8,
     /// Bytes in this flow.
     pub bytes: u64,
     /// Packets in this flow.

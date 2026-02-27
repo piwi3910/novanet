@@ -61,6 +61,7 @@ fn raw_to_proto(raw: &RawFlowEvent) -> crate::proto::FlowEvent {
         packets: raw.packets,
         timestamp_ns: raw.timestamp_ns as i64,
         drop_reason,
+        tcp_flags: raw.tcp_flags as u32,
     }
 }
 

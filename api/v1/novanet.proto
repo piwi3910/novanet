@@ -173,6 +173,7 @@ message FlowEvent {
   uint64 packets = 10;
   int64 timestamp_ns = 11;
   DropReason drop_reason = 12;
+  uint32 tcp_flags = 13;  // TCP flags (SYN=0x02, ACK=0x10, FIN=0x01, RST=0x04)
 }
 
 enum DropReason {
@@ -264,6 +265,7 @@ message UpsertEgressPolicyRequest {
   uint32 protocol = 4;
   uint32 dst_port = 5;
   EgressAction action = 6;
+  uint32 snat_ip = 7;  // SNAT target IP (used when action == EGRESS_ACTION_SNAT)
 }
 message UpsertEgressPolicyResponse {}
 

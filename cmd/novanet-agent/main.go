@@ -214,7 +214,7 @@ func (s *agentServer) AddPod(ctx context.Context, req *pb.AddPodRequest) (*pb.Ad
 	}
 
 	// Fetch pod labels from K8s API to ensure identity matches policy compiler.
-	// The policy compiler includes namespace scoping (ns:kubernetes.io/metadata.name)
+	// The policy compiler includes namespace scoping (novanet.io/namespace)
 	// so we must do the same here for consistent identity allocation.
 	labels := make(map[string]string)
 	if s.k8sClient != nil {
@@ -233,7 +233,7 @@ func (s *agentServer) AddPod(ctx context.Context, req *pb.AddPodRequest) (*pb.Ad
 		}
 	}
 	// Add namespace scoping label to match policy compiler identity allocation.
-	labels["ns:kubernetes.io/metadata.name"] = req.PodNamespace
+	labels["novanet.io/namespace"] = req.PodNamespace
 	identityID := s.idAlloc.AllocateIdentity(labels)
 
 	// Generate a deterministic MAC based on the IP.
@@ -667,6 +667,11 @@ func (s *agentServer) syncEgressRules(rules []*policy.CompiledRule) {
 		})
 
 		// Push to eBPF dataplane.
+		// Include the node IP as SNAT target so eBPF can perform masquerade.
+		var snatIP uint32
+		if s.egressMgr != nil && s.egressMgr.IsMasqueradeEnabled() {
+			snatIP = ipToUint32(s.nodeIP.To4())
+		}
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		_, err = s.dpClient.UpsertEgressPolicy(ctx, &pb.UpsertEgressPolicyRequest{
 			SrcIdentity:      r.SrcIdentity,
@@ -675,6 +680,7 @@ func (s *agentServer) syncEgressRules(rules []*policy.CompiledRule) {
 			Protocol:         uint32(r.Protocol),
 			DstPort:          uint32(r.DstPort),
 			Action:           action,
+			SnatIp:           snatIP,
 		})
 		cancel()
 		if err != nil {
@@ -828,7 +834,7 @@ func upsertRemoteEndpoint(ctx context.Context, logger *zap.Logger,
 	for k, v := range pod.Labels {
 		labels[k] = v
 	}
-	labels["ns:kubernetes.io/metadata.name"] = pod.Namespace
+	labels["novanet.io/namespace"] = pod.Namespace
 	identityID := identity.HashLabels(labels)
 
 	req := &pb.UpsertEndpointRequest{
@@ -1027,6 +1033,57 @@ func main() {
 
 	// ---- Create policy compiler ----
 	policyCompiler := policy.NewCompiler(idAlloc, logger)
+
+	// Wire port resolver: resolve named ports by looking up pod container specs.
+	if k8sClient != nil {
+		policyCompiler.SetPortResolver(func(portName string, protocol corev1.Protocol, namespace string, selector metav1.LabelSelector) []uint16 {
+			sel, err := metav1.LabelSelectorAsSelector(&selector)
+			if err != nil {
+				return nil
+			}
+			pods, err := k8sClient.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{
+				LabelSelector: sel.String(),
+			})
+			if err != nil {
+				return nil
+			}
+			seen := make(map[uint16]bool)
+			var ports []uint16
+			for _, pod := range pods.Items {
+				for _, c := range pod.Spec.Containers {
+					for _, cp := range c.Ports {
+						if cp.Name == portName && cp.Protocol == protocol {
+							if !seen[uint16(cp.ContainerPort)] {
+								seen[uint16(cp.ContainerPort)] = true
+								ports = append(ports, uint16(cp.ContainerPort))
+							}
+						}
+					}
+				}
+			}
+			return ports
+		})
+
+		// Wire namespace resolver: resolve namespace selectors to namespace names.
+		policyCompiler.SetNamespaceResolver(func(selector metav1.LabelSelector) []string {
+			sel, err := metav1.LabelSelectorAsSelector(&selector)
+			if err != nil {
+				return nil
+			}
+			nsList, err := k8sClient.CoreV1().Namespaces().List(ctx, metav1.ListOptions{
+				LabelSelector: sel.String(),
+			})
+			if err != nil {
+				return nil
+			}
+			var names []string
+			for _, ns := range nsList.Items {
+				names = append(names, ns.Name)
+			}
+			return names
+		})
+	}
+
 	logger.Info("policy compiler created")
 
 	// ---- Create egress manager ----
@@ -1710,6 +1767,12 @@ func consumeFlows(ctx context.Context, logger *zap.Logger, client pb.DataplaneCo
 		retryInterval = 5 * time.Second
 		protoTCP      = 6
 		maxTracked    = 10000 // cap tracked tuples to prevent memory growth
+
+		// TCP flag bits.
+		tcpFIN uint32 = 0x01
+		tcpSYN uint32 = 0x02
+		tcpRST uint32 = 0x04
+		tcpACK uint32 = 0x10
 	)
 
 	// flowTuple identifies a TCP connection direction.
@@ -1767,26 +1830,40 @@ func consumeFlows(ctx context.Context, logger *zap.Logger, client pb.DataplaneCo
 
 			metrics.PolicyVerdictTotal.WithLabelValues(verdict).Add(float64(flow.Packets))
 
-			// TCP latency estimation via request/response pairing.
+			// TCP connection state metrics and latency estimation.
 			if flow.Protocol != protoTCP {
 				continue
 			}
 
+			flags := flow.TcpFlags
+			if flags&tcpSYN != 0 && flags&tcpACK == 0 {
+				metrics.TCPConnectionTotal.WithLabelValues("syn").Inc()
+			}
+			if flags&tcpFIN != 0 {
+				metrics.TCPConnectionTotal.WithLabelValues("fin").Inc()
+			}
+			if flags&tcpRST != 0 {
+				metrics.TCPConnectionTotal.WithLabelValues("rst").Inc()
+			}
+
+			// SYN-ACK based latency: track SYN, measure time to SYN-ACK.
 			now := time.Now()
 			fwd := flowTuple{flow.SrcIp, flow.DstIp, flow.SrcPort, flow.DstPort}
 			rev := flowTuple{flow.DstIp, flow.SrcIp, flow.DstPort, flow.SrcPort}
 
-			if reqTime, ok := pending[rev]; ok {
-				// This flow is a response to a previously seen request.
-				rtt := now.Sub(reqTime)
-				if rtt > 0 && rtt < 10*time.Second {
-					metrics.TCPLatencySeconds.Observe(rtt.Seconds())
-				}
-				delete(pending, rev)
-			} else {
-				// Record as a new request.
+			if flags&tcpSYN != 0 && flags&tcpACK == 0 {
+				// SYN packet — record as connection initiation.
 				if len(pending) < maxTracked {
 					pending[fwd] = now
+				}
+			} else if flags&tcpSYN != 0 && flags&tcpACK != 0 {
+				// SYN-ACK — measure RTT from matching SYN.
+				if synTime, ok := pending[rev]; ok {
+					rtt := now.Sub(synTime)
+					if rtt > 0 && rtt < 10*time.Second {
+						metrics.TCPLatencySeconds.Observe(rtt.Seconds())
+					}
+					delete(pending, rev)
 				}
 			}
 

@@ -226,7 +226,7 @@ impl proto::dataplane_control_server::DataplaneControl for DataplaneService {
         let value = EgressValue {
             action,
             _pad: [0; 3],
-            snat_ip: 0, // SNAT IP is resolved by iptables for now.
+            snat_ip: req.snat_ip,
         };
 
         self.maps

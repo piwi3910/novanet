@@ -561,3 +561,403 @@ func TestHasPolicyType(t *testing.T) {
 		})
 	}
 }
+
+// --- MatchExpressions tests ---
+
+func TestCompileMatchExpressionIn(t *testing.T) {
+	c, idAlloc := testCompiler()
+
+	// Pre-allocate an identity with matching labels.
+	idAlloc.AllocateIdentity(map[string]string{
+		"app":                              "web",
+		"tier":                             "frontend",
+		"novanet.io/namespace":   "default",
+	})
+
+	np := &networkingv1.NetworkPolicy{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "match-expr-in",
+			Namespace: "default",
+		},
+		Spec: networkingv1.NetworkPolicySpec{
+			PodSelector: metav1.LabelSelector{
+				MatchExpressions: []metav1.LabelSelectorRequirement{
+					{
+						Key:      "tier",
+						Operator: metav1.LabelSelectorOpIn,
+						Values:   []string{"frontend", "backend"},
+					},
+				},
+			},
+			PolicyTypes: []networkingv1.PolicyType{
+				networkingv1.PolicyTypeIngress,
+			},
+		},
+	}
+
+	rules := c.CompilePolicy(np)
+	if len(rules) != 1 {
+		t.Fatalf("expected 1 rule matching the allocated identity, got %d", len(rules))
+	}
+	if rules[0].Action != ActionDeny {
+		t.Fatalf("expected deny action (default deny), got %d", rules[0].Action)
+	}
+}
+
+func TestCompileMatchExpressionNotIn(t *testing.T) {
+	c, idAlloc := testCompiler()
+
+	// This identity should NOT match (tier=frontend is in the NotIn list).
+	idAlloc.AllocateIdentity(map[string]string{
+		"app":                              "web",
+		"tier":                             "frontend",
+		"novanet.io/namespace":   "default",
+	})
+	// This identity SHOULD match (tier=data is not in the NotIn list).
+	idAlloc.AllocateIdentity(map[string]string{
+		"app":                              "db",
+		"tier":                             "data",
+		"novanet.io/namespace":   "default",
+	})
+
+	np := &networkingv1.NetworkPolicy{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "match-expr-notin",
+			Namespace: "default",
+		},
+		Spec: networkingv1.NetworkPolicySpec{
+			PodSelector: metav1.LabelSelector{
+				MatchExpressions: []metav1.LabelSelectorRequirement{
+					{
+						Key:      "tier",
+						Operator: metav1.LabelSelectorOpNotIn,
+						Values:   []string{"frontend", "backend"},
+					},
+				},
+			},
+			PolicyTypes: []networkingv1.PolicyType{
+				networkingv1.PolicyTypeIngress,
+			},
+		},
+	}
+
+	rules := c.CompilePolicy(np)
+	if len(rules) != 1 {
+		t.Fatalf("expected 1 rule (only data tier matches), got %d", len(rules))
+	}
+}
+
+func TestCompileMatchExpressionExists(t *testing.T) {
+	c, idAlloc := testCompiler()
+
+	// Has "environment" label — should match.
+	idAlloc.AllocateIdentity(map[string]string{
+		"app":                              "web",
+		"environment":                      "prod",
+		"novanet.io/namespace":   "default",
+	})
+	// Missing "environment" label — should NOT match.
+	idAlloc.AllocateIdentity(map[string]string{
+		"app":                              "worker",
+		"novanet.io/namespace":   "default",
+	})
+
+	np := &networkingv1.NetworkPolicy{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "match-expr-exists",
+			Namespace: "default",
+		},
+		Spec: networkingv1.NetworkPolicySpec{
+			PodSelector: metav1.LabelSelector{
+				MatchExpressions: []metav1.LabelSelectorRequirement{
+					{
+						Key:      "environment",
+						Operator: metav1.LabelSelectorOpExists,
+					},
+				},
+			},
+			PolicyTypes: []networkingv1.PolicyType{
+				networkingv1.PolicyTypeIngress,
+			},
+		},
+	}
+
+	rules := c.CompilePolicy(np)
+	if len(rules) != 1 {
+		t.Fatalf("expected 1 rule (only pod with environment label), got %d", len(rules))
+	}
+}
+
+func TestCompileMatchExpressionDoesNotExist(t *testing.T) {
+	c, idAlloc := testCompiler()
+
+	// Has "legacy" label — should NOT match.
+	idAlloc.AllocateIdentity(map[string]string{
+		"app":                              "old-svc",
+		"legacy":                           "true",
+		"novanet.io/namespace":   "default",
+	})
+	// Missing "legacy" label — should match.
+	idAlloc.AllocateIdentity(map[string]string{
+		"app":                              "new-svc",
+		"novanet.io/namespace":   "default",
+	})
+
+	np := &networkingv1.NetworkPolicy{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "match-expr-dne",
+			Namespace: "default",
+		},
+		Spec: networkingv1.NetworkPolicySpec{
+			PodSelector: metav1.LabelSelector{
+				MatchExpressions: []metav1.LabelSelectorRequirement{
+					{
+						Key:      "legacy",
+						Operator: metav1.LabelSelectorOpDoesNotExist,
+					},
+				},
+			},
+			PolicyTypes: []networkingv1.PolicyType{
+				networkingv1.PolicyTypeIngress,
+			},
+		},
+	}
+
+	rules := c.CompilePolicy(np)
+	if len(rules) != 1 {
+		t.Fatalf("expected 1 rule (only pod without legacy label), got %d", len(rules))
+	}
+}
+
+func TestCompileCombinedMatchLabelsAndExpressions(t *testing.T) {
+	c, idAlloc := testCompiler()
+
+	// Matches: app=web AND tier In [frontend,backend]
+	idAlloc.AllocateIdentity(map[string]string{
+		"app":                              "web",
+		"tier":                             "frontend",
+		"novanet.io/namespace":   "default",
+	})
+	// Does NOT match: app=api (wrong matchLabels)
+	idAlloc.AllocateIdentity(map[string]string{
+		"app":                              "api",
+		"tier":                             "frontend",
+		"novanet.io/namespace":   "default",
+	})
+
+	np := &networkingv1.NetworkPolicy{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "combined",
+			Namespace: "default",
+		},
+		Spec: networkingv1.NetworkPolicySpec{
+			PodSelector: metav1.LabelSelector{
+				MatchLabels: map[string]string{"app": "web"},
+				MatchExpressions: []metav1.LabelSelectorRequirement{
+					{
+						Key:      "tier",
+						Operator: metav1.LabelSelectorOpIn,
+						Values:   []string{"frontend", "backend"},
+					},
+				},
+			},
+			PolicyTypes: []networkingv1.PolicyType{
+				networkingv1.PolicyTypeIngress,
+			},
+		},
+	}
+
+	rules := c.CompilePolicy(np)
+	if len(rules) != 1 {
+		t.Fatalf("expected 1 rule (only app=web with tier=frontend), got %d", len(rules))
+	}
+}
+
+// --- Named port tests ---
+
+func TestCompileNamedPort(t *testing.T) {
+	c, _ := testCompiler()
+
+	// Set up a port resolver that resolves "http" → 8080.
+	c.SetPortResolver(func(portName string, protocol corev1.Protocol, namespace string, selector metav1.LabelSelector) []uint16 {
+		if portName == "http" && protocol == corev1.ProtocolTCP {
+			return []uint16{8080}
+		}
+		return nil
+	})
+
+	tcpProto := corev1.ProtocolTCP
+	namedPort := intstr.FromString("http")
+
+	np := &networkingv1.NetworkPolicy{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "named-port",
+			Namespace: "default",
+		},
+		Spec: networkingv1.NetworkPolicySpec{
+			PodSelector: metav1.LabelSelector{
+				MatchLabels: map[string]string{"app": "web"},
+			},
+			PolicyTypes: []networkingv1.PolicyType{
+				networkingv1.PolicyTypeIngress,
+			},
+			Ingress: []networkingv1.NetworkPolicyIngressRule{
+				{
+					Ports: []networkingv1.NetworkPolicyPort{
+						{Protocol: &tcpProto, Port: &namedPort},
+					},
+				},
+			},
+		},
+	}
+
+	rules := c.CompilePolicy(np)
+	if len(rules) != 1 {
+		t.Fatalf("expected 1 rule, got %d", len(rules))
+	}
+	if rules[0].DstPort != 8080 {
+		t.Fatalf("expected port 8080 (resolved from 'http'), got %d", rules[0].DstPort)
+	}
+	if rules[0].Protocol != ProtocolTCP {
+		t.Fatalf("expected TCP protocol, got %d", rules[0].Protocol)
+	}
+}
+
+func TestCompileNamedPortMultipleResolutions(t *testing.T) {
+	c, _ := testCompiler()
+
+	// Port resolver returns multiple ports (different pods use different port numbers).
+	c.SetPortResolver(func(portName string, protocol corev1.Protocol, namespace string, selector metav1.LabelSelector) []uint16 {
+		if portName == "metrics" {
+			return []uint16{9090, 9091}
+		}
+		return nil
+	})
+
+	tcpProto := corev1.ProtocolTCP
+	namedPort := intstr.FromString("metrics")
+
+	np := &networkingv1.NetworkPolicy{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "multi-named-port",
+			Namespace: "default",
+		},
+		Spec: networkingv1.NetworkPolicySpec{
+			PodSelector: metav1.LabelSelector{
+				MatchLabels: map[string]string{"app": "web"},
+			},
+			PolicyTypes: []networkingv1.PolicyType{
+				networkingv1.PolicyTypeIngress,
+			},
+			Ingress: []networkingv1.NetworkPolicyIngressRule{
+				{
+					Ports: []networkingv1.NetworkPolicyPort{
+						{Protocol: &tcpProto, Port: &namedPort},
+					},
+				},
+			},
+		},
+	}
+
+	rules := c.CompilePolicy(np)
+	if len(rules) != 2 {
+		t.Fatalf("expected 2 rules (one per resolved port), got %d", len(rules))
+	}
+}
+
+func TestCompileNamedPortNoResolver(t *testing.T) {
+	c, _ := testCompiler()
+	// No port resolver set — named ports should be skipped.
+
+	tcpProto := corev1.ProtocolTCP
+	namedPort := intstr.FromString("http")
+	port443 := intstr.FromInt(443)
+
+	np := &networkingv1.NetworkPolicy{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "no-resolver",
+			Namespace: "default",
+		},
+		Spec: networkingv1.NetworkPolicySpec{
+			PodSelector: metav1.LabelSelector{
+				MatchLabels: map[string]string{"app": "web"},
+			},
+			PolicyTypes: []networkingv1.PolicyType{
+				networkingv1.PolicyTypeIngress,
+			},
+			Ingress: []networkingv1.NetworkPolicyIngressRule{
+				{
+					Ports: []networkingv1.NetworkPolicyPort{
+						{Protocol: &tcpProto, Port: &namedPort},  // skipped
+						{Protocol: &tcpProto, Port: &port443},    // kept
+					},
+				},
+			},
+		},
+	}
+
+	rules := c.CompilePolicy(np)
+	if len(rules) != 1 {
+		t.Fatalf("expected 1 rule (named port skipped, numeric kept), got %d", len(rules))
+	}
+	if rules[0].DstPort != 443 {
+		t.Fatalf("expected port 443, got %d", rules[0].DstPort)
+	}
+}
+
+// --- Peer MatchExpressions test ---
+
+func TestCompilePeerWithMatchExpressions(t *testing.T) {
+	c, idAlloc := testCompiler()
+
+	// Pre-allocate source identities.
+	idAlloc.AllocateIdentity(map[string]string{
+		"app":                              "api",
+		"version":                          "v2",
+		"novanet.io/namespace":   "default",
+	})
+	idAlloc.AllocateIdentity(map[string]string{
+		"app":                              "api",
+		"version":                          "v1",
+		"novanet.io/namespace":   "default",
+	})
+
+	np := &networkingv1.NetworkPolicy{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "peer-expr",
+			Namespace: "default",
+		},
+		Spec: networkingv1.NetworkPolicySpec{
+			PodSelector: metav1.LabelSelector{
+				MatchLabels: map[string]string{"app": "web"},
+			},
+			PolicyTypes: []networkingv1.PolicyType{
+				networkingv1.PolicyTypeIngress,
+			},
+			Ingress: []networkingv1.NetworkPolicyIngressRule{
+				{
+					From: []networkingv1.NetworkPolicyPeer{
+						{
+							PodSelector: &metav1.LabelSelector{
+								MatchLabels: map[string]string{"app": "api"},
+								MatchExpressions: []metav1.LabelSelectorRequirement{
+									{
+										Key:      "version",
+										Operator: metav1.LabelSelectorOpIn,
+										Values:   []string{"v2", "v3"},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	rules := c.CompilePolicy(np)
+	// Should only match the v2 identity, not v1.
+	if len(rules) != 1 {
+		t.Fatalf("expected 1 rule (only api v2 matches), got %d", len(rules))
+	}
+}

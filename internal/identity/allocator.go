@@ -10,6 +10,7 @@ import (
 	"sync"
 
 	"go.uber.org/zap"
+	"k8s.io/apimachinery/pkg/labels"
 )
 
 // Allocator manages the mapping between label sets and identity IDs.
@@ -137,30 +138,21 @@ func (a *Allocator) ListAll() []IdentityEntry {
 	return result
 }
 
-// FindMatchingIdentities returns all identity IDs whose label set is a
-// superset of the given selector labels. This enables the policy compiler
-// to match actual pod identities rather than hashing selector labels.
-func (a *Allocator) FindMatchingIdentities(selectorLabels map[string]string) []uint32 {
+// FindMatchingIdentities returns all identity IDs whose labels match the
+// given selector. Supports both MatchLabels and MatchExpressions (In, NotIn,
+// Exists, DoesNotExist). This enables the policy compiler to match actual
+// pod identities rather than hashing selector labels.
+func (a *Allocator) FindMatchingIdentities(selector labels.Selector) []uint32 {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
 
 	var matches []uint32
-	for id, labels := range a.idToLabels {
-		if labelsContainAll(labels, selectorLabels) {
+	for id, idLabels := range a.idToLabels {
+		if selector.Matches(labels.Set(idLabels)) {
 			matches = append(matches, id)
 		}
 	}
 	return matches
-}
-
-// labelsContainAll returns true if allLabels contains every key-value pair in subset.
-func labelsContainAll(allLabels, subset map[string]string) bool {
-	for k, v := range subset {
-		if allLabels[k] != v {
-			return false
-		}
-	}
-	return true
 }
 
 // Count returns the number of distinct identities currently tracked.
