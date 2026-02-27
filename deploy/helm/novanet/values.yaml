@@ -6,11 +6,11 @@ image:
   agent:
     repository: ghcr.io/piwi3910/novanet-agent
     tag: latest
-    pullPolicy: Always
+    pullPolicy: IfNotPresent
   dataplane:
     repository: ghcr.io/piwi3910/novanet-dataplane
     tag: latest
-    pullPolicy: Always
+    pullPolicy: IfNotPresent
 
 imagePullSecrets:
   - name: ghcr-pull-secret
@@ -19,13 +19,14 @@ config:
   clusterCIDR: "10.42.0.0/16"
   nodeCIDRMaskSize: 24
   tunnelProtocol: "geneve"  # geneve or vxlan
-  routingMode: "native"      # overlay or native
+  routingMode: "overlay"     # overlay or native
   logLevel: "info"
 
 novaroute:
-  enabled: true
+  enabled: false
   socket: "/run/novaroute/novaroute.sock"
-  token: "novanet-test-token-2024"
+  # WARNING: Set a real authentication token before enabling NovaRoute.
+  token: ""
   protocol: "bgp"  # bgp or ospf
 
 egress:

@@ -14,7 +14,7 @@ The following table lists all configurable values in the NovaNet Helm chart (`de
 |-----|---------|-------------|
 | `image.agent.repository` | `ghcr.io/piwi3910/novanet-agent` | Container image for the Go management plane agent |
 | `image.agent.tag` | `latest` | Image tag for the agent |
-| `image.agent.pullPolicy` | `IfNotPresent` | Image pull policy for the agent (`Always`, `IfNotPresent`, `Never`) |
+| `image.agent.pullPolicy` | `IfNotPresent` | Image pull policy for the agent. Use `Always` during development. |
 | `image.dataplane.repository` | `ghcr.io/piwi3910/novanet-dataplane` | Container image for the Rust eBPF dataplane |
 | `image.dataplane.tag` | `latest` | Image tag for the dataplane |
 | `image.dataplane.pullPolicy` | `IfNotPresent` | Image pull policy for the dataplane |
@@ -26,16 +26,16 @@ The following table lists all configurable values in the NovaNet Helm chart (`de
 | `config.clusterCIDR` | `"10.42.0.0/16"` | The cluster-wide CIDR from which PodCIDRs are allocated. Must match the cluster's `--cluster-cidr` setting. |
 | `config.nodeCIDRMaskSize` | `24` | Subnet mask size for per-node PodCIDR allocation. A `/24` provides 254 pod IPs per node. |
 | `config.tunnelProtocol` | `"geneve"` | Tunnel encapsulation protocol for overlay mode. `"geneve"` supports identity metadata in TLV options. `"vxlan"` provides broader hardware offload compatibility. |
-| `config.routingMode` | `"native"` | Networking mode. `"overlay"` creates tunnels between nodes. `"native"` uses underlay routing via NovaRoute (requires NovaRoute). |
+| `config.routingMode` | `"overlay"` | Networking mode. `"overlay"` creates tunnels between nodes. `"native"` uses underlay routing via NovaRoute (requires NovaRoute). |
 | `config.logLevel` | `"info"` | Log verbosity level. One of `"debug"`, `"info"`, `"warn"`, `"error"`. |
 
 ### NovaRoute Integration
 
 | Key | Default | Description |
 |-----|---------|-------------|
-| `novaroute.enabled` | `true` | Enable NovaRoute integration for native routing. Must be `true` when `config.routingMode` is `"native"`. |
+| `novaroute.enabled` | `false` | Enable NovaRoute integration for native routing. Must be `true` when `config.routingMode` is `"native"`. |
 | `novaroute.socket` | `"/run/novaroute/novaroute.sock"` | Path to the NovaRoute gRPC Unix socket. |
-| `novaroute.token` | `""` | Authentication token for registering with NovaRoute as the `"novanet"` owner. |
+| `novaroute.token` | `""` | Authentication token for registering with NovaRoute as the `"novanet"` owner. Must be set to a real token before enabling NovaRoute. |
 | `novaroute.protocol` | `"bgp"` | Routing protocol to use. `"bgp"` for eBGP peering or `"ospf"` for OSPF area injection. |
 
 

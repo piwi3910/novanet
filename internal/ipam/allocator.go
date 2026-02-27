@@ -279,9 +279,14 @@ func (a *Allocator) saveIP(ip net.IP) error {
 }
 
 // removeIP deletes the file for the given IP from the state directory.
+// Errors are logged but not returned since the bitmap is already updated.
 func (a *Allocator) removeIP(ip net.IP) {
 	path := filepath.Join(a.stateDir, ip.String())
-	os.Remove(path)
+	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+		// Log to stderr since we don't have a structured logger here.
+		// This is best-effort cleanup; the bitmap is already updated.
+		fmt.Fprintf(os.Stderr, "ipam: failed to remove state file %s: %v\n", path, err)
+	}
 }
 
 // findFree returns the index of the first unset bit, or -1 if all are set.

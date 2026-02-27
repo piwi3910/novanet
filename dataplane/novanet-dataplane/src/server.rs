@@ -106,7 +106,8 @@ impl proto::dataplane_control_server::DataplaneControl for DataplaneService {
 
         let action = match proto::PolicyAction::try_from(req.action) {
             Ok(proto::PolicyAction::Allow) => ACTION_ALLOW,
-            Ok(proto::PolicyAction::Deny) | _ => ACTION_DENY,
+            Ok(proto::PolicyAction::Deny) => ACTION_DENY,
+            _ => ACTION_DENY,
         };
 
         let value = PolicyValue {
@@ -213,7 +214,8 @@ impl proto::dataplane_control_server::DataplaneControl for DataplaneService {
         let action = match proto::EgressAction::try_from(req.action) {
             Ok(proto::EgressAction::Allow) => EGRESS_ALLOW,
             Ok(proto::EgressAction::Snat) => EGRESS_SNAT,
-            Ok(proto::EgressAction::Deny) | _ => EGRESS_DENY,
+            Ok(proto::EgressAction::Deny) => EGRESS_DENY,
+            _ => EGRESS_DENY,
         };
 
         let key = EgressKey {

@@ -970,7 +970,9 @@ func main() {
 		logger.Info("auto-detecting node-ip/pod-cidr from Kubernetes API",
 			zap.String("node_name", nodeName),
 		)
-		node, err := k8sClient.CoreV1().Nodes().Get(context.Background(), nodeName, metav1.GetOptions{})
+		nodeCtx, nodeCancel := context.WithTimeout(context.Background(), 10*time.Second)
+		node, err := k8sClient.CoreV1().Nodes().Get(nodeCtx, nodeName, metav1.GetOptions{})
+		nodeCancel()
 		if err != nil {
 			logger.Fatal("failed to get node for auto-detection", zap.Error(err), zap.String("node", nodeName))
 		}

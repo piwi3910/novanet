@@ -157,7 +157,13 @@ func (m *Manager) removeTunnelLocked(ctx context.Context, nodeName string) error
 	// For Geneve, destroy the per-node interface.
 	if m.protocol == "vxlan" {
 		remoteMAC := IPToTunnelMAC(net.ParseIP(info.NodeIP))
-		removeVxlanFDB(info.InterfaceName, remoteMAC, net.ParseIP(info.NodeIP))
+		if err := removeVxlanFDB(info.InterfaceName, remoteMAC, net.ParseIP(info.NodeIP)); err != nil {
+			m.logger.Warn("failed to remove VXLAN FDB entry",
+				zap.Error(err),
+				zap.String("node", nodeName),
+				zap.String("interface", info.InterfaceName),
+			)
+		}
 	} else {
 		destroyTunnel(info.InterfaceName)
 	}
