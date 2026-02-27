@@ -65,11 +65,11 @@ The following table lists all configurable values in the NovaNet Helm chart (`de
 | `resources.agent.requests.cpu` | `"100m"` | CPU request for the agent container. |
 | `resources.agent.requests.memory` | `"128Mi"` | Memory request for the agent container. |
 | `resources.agent.limits.cpu` | `"500m"` | CPU limit for the agent container. |
-| `resources.agent.limits.memory` | `"512Mi"` | Memory limit for the agent container. |
+| `resources.agent.limits.memory` | `"256Mi"` | Memory limit for the agent container. |
 | `resources.dataplane.requests.cpu` | `"100m"` | CPU request for the dataplane container. |
 | `resources.dataplane.requests.memory` | `"64Mi"` | Memory request for the dataplane container. |
 | `resources.dataplane.limits.cpu` | `"500m"` | CPU limit for the dataplane container. |
-| `resources.dataplane.limits.memory` | `"256Mi"` | Memory limit for the dataplane container. |
+| `resources.dataplane.limits.memory` | `"128Mi"` | Memory limit for the dataplane container. |
 
 ### Scheduling
 

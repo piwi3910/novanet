@@ -17,6 +17,10 @@ import (
 
 // ModeManager orchestrates the networking mode — either overlay (tunnel-based)
 // or native (NovaRoute-based routing).
+//
+// NOTE: This is not yet wired into main.go; the agent currently manages overlay
+// and native routing inline. ModeManager is the intended replacement — once
+// wired in, the inline tunnel/NovaRoute logic in main.go should be removed.
 type ModeManager struct {
 	mu sync.RWMutex
 

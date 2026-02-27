@@ -122,7 +122,9 @@ pub async fn flow_reader_task(mut ring_buf: aya::maps::RingBuf<aya::maps::MapDat
             // The pointer comes from a ring buffer item provided by aya, which guarantees alignment.
             let raw: &RawFlowEvent = unsafe { &*(data.as_ptr() as *const RawFlowEvent) };
             let proto_event = raw_to_proto(raw);
-            let _ = tx.send(proto_event);
+            if tx.send(proto_event).is_err() {
+                // No active subscribers — not an error.
+            }
             count += 1;
         }
 
@@ -145,15 +147,27 @@ async fn flow_reader_task_polling(mut ring_buf: aya::maps::RingBuf<aya::maps::Ma
     tracing::info!("Flow event reader started (polling mode)");
 
     loop {
+        let mut count = 0u64;
         while let Some(item) = ring_buf.next() {
             let data = item.as_ref();
             if data.len() < mem::size_of::<RawFlowEvent>() {
+                tracing::warn!(
+                    len = data.len(),
+                    expected = mem::size_of::<RawFlowEvent>(),
+                    "Short flow event from ring buffer (polling)"
+                );
                 continue;
             }
             // SAFETY: Length is validated above (data.len() >= size_of::<RawFlowEvent>()).
             let raw: &RawFlowEvent = unsafe { &*(data.as_ptr() as *const RawFlowEvent) };
             let proto_event = raw_to_proto(raw);
-            let _ = tx.send(proto_event);
+            if tx.send(proto_event).is_err() {
+                // No active subscribers — not an error.
+            }
+            count += 1;
+        }
+        if count > 0 {
+            tracing::debug!(count, "Processed flow events (polling)");
         }
         tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
     }

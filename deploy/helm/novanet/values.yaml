@@ -4,11 +4,11 @@ fullnameOverride: ""
 
 image:
   agent:
-    repository: ghcr.io/piwi3910/novanet/agent
+    repository: ghcr.io/piwi3910/novanet-agent
     tag: latest
     pullPolicy: Always
   dataplane:
-    repository: ghcr.io/piwi3910/novanet/dataplane
+    repository: ghcr.io/piwi3910/novanet-dataplane
     tag: latest
     pullPolicy: Always
 
@@ -32,8 +32,8 @@ egress:
   masqueradeEnabled: true
 
 cni:
-  binPath: "/opt/cni/bin"
-  confPath: "/etc/cni/net.d"
+  binPath: "/opt/cni/bin"    # Host path where CNI binaries are installed.
+  confPath: "/etc/cni/net.d"  # Host path where CNI config is written.
 
 policy:
   defaultDeny: false

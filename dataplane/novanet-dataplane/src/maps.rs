@@ -87,7 +87,8 @@ impl MapManager {
         }
     }
 
-    #[allow(dead_code)]
+    /// Look up a single policy entry. Currently used by tests only.
+    #[cfg(test)]
     pub fn get_policy(&self, key: &PolicyKey) -> anyhow::Result<Option<PolicyValue>> {
         match &self.inner {
             MapManagerInner::Mock(m) => m.get_policy(key),
@@ -388,6 +389,7 @@ impl MockMaps {
         Ok(())
     }
 
+    #[cfg(test)]
     fn get_policy(&self, key: &PolicyKey) -> anyhow::Result<Option<PolicyValue>> {
         let flat: PolicyKeyFlat = key.into();
         Ok(self.policies.read().expect("policies lock poisoned").get(&flat).copied())
@@ -504,7 +506,7 @@ impl MockMaps {
             AttachDirection::Egress => "egress",
         };
         let mut attached = self.attached.write().expect("attached lock poisoned");
-        let mut prog_id = self.next_prog_id.write().unwrap();
+        let mut prog_id = self.next_prog_id.write().expect("next_prog_id lock poisoned");
 
         // Check if already attached.
         if attached
@@ -1062,6 +1064,9 @@ impl RealMaps {
             .iter()
             .filter_map(|res| res.ok())
             .map(|(k, v)| {
+                // SAFETY: PolicyKey is #[repr(C)] with no padding, so reading
+                // its raw bytes is safe for equality comparison. The pointer
+                // is valid for size_of::<PolicyKey>() bytes.
                 let key_bytes = unsafe {
                     core::slice::from_raw_parts(
                         &k as *const PolicyKey as *const u8,
@@ -1078,6 +1083,8 @@ impl RealMaps {
         let mut new_key_bytes_set = std::collections::HashSet::new();
 
         for (key, value) in &new_policies {
+            // SAFETY: Same as above — PolicyKey is #[repr(C)], pointer is
+            // valid for size_of::<PolicyKey>() bytes.
             let key_bytes = unsafe {
                 core::slice::from_raw_parts(
                     key as *const PolicyKey as *const u8,
@@ -1109,6 +1116,8 @@ impl RealMaps {
             .filter(|kb| !new_key_bytes_set.contains(*kb))
             .filter_map(|kb| {
                 if kb.len() == core::mem::size_of::<PolicyKey>() {
+                    // SAFETY: Length check guarantees the buffer holds a
+                    // complete PolicyKey. PolicyKey is #[repr(C)] and Copy.
                     Some(unsafe { *(kb.as_ptr() as *const PolicyKey) })
                 } else {
                     None
@@ -1192,7 +1201,10 @@ impl RealMaps {
                         result.insert(idx, total);
                     }
                 }
-                Err(_) => {}
+                Err(aya::maps::MapError::KeyNotFound) => {}
+                Err(e) => {
+                    tracing::warn!(index = idx, error = %e, "failed to read drop counter");
+                }
             }
         }
         result
@@ -1246,8 +1258,10 @@ impl RealMaps {
             .ok_or_else(|| anyhow::anyhow!("eBPF program '{}' not found", prog_name))?
             .try_into()?;
 
-        // Add clsact qdisc if not already present.
-        let _ = tc::qdisc_add_clsact(interface);
+        // Add clsact qdisc if not already present (may already exist).
+        if let Err(e) = tc::qdisc_add_clsact(interface) {
+            debug!(interface, error = %e, "qdisc_add_clsact failed (may already exist)");
+        }
 
         let link_id = prog.attach(interface, tc_attach_type)?;
         let prog_id = prog.info()?.id();

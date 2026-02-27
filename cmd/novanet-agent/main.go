@@ -656,14 +656,19 @@ func (s *agentServer) syncEgressRules(rules []*policy.CompiledRule) {
 
 		name := fmt.Sprintf("np-cidr-%d", i)
 		// Store in egress manager for ListEgressPolicies RPC.
-		_ = s.egressMgr.AddEgressRule(r.Namespace, egress.EgressRule{
+		if err := s.egressMgr.AddEgressRule(r.Namespace, egress.EgressRule{
 			Name:        name,
 			SrcIdentity: r.SrcIdentity,
 			DstCIDR:     r.CIDR,
 			Protocol:    uint8(r.Protocol),
 			DstPort:     uint16(r.DstPort),
 			Action:      uint8(action),
-		})
+		}); err != nil {
+			s.logger.Warn("failed to add egress rule",
+				zap.String("namespace", r.Namespace),
+				zap.String("cidr", r.CIDR),
+				zap.Error(err))
+		}
 
 		// Push to eBPF dataplane.
 		// Include the node IP as SNAT target so eBPF can perform masquerade.
@@ -1004,6 +1009,9 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
+	// WaitGroup for background goroutines that should finish before shutdown completes.
+	var bgWg sync.WaitGroup
+
 	// ---- Create IPAM allocator ----
 	ipAlloc, err := ipam.NewAllocatorWithStateDir(*podCIDR, "/var/lib/cni/networks/novanet")
 	if err != nil {
@@ -1089,7 +1097,11 @@ func main() {
 	var egressMgr *egress.Manager
 	if cfg.ClusterCIDR != "" {
 		_, clusterNet, err := net.ParseCIDR(cfg.ClusterCIDR)
-		if err == nil {
+		if err != nil {
+			logger.Warn("failed to parse cluster CIDR, egress manager disabled",
+				zap.String("cluster_cidr", cfg.ClusterCIDR),
+				zap.Error(err))
+		} else {
 			egressMgr = egress.NewManager(nodeIP, clusterNet, logger)
 			logger.Info("egress manager created")
 		}
@@ -1178,6 +1190,11 @@ func main() {
 	metricsMux.Handle("/metrics", promhttp.Handler())
 	metricsMux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
+		if !agentSrv.dpConnected {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			fmt.Fprintf(w, `{"status":"not ready","reason":"dataplane not connected","version":"%s"}`, Version)
+			return
+		}
 		w.WriteHeader(http.StatusOK)
 		fmt.Fprintf(w, `{"status":"ok","version":"%s"}`, Version)
 	})
@@ -1214,7 +1231,11 @@ func main() {
 
 		tunnelMgr := tunnel.NewManager(cfg.TunnelProtocol, nodeIP, 1, nil, logger)
 		agentSrv.tunnelMgr = tunnelMgr
-		go watchNodes(ctx, logger, k8sClient, tunnelMgr, dpClient, nodeName, nodeIP)
+		bgWg.Add(1)
+		go func() {
+			defer bgWg.Done()
+			watchNodes(ctx, logger, k8sClient, tunnelMgr, dpClient, nodeName, nodeIP)
+		}()
 
 	case "native":
 		logger.Info("running in native routing mode (eBGP)",
@@ -1274,7 +1295,11 @@ func main() {
 		agentSrv.novarouteConnected = true
 
 		// Watch nodes and establish eBGP peering with each remote node.
-		go watchNodesNative(ctx, logger, k8sClient, nrClient, nodeName)
+		bgWg.Add(1)
+		go func() {
+			defer bgWg.Done()
+			watchNodesNative(ctx, logger, k8sClient, nrClient, nodeName)
+		}()
 	}
 
 	// ---- Wait for termination signal ----
@@ -1290,6 +1315,10 @@ func main() {
 
 	// Cancel root context to stop background operations.
 	cancel()
+
+	// Wait for background goroutines (node watchers) to finish.
+	bgWg.Wait()
+	logger.Info("background goroutines stopped")
 
 	// If native mode, withdraw prefix and close NovaRoute connection.
 	if nrClient != nil {
@@ -1526,9 +1555,16 @@ func watchNodesNative(ctx context.Context, logger *zap.Logger, k8sClient *kubern
 			}
 
 			// Compute remote node's eBGP AS: 65000 + last octet.
-			ip := net.ParseIP(remoteIP).To4()
-			if ip == nil {
+			parsedIP := net.ParseIP(remoteIP)
+			if parsedIP == nil {
+				logger.Warn("invalid remote node IP, skipping",
+					zap.String("node", n.Name),
+					zap.String("remote_ip", remoteIP))
 				continue
+			}
+			ip := parsedIP.To4()
+			if ip == nil {
+				continue // IPv6 node, skip eBGP peering.
 			}
 			remoteAS := uint32(65000) + uint32(ip[3])
 
@@ -1631,14 +1667,23 @@ func watchNodes(ctx context.Context, logger *zap.Logger, k8sClient *kubernetes.C
 				continue
 			}
 
+			parsedNodeIP := net.ParseIP(nodeIP)
+			if parsedNodeIP == nil {
+				logger.Warn("invalid node IP, skipping",
+					zap.String("node", node.Name),
+					zap.String("node_ip", nodeIP),
+				)
+				continue
+			}
+
 			seen[node.Name] = true
 
 			// If tunnel already exists, reconcile route/neighbor entries
 			// (they may have been lost due to ARP resolution overwriting
 			// permanent entries on kernels without NOARP support).
 			if tunnelInfo, exists := tunnelMgr.GetTunnel(node.Name); exists {
-				if err := tunnel.AddRoute(node.Spec.PodCIDR, tunnelInfo.InterfaceName, selfNodeIP, net.ParseIP(tunnelInfo.NodeIP), tunnelMgr.Protocol()); err != nil {
-					logger.Debug("failed to reconcile route",
+				if err := tunnel.AddRoute(node.Spec.PodCIDR, tunnelInfo.InterfaceName, selfNodeIP, parsedNodeIP, tunnelMgr.Protocol()); err != nil {
+					logger.Warn("failed to reconcile route",
 						zap.Error(err),
 						zap.String("node", node.Name),
 					)
@@ -1663,7 +1708,7 @@ func watchNodes(ctx context.Context, logger *zap.Logger, k8sClient *kubernetes.C
 
 			// Register tunnel with dataplane.
 			if dpClient != nil {
-				remoteIPUint := ipToUint32(net.ParseIP(nodeIP))
+				remoteIPUint := ipToUint32(parsedNodeIP)
 				_, err := dpClient.UpsertTunnel(ctx, &pb.UpsertTunnelRequest{
 					NodeIp:        remoteIPUint,
 					TunnelIfindex: uint32(tunnelInfo.Ifindex),
@@ -1678,7 +1723,7 @@ func watchNodes(ctx context.Context, logger *zap.Logger, k8sClient *kubernetes.C
 			}
 
 			// Add kernel route for the remote node's PodCIDR via the tunnel.
-			if err := tunnel.AddRoute(node.Spec.PodCIDR, tunnelInfo.InterfaceName, selfNodeIP, net.ParseIP(nodeIP), tunnelMgr.Protocol()); err != nil {
+			if err := tunnel.AddRoute(node.Spec.PodCIDR, tunnelInfo.InterfaceName, selfNodeIP, parsedNodeIP, tunnelMgr.Protocol()); err != nil {
 				logger.Error("failed to add route for remote PodCIDR",
 					zap.Error(err),
 					zap.String("cidr", node.Spec.PodCIDR),
@@ -1714,9 +1759,14 @@ func watchNodes(ctx context.Context, logger *zap.Logger, k8sClient *kubernetes.C
 				// Remove tunnel and dataplane entry.
 				if dpClient != nil {
 					remoteIPUint := ipToUint32(net.ParseIP(t.NodeIP))
-					_, _ = dpClient.DeleteTunnel(ctx, &pb.DeleteTunnelRequest{
+					if _, err := dpClient.DeleteTunnel(ctx, &pb.DeleteTunnelRequest{
 						NodeIp: remoteIPUint,
-					})
+					}); err != nil {
+						logger.Warn("failed to delete tunnel from dataplane",
+							zap.Error(err),
+							zap.String("node", t.NodeName),
+						)
+					}
 				}
 
 				if err := tunnelMgr.RemoveTunnel(ctx, t.NodeName); err != nil {

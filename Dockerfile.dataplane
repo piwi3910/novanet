@@ -5,7 +5,9 @@
 #   2. Runtime stage uses Debian slim (glibc required by Rust binary).
 
 # ---------- builder ----------
-FROM rustlang/rust:nightly-bookworm AS builder
+# Pin to a dated nightly for reproducible builds. Nightly is required for
+# -Z build-std=core used by eBPF target compilation.
+FROM rustlang/rust:nightly-2025-02-01-bookworm AS builder
 
 # Install system dependencies for eBPF compilation.
 RUN apt-get update && apt-get install -y --no-install-recommends \

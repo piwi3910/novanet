@@ -116,9 +116,15 @@ func AddRoute(cidr string, ifName string, srcIP net.IP, remoteNodeIP net.IP, pro
 }
 
 // podCIDRGateway returns the .1 address of a parsed CIDR network.
+// Normalizes to IPv4 so that the last byte is correctly the host octet
+// even when Go stores the IP in 16-byte (IPv6-mapped) form.
 func podCIDRGateway(network *net.IPNet) net.IP {
-	gw := make(net.IP, len(network.IP))
-	copy(gw, network.IP)
+	ip := network.IP
+	if v4 := ip.To4(); v4 != nil {
+		ip = v4
+	}
+	gw := make(net.IP, len(ip))
+	copy(gw, ip)
 	gw[len(gw)-1] = 1
 	return gw
 }

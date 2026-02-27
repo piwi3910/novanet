@@ -46,6 +46,21 @@ jobs:
             exit 1
           fi
 
+  lint-helm:
+    name: Lint (Helm)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+
+      - name: Lint Helm chart
+        run: helm lint deploy/helm/novanet/
+
+      - name: Template render check
+        run: helm template novanet deploy/helm/novanet/ > /dev/null
+
   lint-rust:
     name: Lint (Rust)
     runs-on: ubuntu-latest
@@ -238,12 +253,13 @@ jobs:
   status-check:
     name: Status Check
     if: always()
-    needs: [lint, lint-rust, test-go, test-rust, build-go, build-rust, security]
+    needs: [lint, lint-helm, lint-rust, test-go, test-rust, build-go, build-rust, security]
     runs-on: ubuntu-latest
     steps:
       - name: Decide status
         run: |
           if [[ "${{ needs.lint.result }}" == "failure" || \
+                "${{ needs.lint-helm.result }}" == "failure" || \
                 "${{ needs.lint-rust.result }}" == "failure" || \
                 "${{ needs.test-go.result }}" == "failure" || \
                 "${{ needs.build-go.result }}" == "failure" || \

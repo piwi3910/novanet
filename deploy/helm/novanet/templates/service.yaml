@@ -6,12 +6,12 @@ metadata:
   namespace: {{ .Release.Namespace }}
   labels:
     {{- include "novanet.labels" . | nindent 4 }}
-  {{- if .Values.metrics.enabled }}
   annotations:
     prometheus.io/scrape: "true"
     prometheus.io/port: {{ .Values.metrics.port | quote }}
-  {{- end }}
 spec:
+  # Headless service: Prometheus discovers individual pod IPs via endpoint
+  # scraping, which is the standard pattern for DaemonSet metrics.
   type: ClusterIP
   clusterIP: None
   selector:

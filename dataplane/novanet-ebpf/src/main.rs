@@ -60,6 +60,7 @@ static DROP_COUNTERS: PerCpuArray<u64> = PerCpuArray::with_max_entries(DROP_REAS
 
 #[inline(always)]
 fn get_config(key: u32) -> u64 {
+    // SAFETY: eBPF map access via aya-ebpf; safety guaranteed by BPF verifier at load time.
     unsafe { CONFIG.get(&key).copied().unwrap_or(0) }
 }
 
@@ -78,6 +79,8 @@ fn check_policy(src_id: u32, dst_id: u32, proto: u8, dst_port: u16) -> Option<u8
         (0, dst_id),       // wildcard source (ingress deny-all)
     ];
 
+    // SAFETY: All POLICIES.get() calls below are eBPF map lookups via aya-ebpf;
+    // safety is guaranteed by the BPF verifier at program load time.
     for &(src, dst) in id_pairs.iter() {
         // Try exact port match.
         let key = PolicyKey {
@@ -130,6 +133,8 @@ fn check_policy(src_id: u32, dst_id: u32, proto: u8, dst_port: u16) -> Option<u8
 #[inline(always)]
 fn inc_drop_counter(reason: u8) {
     let idx = reason as u32;
+    // SAFETY: eBPF per-CPU array access; the BPF verifier ensures bounds checking.
+    // Writing through the raw pointer is safe because per-CPU arrays give exclusive access.
     if let Some(counter) = unsafe { DROP_COUNTERS.get_ptr_mut(idx) } {
         unsafe {
             *counter += 1;
@@ -172,8 +177,10 @@ fn emit_flow_event(
             _pad3: 0,
             bytes,
             packets: 1,
+            // SAFETY: BPF helper call; always available in TC programs.
             timestamp_ns: unsafe { aya_ebpf::helpers::bpf_ktime_get_ns() },
         };
+        // SAFETY: Writing to a ring buffer entry reserved above; entry is valid.
         unsafe {
             entry.write(event);
         }
@@ -248,6 +255,7 @@ fn is_cluster_ip(ip: u32) -> bool {
 #[inline(always)]
 fn lookup_identity(ip: u32) -> Option<(u32, &'static EndpointValue)> {
     let key = EndpointKey { ip };
+    // SAFETY: eBPF map lookup; safety guaranteed by BPF verifier.
     unsafe { ENDPOINTS.get(&key).map(|v| (v.identity, v)) }
 }
 
@@ -258,6 +266,9 @@ fn lookup_identity(ip: u32) -> Option<(u32, &'static EndpointValue)> {
 
 #[inline(always)]
 fn check_egress_policy(src_identity: u32, dst_ip: u32) -> (bool, u32) {
+    // SAFETY: All EGRESS_POLICIES.get() calls below are eBPF map lookups;
+    // safety is guaranteed by the BPF verifier at program load time.
+    //
     // Try /32 first (most specific), then /24, /16, /8, /0 (least specific).
     // This is a simple linear scan — eBPF LPM trie would be more efficient
     // but we keep it simple for now with a small number of prefix lengths.
@@ -489,6 +500,7 @@ fn try_tc_egress(ctx: &TcContext) -> Result<i32, ()> {
             let tunnel_key = TunnelKey {
                 node_ip: dst_ep.node_ip,
             };
+            // SAFETY: eBPF map lookup + BPF helper; safety guaranteed by verifier.
             if let Some(tunnel) = unsafe { TUNNELS.get(&tunnel_key) } {
                 // Redirect to tunnel interface for kernel encapsulation.
                 // Identity is resolved on the receiving side via endpoint map lookup.
@@ -843,6 +855,7 @@ fn enforce_tunnel_policy(
             );
             // Look up destination endpoint to redirect to pod veth.
             if let Some((_, dst_ep)) = lookup_identity(dst_ip) {
+                // SAFETY: BPF helper call; safety guaranteed by verifier.
                 unsafe {
                     return Ok(bpf_redirect(dst_ep.ifindex, 0) as i32);
                 }
@@ -861,6 +874,7 @@ fn enforce_tunnel_policy(
             } else {
                 // Default allow — redirect to destination pod.
                 if let Some((_, dst_ep)) = lookup_identity(dst_ip) {
+                    // SAFETY: BPF helper call; safety guaranteed by verifier.
                     unsafe {
                         return Ok(bpf_redirect(dst_ep.ifindex, 0) as i32);
                     }

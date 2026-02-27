@@ -45,7 +45,9 @@ build-docker-rust:
 	docker create --name novanet-extract novanet-builder /bin/true
 	@mkdir -p $(BINARY_DIR)
 	docker cp novanet-extract:/build/dataplane/target/release/novanet-dataplane $(DP_BINARY)
-	docker cp novanet-extract:/build/dataplane/target/bpfel-unknown-none/release/novanet-ebpf $(BINARY_DIR)/novanet-ebpf.bpf.o || true
+	# eBPF object may not exist if the eBPF build was skipped (e.g. missing nightly).
+	docker cp novanet-extract:/build/dataplane/target/bpfel-unknown-none/release/novanet-ebpf $(BINARY_DIR)/novanet-ebpf.bpf.o 2>/dev/null \
+		&& echo "Copied eBPF object file" || echo "Warning: eBPF object file not found (nightly toolchain may be required)"
 	docker rm novanet-extract
 
 ## build-rust-native: Build Rust locally (Linux only)
