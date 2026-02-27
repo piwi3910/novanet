@@ -46,6 +46,34 @@ jobs:
             exit 1
           fi
 
+  lint-rust:
+    name: Lint (Rust)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            dataplane/target
+          key: ${{ runner.os }}-cargo-lint-${{ hashFiles('dataplane/Cargo.lock') }}
+
+      - name: Check formatting
+        working-directory: dataplane
+        run: cargo fmt --all -- --check
+
+      - name: Run clippy
+        working-directory: dataplane
+        run: cargo clippy --package novanet-common --package novanet-dataplane -- -D warnings
+
   test-go:
     name: Test (Go)
     runs-on: ubuntu-latest
@@ -115,6 +143,9 @@ jobs:
             dataplane/target
           key: ${{ runner.os }}-cargo-test-${{ hashFiles('dataplane/Cargo.lock') }}
 
+      # Note: novanet-ebpf is excluded — eBPF programs compile to BPF bytecode
+      # and cannot be unit-tested in userspace. They are validated via the
+      # integration test suite on a real cluster.
       - name: Run novanet-common tests
         working-directory: dataplane
         run: cargo test -p novanet-common --features userspace
@@ -207,12 +238,13 @@ jobs:
   status-check:
     name: Status Check
     if: always()
-    needs: [lint, test-go, test-rust, build-go, build-rust, security]
+    needs: [lint, lint-rust, test-go, test-rust, build-go, build-rust, security]
     runs-on: ubuntu-latest
     steps:
       - name: Decide status
         run: |
           if [[ "${{ needs.lint.result }}" == "failure" || \
+                "${{ needs.lint-rust.result }}" == "failure" || \
                 "${{ needs.test-go.result }}" == "failure" || \
                 "${{ needs.build-go.result }}" == "failure" || \
                 "${{ needs.test-rust.result }}" == "failure" || \

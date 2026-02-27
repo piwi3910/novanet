@@ -118,6 +118,8 @@ pub async fn flow_reader_task(mut ring_buf: aya::maps::RingBuf<aya::maps::MapDat
                 continue;
             }
 
+            // SAFETY: Length is validated above (data.len() >= size_of::<RawFlowEvent>()).
+            // The pointer comes from a ring buffer item provided by aya, which guarantees alignment.
             let raw: &RawFlowEvent = unsafe { &*(data.as_ptr() as *const RawFlowEvent) };
             let proto_event = raw_to_proto(raw);
             let _ = tx.send(proto_event);
@@ -148,6 +150,7 @@ async fn flow_reader_task_polling(mut ring_buf: aya::maps::RingBuf<aya::maps::Ma
             if data.len() < mem::size_of::<RawFlowEvent>() {
                 continue;
             }
+            // SAFETY: Length is validated above (data.len() >= size_of::<RawFlowEvent>()).
             let raw: &RawFlowEvent = unsafe { &*(data.as_ptr() as *const RawFlowEvent) };
             let proto_event = raw_to_proto(raw);
             let _ = tx.send(proto_event);

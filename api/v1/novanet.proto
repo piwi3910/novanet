@@ -64,8 +64,8 @@ message UpsertEndpointRequest {
   uint32 ifindex = 2;
   bytes mac = 3;
   uint32 identity_id = 4;
-  string pod_name = 5;
-  string namespace = 6;
+  string pod_name = 5;      // Logging only — not stored in eBPF maps.
+  string namespace = 6;     // Logging only — not stored in eBPF maps.
   uint32 node_ip = 7;
 }
 message UpsertEndpointResponse {}
@@ -326,8 +326,8 @@ message ListEgressPoliciesResponse {
   repeated EgressPolicyInfo rules = 1;
 }
 message EgressPolicyInfo {
-  string namespace = 1;
-  string name = 2;
+  string namespace = 1;  // Source Kubernetes namespace of the egress rule.
+  string name = 2;       // Name of the egress rule.
   uint32 src_identity = 3;
   string dst_cidr = 4;
   uint32 protocol = 5;

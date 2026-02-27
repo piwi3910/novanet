@@ -54,7 +54,7 @@ func NewManager(protocol string, nodeIP net.IP, vni uint32, dpClient dataplane.C
 }
 
 // AddTunnel creates a tunnel interface to a remote node.
-func (m *Manager) AddTunnel(nodeName, nodeIP, podCIDR string) error {
+func (m *Manager) AddTunnel(ctx context.Context, nodeName, nodeIP, podCIDR string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -64,7 +64,7 @@ func (m *Manager) AddTunnel(nodeName, nodeIP, podCIDR string) error {
 			zap.String("node_ip", nodeIP),
 		)
 		// Remove existing tunnel before recreating.
-		if err := m.removeTunnelLocked(nodeName); err != nil {
+		if err := m.removeTunnelLocked(ctx, nodeName); err != nil {
 			return fmt.Errorf("removing existing tunnel for %s: %w", nodeName, err)
 		}
 	}
@@ -103,7 +103,7 @@ func (m *Manager) AddTunnel(nodeName, nodeIP, podCIDR string) error {
 	// Register the tunnel with the dataplane.
 	remoteIP := ipToUint32(net.ParseIP(nodeIP))
 	if m.dpClient != nil {
-		if err := m.dpClient.UpsertTunnel(context.TODO(), remoteIP, uint32(ifindex), m.vni); err != nil {
+		if err := m.dpClient.UpsertTunnel(ctx, remoteIP, uint32(ifindex), m.vni); err != nil {
 			destroyTunnel(ifName)
 			return fmt.Errorf("registering tunnel with dataplane: %w", err)
 		}
@@ -129,14 +129,14 @@ func (m *Manager) AddTunnel(nodeName, nodeIP, podCIDR string) error {
 }
 
 // RemoveTunnel removes a tunnel to a remote node.
-func (m *Manager) RemoveTunnel(nodeName string) error {
+func (m *Manager) RemoveTunnel(ctx context.Context, nodeName string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	return m.removeTunnelLocked(nodeName)
+	return m.removeTunnelLocked(ctx, nodeName)
 }
 
 // removeTunnelLocked removes a tunnel while already holding the lock.
-func (m *Manager) removeTunnelLocked(nodeName string) error {
+func (m *Manager) removeTunnelLocked(ctx context.Context, nodeName string) error {
 	info, ok := m.tunnels[nodeName]
 	if !ok {
 		return nil
@@ -145,7 +145,7 @@ func (m *Manager) removeTunnelLocked(nodeName string) error {
 	// Remove from dataplane.
 	if m.dpClient != nil {
 		remoteIP := ipToUint32(net.ParseIP(info.NodeIP))
-		if err := m.dpClient.DeleteTunnel(context.TODO(), remoteIP); err != nil {
+		if err := m.dpClient.DeleteTunnel(ctx, remoteIP); err != nil {
 			m.logger.Error("failed to delete tunnel from dataplane",
 				zap.Error(err),
 				zap.String("node", nodeName),

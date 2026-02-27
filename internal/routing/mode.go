@@ -88,7 +88,7 @@ func (m *ModeManager) Stop(ctx context.Context) error {
 
 	switch m.mode {
 	case "overlay":
-		return m.stopOverlay()
+		return m.stopOverlay(ctx)
 	case "native":
 		return m.stopNative(ctx)
 	}
@@ -117,7 +117,7 @@ func (m *ModeManager) startOverlay(ctx context.Context) error {
 				zap.String("node", nodeInfo.Name),
 				zap.String("node_ip", nodeInfo.IP),
 			)
-			if err := m.tunnelMgr.AddTunnel(nodeInfo.Name, nodeInfo.IP, nodeInfo.PodCIDR); err != nil {
+			if err := m.tunnelMgr.AddTunnel(ctx, nodeInfo.Name, nodeInfo.IP, nodeInfo.PodCIDR); err != nil {
 				m.logger.Error("failed to create tunnel",
 					zap.Error(err),
 					zap.String("node", nodeInfo.Name),
@@ -130,7 +130,7 @@ func (m *ModeManager) startOverlay(ctx context.Context) error {
 				zap.String("node_ip", nodeInfo.IP),
 			)
 			// AddTunnel handles re-creation.
-			if err := m.tunnelMgr.AddTunnel(nodeInfo.Name, nodeInfo.IP, nodeInfo.PodCIDR); err != nil {
+			if err := m.tunnelMgr.AddTunnel(ctx, nodeInfo.Name, nodeInfo.IP, nodeInfo.PodCIDR); err != nil {
 				m.logger.Error("failed to update tunnel",
 					zap.Error(err),
 					zap.String("node", nodeInfo.Name),
@@ -141,7 +141,7 @@ func (m *ModeManager) startOverlay(ctx context.Context) error {
 			m.logger.Info("node removed, removing tunnel",
 				zap.String("node", nodeInfo.Name),
 			)
-			if err := m.tunnelMgr.RemoveTunnel(nodeInfo.Name); err != nil {
+			if err := m.tunnelMgr.RemoveTunnel(ctx, nodeInfo.Name); err != nil {
 				m.logger.Error("failed to remove tunnel",
 					zap.Error(err),
 					zap.String("node", nodeInfo.Name),
@@ -152,7 +152,7 @@ func (m *ModeManager) startOverlay(ctx context.Context) error {
 
 	// Create tunnels for already-known nodes.
 	for _, nodeInfo := range m.nodeRegistry.ListNodes() {
-		if err := m.tunnelMgr.AddTunnel(nodeInfo.Name, nodeInfo.IP, nodeInfo.PodCIDR); err != nil {
+		if err := m.tunnelMgr.AddTunnel(ctx, nodeInfo.Name, nodeInfo.IP, nodeInfo.PodCIDR); err != nil {
 			m.logger.Error("failed to create initial tunnel",
 				zap.Error(err),
 				zap.String("node", nodeInfo.Name),
@@ -164,12 +164,12 @@ func (m *ModeManager) startOverlay(ctx context.Context) error {
 }
 
 // stopOverlay removes all tunnels.
-func (m *ModeManager) stopOverlay() error {
+func (m *ModeManager) stopOverlay(ctx context.Context) error {
 	m.logger.Info("stopping overlay routing mode")
 
 	tunnels := m.tunnelMgr.ListTunnels()
 	for _, t := range tunnels {
-		if err := m.tunnelMgr.RemoveTunnel(t.NodeName); err != nil {
+		if err := m.tunnelMgr.RemoveTunnel(ctx, t.NodeName); err != nil {
 			m.logger.Error("failed to remove tunnel during shutdown",
 				zap.Error(err),
 				zap.String("node", t.NodeName),

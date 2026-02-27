@@ -80,14 +80,6 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: spec.nodeName
-            - name: NOVANET_POD_NAME
-              valueFrom:
-                fieldRef:
-                  fieldPath: metadata.name
-            - name: NOVANET_POD_NAMESPACE
-              valueFrom:
-                fieldRef:
-                  fieldPath: metadata.namespace
           {{- if .Values.metrics.enabled }}
           ports:
             - name: metrics
@@ -158,6 +150,16 @@ spec:
                 - /run/novanet/dataplane.sock
             initialDelaySeconds: 10
             periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            exec:
+              command:
+                - test
+                - -S
+                - /run/novanet/dataplane.sock
+            initialDelaySeconds: 5
+            periodSeconds: 5
             timeoutSeconds: 5
             failureThreshold: 3
           resources:

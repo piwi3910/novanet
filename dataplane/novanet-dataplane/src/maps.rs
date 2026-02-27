@@ -349,18 +349,18 @@ impl MockMaps {
 
     fn upsert_endpoint(&self, key: EndpointKey, value: EndpointValue) -> anyhow::Result<()> {
         debug!(ip = key.ip, identity = value.identity, "mock: upsert endpoint");
-        self.endpoints.write().unwrap().insert(key.ip, value);
+        self.endpoints.write().expect("endpoints lock poisoned").insert(key.ip, value);
         Ok(())
     }
 
     fn delete_endpoint(&self, key: &EndpointKey) -> anyhow::Result<()> {
         debug!(ip = key.ip, "mock: delete endpoint");
-        self.endpoints.write().unwrap().remove(&key.ip);
+        self.endpoints.write().expect("endpoints lock poisoned").remove(&key.ip);
         Ok(())
     }
 
     fn endpoint_count(&self) -> usize {
-        self.endpoints.read().unwrap().len()
+        self.endpoints.read().expect("endpoints lock poisoned").len()
     }
 
     fn upsert_policy(&self, key: PolicyKey, value: PolicyValue) -> anyhow::Result<()> {
@@ -373,7 +373,7 @@ impl MockMaps {
             "mock: upsert policy"
         );
         let flat: PolicyKeyFlat = (&key).into();
-        self.policies.write().unwrap().insert(flat, value);
+        self.policies.write().expect("policies lock poisoned").insert(flat, value);
         Ok(())
     }
 
@@ -384,24 +384,24 @@ impl MockMaps {
             "mock: delete policy"
         );
         let flat: PolicyKeyFlat = key.into();
-        self.policies.write().unwrap().remove(&flat);
+        self.policies.write().expect("policies lock poisoned").remove(&flat);
         Ok(())
     }
 
     fn get_policy(&self, key: &PolicyKey) -> anyhow::Result<Option<PolicyValue>> {
         let flat: PolicyKeyFlat = key.into();
-        Ok(self.policies.read().unwrap().get(&flat).copied())
+        Ok(self.policies.read().expect("policies lock poisoned").get(&flat).copied())
     }
 
     fn policy_count(&self) -> usize {
-        self.policies.read().unwrap().len()
+        self.policies.read().expect("policies lock poisoned").len()
     }
 
     fn sync_policies(
         &self,
         new_policies: Vec<(PolicyKey, PolicyValue)>,
     ) -> anyhow::Result<(u32, u32, u32)> {
-        let mut map = self.policies.write().unwrap();
+        let mut map = self.policies.write().expect("policies lock poisoned");
         let old_keys: std::collections::HashSet<PolicyKeyFlat> = map.keys().cloned().collect();
         let mut new_keys = std::collections::HashSet::new();
         let mut added = 0u32;
@@ -439,22 +439,22 @@ impl MockMaps {
 
     fn upsert_tunnel(&self, key: TunnelKey, value: TunnelValue) -> anyhow::Result<()> {
         debug!(node_ip = key.node_ip, vni = value.vni, "mock: upsert tunnel");
-        self.tunnels.write().unwrap().insert(key.node_ip, value);
+        self.tunnels.write().expect("tunnels lock poisoned").insert(key.node_ip, value);
         Ok(())
     }
 
     fn delete_tunnel(&self, key: &TunnelKey) -> anyhow::Result<()> {
         debug!(node_ip = key.node_ip, "mock: delete tunnel");
-        self.tunnels.write().unwrap().remove(&key.node_ip);
+        self.tunnels.write().expect("tunnels lock poisoned").remove(&key.node_ip);
         Ok(())
     }
 
     fn tunnel_count(&self) -> usize {
-        self.tunnels.read().unwrap().len()
+        self.tunnels.read().expect("tunnels lock poisoned").len()
     }
 
     fn update_config(&self, entries: StdHashMap<u32, u64>) -> anyhow::Result<()> {
-        let mut config = self.config.write().unwrap();
+        let mut config = self.config.write().expect("config lock poisoned");
         for (k, v) in entries {
             debug!(key = k, value = v, "mock: update config");
             config.insert(k, v);
@@ -463,7 +463,7 @@ impl MockMaps {
     }
 
     fn get_config(&self, key: u32) -> anyhow::Result<Option<u64>> {
-        Ok(self.config.read().unwrap().get(&key).copied())
+        Ok(self.config.read().expect("config lock poisoned").get(&key).copied())
     }
 
     fn upsert_egress_policy(&self, key: EgressKey, value: EgressValue) -> anyhow::Result<()> {
@@ -475,7 +475,7 @@ impl MockMaps {
             "mock: upsert egress policy"
         );
         let flat: EgressKeyFlat = (&key).into();
-        self.egress.write().unwrap().insert(flat, value);
+        self.egress.write().expect("egress lock poisoned").insert(flat, value);
         Ok(())
     }
 
@@ -486,12 +486,12 @@ impl MockMaps {
             "mock: delete egress policy"
         );
         let flat: EgressKeyFlat = key.into();
-        self.egress.write().unwrap().remove(&flat);
+        self.egress.write().expect("egress lock poisoned").remove(&flat);
         Ok(())
     }
 
     fn attached_programs(&self) -> Vec<AttachedProgramInfo> {
-        self.attached.read().unwrap().clone()
+        self.attached.read().expect("attached lock poisoned").clone()
     }
 
     fn attach_program(
@@ -503,7 +503,7 @@ impl MockMaps {
             AttachDirection::Ingress => "ingress",
             AttachDirection::Egress => "egress",
         };
-        let mut attached = self.attached.write().unwrap();
+        let mut attached = self.attached.write().expect("attached lock poisoned");
         let mut prog_id = self.next_prog_id.write().unwrap();
 
         // Check if already attached.
@@ -535,7 +535,7 @@ impl MockMaps {
             AttachDirection::Ingress => "ingress",
             AttachDirection::Egress => "egress",
         };
-        let mut attached = self.attached.write().unwrap();
+        let mut attached = self.attached.write().expect("attached lock poisoned");
         let before = attached.len();
         attached.retain(|p| !(p.interface == interface && p.attach_type == type_str));
         let after = attached.len();
@@ -1000,20 +1000,20 @@ impl RealMaps {
 
     fn upsert_endpoint(&self, key: EndpointKey, value: EndpointValue) -> anyhow::Result<()> {
         debug!(ip = key.ip, identity = value.identity, "upsert endpoint");
-        let mut map = self.endpoints.write().unwrap();
+        let mut map = self.endpoints.write().expect("endpoints lock poisoned");
         map.insert(key, value, 0)?;
         Ok(())
     }
 
     fn delete_endpoint(&self, key: &EndpointKey) -> anyhow::Result<()> {
         debug!(ip = key.ip, "delete endpoint");
-        let mut map = self.endpoints.write().unwrap();
+        let mut map = self.endpoints.write().expect("endpoints lock poisoned");
         map.remove(key)?;
         Ok(())
     }
 
     fn endpoint_count(&self) -> usize {
-        let map = self.endpoints.read().unwrap();
+        let map = self.endpoints.read().expect("endpoints lock poisoned");
         map.iter().count()
     }
 
@@ -1026,19 +1026,19 @@ impl RealMaps {
             action = value.action,
             "upsert policy"
         );
-        let mut map = self.policies.write().unwrap();
+        let mut map = self.policies.write().expect("policies lock poisoned");
         map.insert(key, value, 0)?;
         Ok(())
     }
 
     fn delete_policy(&self, key: &PolicyKey) -> anyhow::Result<()> {
-        let mut map = self.policies.write().unwrap();
+        let mut map = self.policies.write().expect("policies lock poisoned");
         map.remove(key)?;
         Ok(())
     }
 
     fn get_policy(&self, key: &PolicyKey) -> anyhow::Result<Option<PolicyValue>> {
-        let map = self.policies.read().unwrap();
+        let map = self.policies.read().expect("policies lock poisoned");
         match map.get(key, 0) {
             Ok(val) => Ok(Some(val)),
             Err(aya::maps::MapError::KeyNotFound) => Ok(None),
@@ -1047,7 +1047,7 @@ impl RealMaps {
     }
 
     fn policy_count(&self) -> usize {
-        let map = self.policies.read().unwrap();
+        let map = self.policies.read().expect("policies lock poisoned");
         map.iter().count()
     }
 
@@ -1055,7 +1055,7 @@ impl RealMaps {
         &self,
         new_policies: Vec<(PolicyKey, PolicyValue)>,
     ) -> anyhow::Result<(u32, u32, u32)> {
-        let mut map = self.policies.write().unwrap();
+        let mut map = self.policies.write().expect("policies lock poisoned");
 
         // Collect existing keys.
         let existing: StdHashMap<Vec<u8>, PolicyValue> = map
@@ -1128,24 +1128,24 @@ impl RealMaps {
 
     fn upsert_tunnel(&self, key: TunnelKey, value: TunnelValue) -> anyhow::Result<()> {
         debug!(node_ip = key.node_ip, vni = value.vni, "upsert tunnel");
-        let mut map = self.tunnels.write().unwrap();
+        let mut map = self.tunnels.write().expect("tunnels lock poisoned");
         map.insert(key, value, 0)?;
         Ok(())
     }
 
     fn delete_tunnel(&self, key: &TunnelKey) -> anyhow::Result<()> {
-        let mut map = self.tunnels.write().unwrap();
+        let mut map = self.tunnels.write().expect("tunnels lock poisoned");
         map.remove(key)?;
         Ok(())
     }
 
     fn tunnel_count(&self) -> usize {
-        let map = self.tunnels.read().unwrap();
+        let map = self.tunnels.read().expect("tunnels lock poisoned");
         map.iter().count()
     }
 
     fn update_config(&self, entries: StdHashMap<u32, u64>) -> anyhow::Result<()> {
-        let mut map = self.config.write().unwrap();
+        let mut map = self.config.write().expect("config lock poisoned");
         for (k, v) in entries {
             debug!(key = k, value = v, "update config");
             map.insert(k, v, 0)?;
@@ -1154,7 +1154,7 @@ impl RealMaps {
     }
 
     fn get_config(&self, key: u32) -> anyhow::Result<Option<u64>> {
-        let map = self.config.read().unwrap();
+        let map = self.config.read().expect("config lock poisoned");
         match map.get(&key, 0) {
             Ok(val) => Ok(Some(val)),
             Err(aya::maps::MapError::KeyNotFound) => Ok(None),
@@ -1170,19 +1170,19 @@ impl RealMaps {
             action = value.action,
             "upsert egress policy"
         );
-        let mut map = self.egress.write().unwrap();
+        let mut map = self.egress.write().expect("egress lock poisoned");
         map.insert(key, value, 0)?;
         Ok(())
     }
 
     fn delete_egress_policy(&self, key: &EgressKey) -> anyhow::Result<()> {
-        let mut map = self.egress.write().unwrap();
+        let mut map = self.egress.write().expect("egress lock poisoned");
         map.remove(key)?;
         Ok(())
     }
 
     fn get_drop_counters(&self) -> StdHashMap<u32, u64> {
-        let map = self.drop_counters.read().unwrap();
+        let map = self.drop_counters.read().expect("drop_counters lock poisoned");
         let mut result = StdHashMap::new();
         for idx in 0..DROP_REASON_MAX {
             match map.get(&idx, 0) {
@@ -1199,7 +1199,7 @@ impl RealMaps {
     }
 
     fn attached_programs(&self) -> Vec<AttachedProgramInfo> {
-        self.attached.read().unwrap().clone()
+        self.attached.read().expect("attached lock poisoned").clone()
     }
 
     fn attach_program(
@@ -1240,7 +1240,7 @@ impl RealMaps {
             }
         };
 
-        let mut ebpf = self._ebpf.lock().unwrap();
+        let mut ebpf = self._ebpf.lock().expect("ebpf lock poisoned");
         let prog: &mut SchedClassifier = ebpf
             .program_mut(prog_name)
             .ok_or_else(|| anyhow::anyhow!("eBPF program '{}' not found", prog_name))?
@@ -1256,9 +1256,9 @@ impl RealMaps {
         // Without this, the link is stored inside the Program object and
         // could be dropped when the Ebpf mutex guard is released.
         let link = prog.take_link(link_id)?;
-        self._tc_links.lock().unwrap().push((interface.to_string(), type_str.to_string(), link));
+        self._tc_links.lock().expect("tc_links lock poisoned").push((interface.to_string(), type_str.to_string(), link));
 
-        let mut attached = self.attached.write().unwrap();
+        let mut attached = self.attached.write().expect("attached lock poisoned");
         attached.push(AttachedProgramInfo {
             interface: interface.to_string(),
             attach_type: type_str.to_string(),
@@ -1287,13 +1287,13 @@ impl RealMaps {
         };
 
         // Remove from tracking list.
-        let mut attached = self.attached.write().unwrap();
+        let mut attached = self.attached.write().expect("attached lock poisoned");
         let before = attached.len();
         attached.retain(|p| !(p.interface == interface && p.attach_type == type_str));
         let after = attached.len();
 
         // Remove and drop the TC link, which triggers actual detach via aya.
-        let mut links = self._tc_links.lock().unwrap();
+        let mut links = self._tc_links.lock().expect("tc_links lock poisoned");
         links.retain(|(iface, at, _link)| !(iface == interface && at == type_str));
 
         if before == after {

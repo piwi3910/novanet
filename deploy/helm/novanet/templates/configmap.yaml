@@ -20,14 +20,6 @@ data:
         "socket": {{ .Values.novaroute.socket | quote }},
         "token": {{ .Values.novaroute.token | quote }},
         "protocol": {{ .Values.novaroute.protocol | quote }}
-        {{- if .Values.novaroute.torPeers }}
-        ,"tor_peers": [
-          {{- range $i, $peer := .Values.novaroute.torPeers }}
-          {{- if $i }},{{ end }}
-          {"address": {{ $peer.address | quote }}, "as": {{ $peer.as }}}
-          {{- end }}
-        ]
-        {{- end }}
       },
       {{- else }}
       "novaroute": {
