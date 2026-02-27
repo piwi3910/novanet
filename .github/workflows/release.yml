@@ -166,10 +166,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Download all artifacts
+      - name: Download Go binary artifacts
         uses: actions/download-artifact@v4
         with:
           path: artifacts
+          pattern: novanet-linux-*
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
