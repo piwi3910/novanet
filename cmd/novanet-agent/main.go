@@ -5,7 +5,6 @@ package main
 
 import (
 	"context"
-	"encoding/binary"
 	"flag"
 	"fmt"
 	"net"
@@ -15,6 +14,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -163,7 +163,7 @@ type agentServer struct {
 	k8sClient   kubernetes.Interface
 	nodeIP             net.IP
 	podCIDR            string
-	dpConnected        bool
+	dpConnected        atomic.Bool
 	novarouteConnected bool
 
 	// Policy enforcement.
@@ -274,7 +274,7 @@ func (s *agentServer) AddPod(ctx context.Context, req *pb.AddPodRequest) (*pb.Ad
 	metricIdentities.Set(float64(s.idAlloc.Count()))
 
 	// Push endpoint to dataplane eBPF maps.
-	if s.dpClient != nil && s.dpConnected {
+	if s.dpClient != nil && s.dpConnected.Load() {
 		dpReq := &pb.UpsertEndpointRequest{
 			Ip:         ipToUint32(podIP),
 			Ifindex:    uint32(ifindex),
@@ -380,7 +380,7 @@ func (s *agentServer) DelPod(ctx context.Context, req *pb.DelPodRequest) (*pb.De
 	metricIdentities.Set(float64(s.idAlloc.Count()))
 
 	// Remove endpoint from dataplane.
-	if s.dpClient != nil && s.dpConnected {
+	if s.dpClient != nil && s.dpConnected.Load() {
 		dpReq := &pb.DeleteEndpointRequest{
 			Ip: ipToUint32(ep.IP),
 		}
@@ -410,12 +410,12 @@ func (s *agentServer) GetAgentStatus(ctx context.Context, _ *pb.GetAgentStatusRe
 		ClusterCidr:        s.cfg.ClusterCIDR,
 		NovarouteConnected: s.novarouteConnected,
 		Dataplane: &pb.DataplaneStatusInfo{
-			Connected: s.dpConnected,
+			Connected: s.dpConnected.Load(),
 		},
 	}
 
 	// Fetch live dataplane metrics if connected.
-	if s.dpClient != nil && s.dpConnected {
+	if s.dpClient != nil && s.dpConnected.Load() {
 		dpStatus, err := s.dpClient.GetDataplaneStatus(ctx, &pb.GetDataplaneStatusRequest{})
 		if err == nil {
 			resp.PolicyCount = dpStatus.PolicyCount
@@ -429,7 +429,7 @@ func (s *agentServer) GetAgentStatus(ctx context.Context, _ *pb.GetAgentStatusRe
 
 // StreamAgentFlows proxies flow events from the dataplane to clients.
 func (s *agentServer) StreamAgentFlows(req *pb.StreamAgentFlowsRequest, stream grpc.ServerStreamingServer[pb.FlowEvent]) error {
-	if s.dpClient == nil || !s.dpConnected {
+	if s.dpClient == nil || !s.dpConnected.Load() {
 		return grpcstatus.Error(codes.Unavailable, "dataplane not connected")
 	}
 
@@ -560,7 +560,7 @@ func (s *agentServer) onPolicyChange(rules []*policy.CompiledRule) {
 	metricPolicies.Set(float64(len(rules)))
 
 	// Sync to dataplane.
-	if s.dpClient == nil || !s.dpConnected {
+	if s.dpClient == nil || !s.dpConnected.Load() {
 		s.logger.Debug("skipping policy sync — dataplane not connected")
 		return
 	}
@@ -613,7 +613,7 @@ func (s *agentServer) onPolicyChange(rules []*policy.CompiledRule) {
 // rules to the eBPF EGRESS_POLICIES map. Stale entries from the previous
 // sync are deleted.
 func (s *agentServer) syncEgressRules(rules []*policy.CompiledRule) {
-	if s.egressMgr == nil || s.dpClient == nil || !s.dpConnected {
+	if s.egressMgr == nil || s.dpClient == nil || !s.dpConnected.Load() {
 		return
 	}
 
@@ -1119,7 +1119,11 @@ func main() {
 		}
 
 		// Start background flow consumer for Prometheus metrics.
-		go consumeFlows(ctx, logger, dpClient)
+		bgWg.Add(1)
+		go func() {
+			defer bgWg.Done()
+			consumeFlows(ctx, logger, dpClient)
+		}()
 	}
 
 	// ---- Create agent gRPC server ----
@@ -1132,19 +1136,21 @@ func main() {
 		k8sClient:      k8sClient,
 		nodeIP:         nodeIP,
 		podCIDR:        *podCIDR,
-		dpConnected:    dpConnected,
 		policyCompiler: policyCompiler,
 		egressMgr:      egressMgr,
 		prevEgressKeys: make(map[egressMapKey]bool),
 		endpoints:      make(map[string]*endpoint),
 	}
+	agentSrv.dpConnected.Store(dpConnected)
 
 	// ---- Start NetworkPolicy watcher ----
 	if k8sClient != nil {
 		policyWatcher := policy.NewWatcher(k8sClient, policyCompiler, logger)
 		policyWatcher.OnChange(agentSrv.onPolicyChange)
 		agentSrv.policyWatcher = policyWatcher
+		bgWg.Add(1)
 		go func() {
+			defer bgWg.Done()
 			logger.Info("starting NetworkPolicy watcher")
 			if err := policyWatcher.Start(ctx); err != nil {
 				logger.Error("NetworkPolicy watcher error", zap.Error(err))
@@ -1156,7 +1162,11 @@ func main() {
 
 	// ---- Start remote endpoint sync for cross-node identity resolution ----
 	if k8sClient != nil && dpClient != nil && dpConnected {
-		go startRemoteEndpointSync(ctx, logger, k8sClient, dpClient, nodeName)
+		bgWg.Add(1)
+		go func() {
+			defer bgWg.Done()
+			startRemoteEndpointSync(ctx, logger, k8sClient, dpClient, nodeName)
+		}()
 	}
 
 	// ---- Start CNI gRPC server ----
@@ -1192,7 +1202,7 @@ func main() {
 	metricsMux.Handle("/metrics", promhttp.Handler())
 	metricsMux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		if !agentSrv.dpConnected {
+		if !agentSrv.dpConnected.Load() {
 			w.WriteHeader(http.StatusServiceUnavailable)
 			fmt.Fprintf(w, `{"status":"not ready","reason":"dataplane not connected","version":"%s"}`, Version)
 			return
@@ -1759,7 +1769,7 @@ func watchNodes(ctx context.Context, logger *zap.Logger, k8sClient *kubernetes.C
 				}
 
 				// Remove tunnel and dataplane entry.
-				if dpClient != nil {
+				if dpClient != nil && net.ParseIP(t.NodeIP) != nil {
 					remoteIPUint := ipToUint32(net.ParseIP(t.NodeIP))
 					if _, err := dpClient.DeleteTunnel(ctx, &pb.DeleteTunnelRequest{
 						NodeIp: remoteIPUint,
@@ -1915,13 +1925,9 @@ func consumeFlows(ctx context.Context, logger *zap.Logger, client pb.DataplaneCo
 	}
 }
 
-// ipToUint32 converts a 4-byte IPv4 address to a uint32 in network byte order.
+// ipToUint32 delegates to tunnel.IPToUint32 for IPv4→uint32 conversion.
 func ipToUint32(ip net.IP) uint32 {
-	ip4 := ip.To4()
-	if ip4 == nil {
-		return 0
-	}
-	return binary.BigEndian.Uint32(ip4)
+	return tunnel.IPToUint32(ip)
 }
 
 // generateMAC creates a deterministic locally-administered MAC address from

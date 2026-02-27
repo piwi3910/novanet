@@ -58,6 +58,11 @@ func (m *Manager) AddTunnel(ctx context.Context, nodeName, nodeIP, podCIDR strin
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
+	parsedIP := net.ParseIP(nodeIP)
+	if parsedIP == nil {
+		return fmt.Errorf("invalid node IP: %s", nodeIP)
+	}
+
 	if _, exists := m.tunnels[nodeName]; exists {
 		m.logger.Debug("tunnel already exists, updating",
 			zap.String("node", nodeName),
@@ -83,8 +88,8 @@ func (m *Manager) AddTunnel(ctx context.Context, nodeName, nodeIP, podCIDR strin
 		ifindex, err = createVxlanTunnel(ifName, m.vni, m.nodeIP)
 		if err == nil {
 			// Add FDB entry mapping remote MAC → remote physical IP.
-			remoteMAC := IPToTunnelMAC(net.ParseIP(nodeIP))
-			if fdbErr := addVxlanFDB(ifName, remoteMAC, net.ParseIP(nodeIP)); fdbErr != nil {
+			remoteMAC := IPToTunnelMAC(parsedIP)
+			if fdbErr := addVxlanFDB(ifName, remoteMAC, parsedIP); fdbErr != nil {
 				m.logger.Error("failed to add VXLAN FDB entry",
 					zap.Error(fdbErr),
 					zap.String("node", nodeName),
@@ -101,7 +106,7 @@ func (m *Manager) AddTunnel(ctx context.Context, nodeName, nodeIP, podCIDR strin
 	}
 
 	// Register the tunnel with the dataplane.
-	remoteIP := ipToUint32(net.ParseIP(nodeIP))
+	remoteIP := IPToUint32(parsedIP)
 	if m.dpClient != nil {
 		if err := m.dpClient.UpsertTunnel(ctx, remoteIP, uint32(ifindex), m.vni); err != nil {
 			destroyTunnel(ifName)
@@ -143,8 +148,9 @@ func (m *Manager) removeTunnelLocked(ctx context.Context, nodeName string) error
 	}
 
 	// Remove from dataplane.
-	if m.dpClient != nil {
-		remoteIP := ipToUint32(net.ParseIP(info.NodeIP))
+	parsedIP := net.ParseIP(info.NodeIP)
+	if m.dpClient != nil && parsedIP != nil {
+		remoteIP := IPToUint32(parsedIP)
 		if err := m.dpClient.DeleteTunnel(ctx, remoteIP); err != nil {
 			m.logger.Error("failed to delete tunnel from dataplane",
 				zap.Error(err),
@@ -155,9 +161,9 @@ func (m *Manager) removeTunnelLocked(ctx context.Context, nodeName string) error
 
 	// For VXLAN, remove FDB entry but keep the shared interface.
 	// For Geneve, destroy the per-node interface.
-	if m.protocol == "vxlan" {
-		remoteMAC := IPToTunnelMAC(net.ParseIP(info.NodeIP))
-		if err := removeVxlanFDB(info.InterfaceName, remoteMAC, net.ParseIP(info.NodeIP)); err != nil {
+	if m.protocol == "vxlan" && parsedIP != nil {
+		remoteMAC := IPToTunnelMAC(parsedIP)
+		if err := removeVxlanFDB(info.InterfaceName, remoteMAC, parsedIP); err != nil {
 			m.logger.Warn("failed to remove VXLAN FDB entry",
 				zap.Error(err),
 				zap.String("node", nodeName),
@@ -229,8 +235,8 @@ func tunnelInterfaceName(protocol, nodeName string) string {
 	return name
 }
 
-// ipToUint32 converts an IPv4 address to a uint32 in network byte order.
-func ipToUint32(ip net.IP) uint32 {
+// IPToUint32 converts an IPv4 address to a uint32 in network byte order.
+func IPToUint32(ip net.IP) uint32 {
 	ip4 := ip.To4()
 	if ip4 == nil {
 		return 0

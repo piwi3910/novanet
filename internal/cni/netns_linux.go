@@ -153,7 +153,9 @@ func configureInNetns(podNS netns.NsHandle, ifName string, podIP, gateway net.IP
 	// Bring up loopback.
 	lo, err := nlh.LinkByName("lo")
 	if err == nil {
-		_ = nlh.LinkSetUp(lo)
+		if loErr := nlh.LinkSetUp(lo); loErr != nil {
+			fmt.Fprintf(os.Stderr, "warning: failed to bring up loopback: %v\n", loErr)
+		}
 	}
 
 	// Add a neighbor (ARP) entry for the gateway pointing to the host veth's MAC.
@@ -205,7 +207,9 @@ func CleanupPodNetwork(hostVethName string, podIP net.IP) {
 				Mask: net.CIDRMask(32, 32),
 			},
 		}
-		_ = netlink.RouteDel(route)
+		if err := netlink.RouteDel(route); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: failed to delete pod route for %s: %v\n", podIP, err)
+		}
 	}
 
 	// Remove the veth pair.
@@ -213,7 +217,9 @@ func CleanupPodNetwork(hostVethName string, podIP net.IP) {
 	if err != nil {
 		return
 	}
-	_ = netlink.LinkDel(link)
+	if err := netlink.LinkDel(link); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: failed to delete veth %s: %v\n", hostVethName, err)
+	}
 }
 
 // generateHostMAC generates a random MAC address with the locally-administered

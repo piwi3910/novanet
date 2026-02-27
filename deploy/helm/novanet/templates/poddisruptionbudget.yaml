@@ -6,7 +6,7 @@ metadata:
   labels:
     {{- include "novanet.labels" . | nindent 4 }}
 spec:
-  maxUnavailable: 1
+  maxUnavailable: {{ .Values.pdb.maxUnavailable | default 1 }}
   selector:
     matchLabels:
       {{- include "novanet.selectorLabels" . | nindent 6 }}

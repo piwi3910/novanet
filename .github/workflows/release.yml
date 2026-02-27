@@ -150,7 +150,7 @@ jobs:
         run: docker pull ${{ matrix.image }}:sha-${GITHUB_SHA::7}
 
       - name: Run Trivy vulnerability scanner
-        uses: aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@0.28.0
         with:
           image-ref: ${{ matrix.image }}:sha-${GITHUB_SHA::7}
           format: table

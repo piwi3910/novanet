@@ -268,9 +268,9 @@ func TestIPToUint32(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		got := ipToUint32(net.ParseIP(tt.ip))
+		got := IPToUint32(net.ParseIP(tt.ip))
 		if got != tt.expected {
-			t.Errorf("ipToUint32(%s) = 0x%08X, want 0x%08X", tt.ip, got, tt.expected)
+			t.Errorf("IPToUint32(%s) = 0x%08X, want 0x%08X", tt.ip, got, tt.expected)
 		}
 	}
 }

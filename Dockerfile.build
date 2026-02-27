@@ -9,7 +9,7 @@
 #   docker cp novanet-extract:/build/dataplane/target/release/novanet-dataplane bin/
 #   docker rm novanet-extract
 
-FROM rustlang/rust:nightly-bookworm AS builder
+FROM rustlang/rust:nightly-2025-02-01-bookworm AS builder
 
 # Install system dependencies for eBPF compilation and protobuf.
 RUN apt-get update && apt-get install -y --no-install-recommends \

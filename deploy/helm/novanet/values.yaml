@@ -70,6 +70,9 @@ resources:
 
 priorityClassName: system-node-critical
 
+pdb:
+  maxUnavailable: 1
+
 updateStrategy:
   type: RollingUpdate
   rollingUpdate:

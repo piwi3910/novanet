@@ -185,7 +185,10 @@ func cmdAdd(args *skel.CmdArgs) error {
 		return fmt.Errorf("invalid gateway from agent: %s", resp.Gateway)
 	}
 
-	_, defaultDst, _ := net.ParseCIDR("0.0.0.0/0")
+	_, defaultDst, err := net.ParseCIDR("0.0.0.0/0")
+	if err != nil {
+		return fmt.Errorf("parsing default route CIDR: %w", err)
+	}
 
 	result := &types100.Result{
 		CNIVersion: cniVersion,
