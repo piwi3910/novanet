@@ -1,0 +1,43 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: novanet
+  namespace: argocd
+  annotations:
+    argocd-image-updater.argoproj.io/image-list: >-
+      agent=ghcr.io/piwi3910/novanet-agent,
+      dataplane=ghcr.io/piwi3910/novanet-dataplane
+    argocd-image-updater.argoproj.io/agent.update-strategy: latest
+    argocd-image-updater.argoproj.io/dataplane.update-strategy: latest
+    argocd-image-updater.argoproj.io/agent.helm.image-name: agent.image.repository
+    argocd-image-updater.argoproj.io/agent.helm.image-tag: agent.image.tag
+    argocd-image-updater.argoproj.io/dataplane.helm.image-name: dataplane.image.repository
+    argocd-image-updater.argoproj.io/dataplane.helm.image-tag: dataplane.image.tag
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/piwi3910/novanet
+    path: deploy/helm/novanet
+    targetRevision: main
+    helm:
+      releaseName: novanet
+      valuesObject:
+        agent:
+          image:
+            repository: ghcr.io/piwi3910/novanet-agent
+            tag: latest
+        dataplane:
+          image:
+            repository: ghcr.io/piwi3910/novanet-dataplane
+            tag: latest
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: nova-system
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

@@ -14,11 +14,12 @@ on:
 
 permissions:
   contents: read
+  packages: write
 
 jobs:
   lint:
     name: Lint
-    runs-on: ubuntu-latest
+    runs-on: arc-runner-novanet
     steps:
       - uses: actions/checkout@v4
 
@@ -48,7 +49,7 @@ jobs:
 
   lint-helm:
     name: Lint (Helm)
-    runs-on: ubuntu-latest
+    runs-on: arc-runner-novanet
     steps:
       - uses: actions/checkout@v4
 
@@ -63,12 +64,12 @@ jobs:
 
   lint-rust:
     name: Lint (Rust)
-    runs-on: ubuntu-latest
+    runs-on: arc-runner-novanet
     steps:
       - uses: actions/checkout@v4
 
       - name: Install system dependencies
-        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler build-essential
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@nightly
@@ -94,16 +95,19 @@ jobs:
 
   test-go:
     name: Test (Go)
-    runs-on: ubuntu-latest
+    runs-on: arc-runner-novanet
     steps:
       - uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: sudo apt-get update && sudo apt-get install -y gcc
 
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
 
       - name: Run unit tests
-        run: go test -race -count=1 -coverprofile=coverage.out ./...
+        run: CGO_ENABLED=1 go test -race -count=1 -coverprofile=coverage.out ./...
 
       - name: Upload coverage
         uses: actions/upload-artifact@v4
@@ -114,7 +118,7 @@ jobs:
 
   build-go:
     name: Build (${{ matrix.binary }})
-    runs-on: ubuntu-latest
+    runs-on: arc-runner-novanet
     strategy:
       matrix:
         include:
@@ -145,12 +149,12 @@ jobs:
 
   test-rust:
     name: Test (Rust)
-    runs-on: ubuntu-latest
+    runs-on: arc-runner-novanet
     steps:
       - uses: actions/checkout@v4
 
       - name: Install system dependencies
-        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler build-essential
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -177,7 +181,7 @@ jobs:
 
   build-rust:
     name: Build (Rust/eBPF)
-    runs-on: ubuntu-latest
+    runs-on: arc-runner-novanet
     steps:
       - uses: actions/checkout@v4
 
@@ -199,7 +203,7 @@ jobs:
 
   security:
     name: Security
-    runs-on: ubuntu-latest
+    runs-on: arc-runner-novanet
     steps:
       - uses: actions/checkout@v4
 
@@ -219,7 +223,7 @@ jobs:
   integration-tests:
     name: Integration Tests
     if: github.event_name == 'workflow_dispatch' && github.event.inputs.run_integration_tests == 'true'
-    runs-on: self-hosted
+    runs-on: arc-runner-novanet
     timeout-minutes: 30
     env:
       KUBECONFIG: /etc/rancher/k3s/k3s.yaml
@@ -260,7 +264,7 @@ jobs:
     name: Status Check
     if: always()
     needs: [lint, lint-helm, lint-rust, test-go, test-rust, build-go, build-rust, security]
-    runs-on: ubuntu-latest
+    runs-on: arc-runner-novanet
     steps:
       - name: Decide status
         run: |
@@ -276,3 +280,35 @@ jobs:
             exit 1
           fi
           echo "All required jobs passed."
+
+  build-and-push:
+    name: Build & Push (${{ matrix.image }})
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    needs: [lint, lint-helm, lint-rust, test-go, test-rust, build-go, build-rust, security]
+    runs-on: arc-runner-novanet
+    strategy:
+      matrix:
+        include:
+          - image: novanet-agent
+            dockerfile: Dockerfile.agent
+          - image: novanet-dataplane
+            dockerfile: Dockerfile.dataplane
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          push: true
+          tags: |
+            ghcr.io/piwi3910/${{ matrix.image }}:sha-${{ github.sha }}
+            ghcr.io/piwi3910/${{ matrix.image }}:latest

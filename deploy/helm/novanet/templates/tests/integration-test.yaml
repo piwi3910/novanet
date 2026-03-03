@@ -1,0 +1,69 @@
+{{- if .Values.tests.integration.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "novanet.fullname" . }}-integration-test
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "novanet.labels" . | nindent 4 }}
+    app.kubernetes.io/component: test
+  annotations:
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+spec:
+  backoffLimit: 2
+  activeDeadlineSeconds: 600
+  template:
+    metadata:
+      labels:
+        {{- include "novanet.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: test
+    spec:
+      serviceAccountName: {{ include "novanet.fullname" . }}-test
+      restartPolicy: Never
+      containers:
+        - name: integration-test
+          image: {{ .Values.tests.image | default "bitnami/kubectl:latest" }}
+          command:
+            - /bin/bash
+            - -ec
+            - |
+              echo "=== NovaNET Integration Test ==="
+
+              echo "1. Verifying CNI plugin is installed on nodes..."
+              NODE_COUNT=$(kubectl get nodes --no-headers | wc -l)
+              DS_READY=$(kubectl get daemonset {{ include "novanet.fullname" . }} -n {{ .Release.Namespace }} -o jsonpath='{.status.numberReady}')
+              echo "   Nodes: $NODE_COUNT, DaemonSet ready: $DS_READY"
+              if [ "$DS_READY" -lt "$NODE_COUNT" ]; then
+                echo "WARN: DaemonSet not running on all nodes ($DS_READY/$NODE_COUNT)"
+              fi
+
+              {{- if .Values.metrics.enabled }}
+              echo "2. Checking metrics endpoint availability..."
+              METRICS_SVC={{ include "novanet.fullname" . }}
+              if kubectl get service $METRICS_SVC -n {{ .Release.Namespace }} &>/dev/null; then
+                echo "   Metrics service exists"
+              else
+                echo "FAIL: Metrics service not found"
+                exit 1
+              fi
+              {{- end }}
+
+              echo "3. Verifying agent configuration..."
+              CONFIG_MAP={{ include "novanet.fullname" . }}
+              if kubectl get configmap $CONFIG_MAP -n {{ .Release.Namespace }} &>/dev/null; then
+                echo "   ConfigMap exists"
+                CLUSTER_CIDR=$(kubectl get configmap $CONFIG_MAP -n {{ .Release.Namespace }} -o jsonpath='{.data.novanet\.json}' | grep -o '"clusterCIDR":"[^"]*"' || echo "not found")
+                echo "   $CLUSTER_CIDR"
+              else
+                echo "FAIL: ConfigMap not found"
+                exit 1
+              fi
+
+              echo "4. Checking DaemonSet rollout status..."
+              kubectl rollout status daemonset/{{ include "novanet.fullname" . }} -n {{ .Release.Namespace }} --timeout=120s
+              echo "   Rollout complete"
+
+              echo ""
+              echo "=== Integration Test PASSED ==="
+{{- end }}
