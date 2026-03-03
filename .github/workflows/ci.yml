@@ -167,10 +167,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Build documentation
-        uses: actions/jekyll-build-pages@v1
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
         with:
-          source: ./docs
+          ruby-version: '3.3'
+
+      - name: Build documentation
+        run: |
+          gem install jekyll bundler jekyll-remote-theme
+          cd docs
+          jekyll build
 
   phase2-docs-freshness:
     name: "Phase 2: Docs Freshness"
