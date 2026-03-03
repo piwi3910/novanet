@@ -6,64 +6,94 @@ on:
   pull_request:
     branches: [main]
   workflow_dispatch:
-    inputs:
-      run_integration_tests:
-        description: 'Run integration tests against a live cluster'
-        type: boolean
-        default: false
 
 permissions:
   contents: read
+  checks: write
+  pull-requests: write
+  security-events: write
   packages: write
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  COVERAGE_THRESHOLD: "20"
+
+# ============================================================================
+# PHASE 1: CODE QUALITY
+# Fast linting and formatting checks — fail fast on obvious issues
+# ============================================================================
 jobs:
-  lint:
-    name: Lint
+  phase1-changes:
+    name: "Phase 1: Detect Changes"
+    runs-on: arc-runner-novanet
+    outputs:
+      go: ${{ steps.filter.outputs.go }}
+      rust: ${{ steps.filter.outputs.rust }}
+      helm: ${{ steps.filter.outputs.helm }}
+      docs: ${{ steps.filter.outputs.docs }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            go:
+              - '**/*.go'
+              - 'go.mod'
+              - 'go.sum'
+            rust:
+              - 'dataplane/**'
+              - 'Dockerfile.build'
+              - 'Dockerfile.dataplane'
+            helm:
+              - 'deploy/helm/**'
+            docs:
+              - 'docs/**'
+
+  phase1-lint-go:
+    name: "Phase 1: Lint (Go)"
+    needs: phase1-changes
+    if: needs.phase1-changes.outputs.go == 'true'
     runs-on: arc-runner-novanet
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
+          cache: true
 
       - name: Check formatting
         run: |
           if [ "$(gofmt -s -l . | wc -l)" -gt 0 ]; then
-            echo "Code is not formatted:"
+            echo "::error::Code is not formatted. Run 'gofmt -s -w .' and commit the changes."
             gofmt -s -l .
             exit 1
           fi
 
-      - name: Run go vet
-        run: go vet ./...
+      - name: Run golangci-lint
+        uses: golangci/golangci-lint-action@v7
+        with:
+          args: ${{ github.event_name == 'pull_request' && '--new-from-rev=origin/main' || '' }}
 
       - name: Check go mod tidy
         run: |
           go mod tidy
           if ! git diff --quiet go.mod go.sum; then
-            echo "go.mod or go.sum is not tidy. Run 'go mod tidy' and commit the changes."
+            echo "::error::go.mod or go.sum is not tidy. Run 'go mod tidy' and commit the changes."
             git diff go.mod go.sum
             exit 1
           fi
 
-  lint-helm:
-    name: Lint (Helm)
-    runs-on: arc-runner-novanet
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install Helm
-        uses: azure/setup-helm@v4
-
-      - name: Lint Helm chart
-        run: helm lint deploy/helm/novanet/
-
-      - name: Template render check
-        run: helm template novanet deploy/helm/novanet/ > /dev/null
-
-  lint-rust:
-    name: Lint (Rust)
+  phase1-lint-rust:
+    name: "Phase 1: Lint (Rust)"
+    needs: phase1-changes
+    if: needs.phase1-changes.outputs.rust == 'true'
     runs-on: arc-runner-novanet
     steps:
       - uses: actions/checkout@v4
@@ -91,33 +121,268 @@ jobs:
 
       - name: Run clippy
         working-directory: dataplane
-        run: cargo clippy --package novanet-common --package novanet-dataplane -- -D warnings
+        run: cargo clippy -p novanet-common -p novanet-dataplane -- -D warnings
 
-  test-go:
-    name: Test (Go)
+  phase1-lint-helm:
+    name: "Phase 1: Lint (Helm)"
+    needs: phase1-changes
+    if: needs.phase1-changes.outputs.helm == 'true'
     runs-on: arc-runner-novanet
     steps:
       - uses: actions/checkout@v4
 
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+
+      - name: Lint Helm chart
+        run: helm lint deploy/helm/novanet/
+
+      - name: Template render check
+        run: helm template novanet deploy/helm/novanet/ > /dev/null
+
+  phase1-gate:
+    name: "Phase 1: Gate"
+    runs-on: arc-runner-novanet
+    needs: [phase1-changes, phase1-lint-go, phase1-lint-rust, phase1-lint-helm]
+    if: always()
+    steps:
+      - name: Check phase 1 results
+        run: |
+          if [[ "${{ needs.phase1-lint-go.result }}" == "failure" || \
+                "${{ needs.phase1-lint-rust.result }}" == "failure" || \
+                "${{ needs.phase1-lint-helm.result }}" == "failure" ]]; then
+            echo "::error::Phase 1 (Code Quality) failed."
+            exit 1
+          fi
+          echo "Phase 1 passed."
+
+  # ============================================================================
+  # PHASE 2: COMPLIANCE
+  # Documentation, security scanning, license checks
+  # ============================================================================
+  phase2-docs:
+    name: "Phase 2: Docs Build"
+    needs: phase1-gate
+    runs-on: arc-runner-novanet
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build documentation
+        uses: actions/jekyll-build-pages@v1
+        with:
+          source: ./docs
+
+  phase2-docs-freshness:
+    name: "Phase 2: Docs Freshness"
+    needs: phase1-gate
+    if: github.event_name == 'pull_request'
+    runs-on: arc-runner-novanet
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check documentation freshness
+        run: |
+          CODE_CHANGED=$(git diff --name-only origin/main...HEAD -- '*.go' 'cmd/' 'internal/' 'api/' 'dataplane/' | wc -l)
+          DOCS_CHANGED=$(git diff --name-only origin/main...HEAD -- 'docs/' | wc -l)
+          if [ "$CODE_CHANGED" -gt 0 ] && [ "$DOCS_CHANGED" -eq 0 ]; then
+            echo "::error::Code changed but no documentation updates. Update docs/ before merging."
+            exit 1
+          fi
+          echo "Documentation is up to date."
+
+  phase2-security:
+    name: "Phase 2: Security"
+    needs: phase1-gate
+    runs-on: arc-runner-novanet
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Install govulncheck
+        run: go install golang.org/x/vuln/cmd/govulncheck@v1.1.4
+
+      - name: Run govulncheck
+        run: govulncheck ./...
+
+      - name: Run gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Run Trivy FS scan
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+          severity: 'CRITICAL,HIGH'
+
+      - name: Upload Trivy results
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-results.sarif
+        continue-on-error: true
+
+  phase2-gate:
+    name: "Phase 2: Gate"
+    runs-on: arc-runner-novanet
+    needs: [phase1-gate, phase2-docs, phase2-docs-freshness, phase2-security]
+    if: always()
+    steps:
+      - name: Check phase 2 results
+        run: |
+          if [[ "${{ needs.phase1-gate.result }}" != "success" ]]; then
+            echo "::error::Phase 1 gate did not pass (status: ${{ needs.phase1-gate.result }})"
+            exit 1
+          fi
+          for r in "${{ needs.phase2-docs.result }}" "${{ needs.phase2-docs-freshness.result }}" "${{ needs.phase2-security.result }}"; do
+            if [[ "$r" == "failure" || "$r" == "cancelled" ]]; then
+              echo "::error::Phase 2 (Compliance) failed (status: $r)"
+              exit 1
+            fi
+          done
+          echo "Phase 2 passed."
+
+  # ============================================================================
+  # PHASE 3: UNIT TESTING
+  # Run test suites with coverage and reporting
+  # ============================================================================
+  phase3-test-go:
+    name: "Phase 3: Test (Go)"
+    needs: phase2-gate
+    runs-on: arc-runner-novanet
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
       - name: Install build dependencies
         run: sudo apt-get update && sudo apt-get install -y gcc
 
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
+      - name: Install gotestsum
+        run: go install gotest.tools/gotestsum@v1.12.1
 
       - name: Run unit tests
-        run: CGO_ENABLED=1 go test -race -count=1 -coverprofile=coverage.out ./...
+        run: |
+          CGO_ENABLED=1 gotestsum \
+            --junitfile test-results.xml \
+            --format pkgname \
+            -- -race -count=1 -timeout=10m -coverprofile=coverage.out ./...
 
-      - name: Upload coverage
+      - name: Check coverage threshold
+        run: |
+          COVERAGE=$(go tool cover -func=coverage.out | grep total | awk '{print $3}' | sed 's/%//')
+          echo "Total coverage: ${COVERAGE}%"
+          echo "Threshold: ${COVERAGE_THRESHOLD}%"
+          if awk "BEGIN {exit !($COVERAGE < $COVERAGE_THRESHOLD)}"; then
+            echo "::error::Coverage ${COVERAGE}% is below threshold ${COVERAGE_THRESHOLD}%"
+            exit 1
+          fi
+          echo "Coverage is above threshold."
+
+      - name: Upload test report
+        if: always()
+        uses: dorny/test-reporter@v1
+        with:
+          name: "Go Test Results"
+          path: test-results.xml
+          reporter: java-junit
+          fail-on-error: false
+
+      - name: Upload coverage artifact
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: coverage
+          name: go-coverage
           path: coverage.out
           retention-days: 7
 
-  build-go:
-    name: Build (${{ matrix.binary }})
+  phase3-test-rust:
+    name: "Phase 3: Test (Rust)"
+    needs: [phase2-gate, phase1-changes]
+    if: needs.phase1-changes.outputs.rust == 'true'
+    runs-on: arc-runner-novanet
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler build-essential
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: rust-src, llvm-tools-preview
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            dataplane/target
+          key: ${{ runner.os }}-cargo-test-${{ hashFiles('dataplane/Cargo.lock') }}
+
+      - name: Install cargo-nextest
+        run: |
+          curl -LsSf https://get.nexte.st/latest/linux | tar zxf - -C ${CARGO_HOME:-~/.cargo}/bin
+
+      - name: Run Rust tests
+        working-directory: dataplane
+        run: |
+          cargo nextest run \
+            --profile ci \
+            -p novanet-common \
+            -p novanet-dataplane
+
+      - name: Upload Rust test report
+        if: always()
+        uses: dorny/test-reporter@v1
+        with:
+          name: "Rust Test Results"
+          path: dataplane/target/nextest/ci/rust-test-results.xml
+          reporter: java-junit
+          fail-on-error: false
+
+  phase3-gate:
+    name: "Phase 3: Gate"
+    runs-on: arc-runner-novanet
+    needs: [phase2-gate, phase3-test-go, phase3-test-rust]
+    if: always()
+    steps:
+      - name: Check phase 3 results
+        run: |
+          if [[ "${{ needs.phase2-gate.result }}" != "success" ]]; then
+            echo "::error::Phase 2 gate did not pass (status: ${{ needs.phase2-gate.result }})"
+            exit 1
+          fi
+          for r in "${{ needs.phase3-test-go.result }}" "${{ needs.phase3-test-rust.result }}"; do
+            if [[ "$r" == "failure" || "$r" == "cancelled" ]]; then
+              echo "::error::Phase 3 (Unit Testing) failed (status: $r)"
+              exit 1
+            fi
+          done
+          echo "Phase 3 passed."
+
+  # ============================================================================
+  # PHASE 4: BUILDING
+  # Compile binaries, build container images, run image scans
+  # ============================================================================
+  phase4-build-go:
+    name: "Phase 4: Build (${{ matrix.binary }})"
+    needs: phase3-gate
     runs-on: arc-runner-novanet
     strategy:
       matrix:
@@ -131,9 +396,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
+          cache: true
 
       - name: Build ${{ matrix.binary }}
         run: |
@@ -147,40 +413,10 @@ jobs:
           path: bin/${{ matrix.binary }}
           retention-days: 7
 
-  test-rust:
-    name: Test (Rust)
-    runs-on: arc-runner-novanet
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install system dependencies
-        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler build-essential
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Cache cargo registry
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            dataplane/target
-          key: ${{ runner.os }}-cargo-test-${{ hashFiles('dataplane/Cargo.lock') }}
-
-      # Note: novanet-ebpf is excluded — eBPF programs compile to BPF bytecode
-      # and cannot be unit-tested in userspace. They are validated via the
-      # integration test suite on a real cluster.
-      - name: Run novanet-common tests
-        working-directory: dataplane
-        run: cargo test -p novanet-common --features userspace
-
-      - name: Run novanet-dataplane tests
-        working-directory: dataplane
-        run: cargo test -p novanet-dataplane
-
-  build-rust:
-    name: Build (Rust/eBPF)
+  phase4-build-rust:
+    name: "Phase 4: Build (Rust/eBPF)"
+    needs: [phase3-gate, phase1-changes]
+    if: needs.phase1-changes.outputs.rust == 'true'
     runs-on: arc-runner-novanet
     steps:
       - uses: actions/checkout@v4
@@ -201,90 +437,73 @@ jobs:
           path: bin/novanet-dataplane
           retention-days: 7
 
-  security:
-    name: Security
+  phase4-docker-test:
+    name: "Phase 4: Docker Test"
+    needs: phase3-gate
     runs-on: arc-runner-novanet
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-go@v5
+      - name: Build agent image (no push)
+        uses: docker/build-push-action@v6
         with:
-          go-version-file: go.mod
+          context: .
+          file: Dockerfile.agent
+          push: false
+          tags: novanet-agent:test
 
-      - name: Install govulncheck
-        run: go install golang.org/x/vuln/cmd/govulncheck@latest
+      - name: Build dataplane image (no push)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.dataplane
+          push: false
+          tags: novanet-dataplane:test
 
-      - name: Run govulncheck
-        run: govulncheck ./...
+      - name: Trivy scan agent image
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: 'novanet-agent:test'
+          format: 'table'
+          severity: 'CRITICAL,HIGH'
+          exit-code: '1'
 
-  # Integration tests — manual trigger only.
-  # Requires a pre-provisioned multi-node K3s cluster with NovaNet deployed.
-  # The runner must have network access to the cluster nodes and kubectl configured.
-  integration-tests:
-    name: Integration Tests
-    if: github.event_name == 'workflow_dispatch' && github.event.inputs.run_integration_tests == 'true'
+      - name: Trivy scan dataplane image
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: 'novanet-dataplane:test'
+          format: 'table'
+          severity: 'CRITICAL,HIGH'
+          exit-code: '1'
+
+  phase4-gate:
+    name: "Phase 4: Gate"
     runs-on: arc-runner-novanet
-    timeout-minutes: 30
-    env:
-      KUBECONFIG: /etc/rancher/k3s/k3s.yaml
-      NOVANET_NS: nova-system
-      TEST_NS: novanet-test
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install sshpass
-        run: |
-          if ! command -v sshpass &>/dev/null; then
-            apt-get update -qq && apt-get install -y -qq sshpass || \
-            yum install -y sshpass || \
-            apk add --no-cache sshpass || true
-          fi
-
-      - name: Verify cluster access
-        run: |
-          kubectl cluster-info
-          kubectl get nodes -o wide
-
-      - name: Verify NovaNet DaemonSet
-        run: |
-          kubectl get daemonset -n nova-system -o wide
-          kubectl get pods -n nova-system -o wide
-
-      - name: Make test scripts executable
-        run: chmod +x tests/integration/*.sh
-
-      - name: Run integration tests
-        run: ./tests/integration/run-all.sh
-
-      - name: Cleanup test namespace on failure
-        if: failure()
-        run: kubectl delete namespace novanet-test --timeout=60s --wait=true 2>/dev/null || true
-
-  status-check:
-    name: Status Check
+    needs: [phase3-gate, phase4-build-go, phase4-build-rust, phase4-docker-test]
     if: always()
-    needs: [lint, lint-helm, lint-rust, test-go, test-rust, build-go, build-rust, security]
-    runs-on: arc-runner-novanet
     steps:
-      - name: Decide status
+      - name: Check phase 4 results
         run: |
-          if [[ "${{ needs.lint.result }}" == "failure" || \
-                "${{ needs.lint-helm.result }}" == "failure" || \
-                "${{ needs.lint-rust.result }}" == "failure" || \
-                "${{ needs.test-go.result }}" == "failure" || \
-                "${{ needs.build-go.result }}" == "failure" || \
-                "${{ needs.test-rust.result }}" == "failure" || \
-                "${{ needs.build-rust.result }}" == "failure" || \
-                "${{ needs.security.result }}" == "failure" ]]; then
-            echo "One or more required jobs failed."
+          if [[ "${{ needs.phase3-gate.result }}" != "success" ]]; then
+            echo "::error::Phase 3 gate did not pass (status: ${{ needs.phase3-gate.result }})"
             exit 1
           fi
-          echo "All required jobs passed."
+          for r in "${{ needs.phase4-build-go.result }}" "${{ needs.phase4-build-rust.result }}" "${{ needs.phase4-docker-test.result }}"; do
+            if [[ "$r" == "failure" || "$r" == "cancelled" ]]; then
+              echo "::error::Phase 4 (Building) failed (status: $r)"
+              exit 1
+            fi
+          done
+          echo "Phase 4 passed."
 
-  build-and-push:
-    name: Build & Push (${{ matrix.image }})
+  # ============================================================================
+  # PHASE 5: DEPLOYMENT
+  # Push container images (main branch only)
+  # ============================================================================
+  phase5-push:
+    name: "Phase 5: Push (${{ matrix.image }})"
+    needs: phase4-gate
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-    needs: [lint, lint-helm, lint-rust, test-go, test-rust, build-go, build-rust, security]
     runs-on: arc-runner-novanet
     strategy:
       matrix:
@@ -310,5 +529,29 @@ jobs:
           file: ${{ matrix.dockerfile }}
           push: true
           tags: |
-            ghcr.io/piwi3910/${{ matrix.image }}:sha-${{ github.sha }}
-            ghcr.io/piwi3910/${{ matrix.image }}:latest
+            ghcr.io/piwi3910/novanet/${{ matrix.image }}:sha-${{ github.sha }}
+            ghcr.io/piwi3910/novanet/${{ matrix.image }}:latest
+
+      - name: Trigger CT pipeline
+        if: success()
+        uses: peter-evans/repository-dispatch@v3
+        with:
+          event-type: deployment-complete
+
+  # ============================================================================
+  # STATUS CHECK
+  # Final aggregator for branch protection
+  # ============================================================================
+  status-check:
+    name: Status Check
+    needs: phase4-gate
+    if: always()
+    runs-on: arc-runner-novanet
+    steps:
+      - name: Decide status
+        run: |
+          if [[ "${{ needs.phase4-gate.result }}" != "success" ]]; then
+            echo "::error::Pipeline failed (phase4-gate status: ${{ needs.phase4-gate.result }})."
+            exit 1
+          fi
+          echo "All pipeline phases passed."
