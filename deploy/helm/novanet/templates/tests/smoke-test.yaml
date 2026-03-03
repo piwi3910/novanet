@@ -1,0 +1,114 @@
+{{- if .Values.tests.smoke.enabled }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ include "novanet.fullname" . }}-test
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "novanet.labels" . | nindent 4 }}
+  annotations:
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "novanet.fullname" . }}-test
+  labels:
+    {{- include "novanet.labels" . | nindent 4 }}
+  annotations:
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "nodes"]
+    verbs: ["get", "list"]
+  - apiGroups: ["apps"]
+    resources: ["daemonsets"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "novanet.fullname" . }}-test
+  labels:
+    {{- include "novanet.labels" . | nindent 4 }}
+  annotations:
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "novanet.fullname" . }}-test
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "novanet.fullname" . }}-test
+    namespace: {{ .Release.Namespace }}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "novanet.fullname" . }}-smoke-test
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "novanet.labels" . | nindent 4 }}
+    app.kubernetes.io/component: test
+  annotations:
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+spec:
+  backoffLimit: 2
+  activeDeadlineSeconds: 300
+  template:
+    metadata:
+      labels:
+        {{- include "novanet.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: test
+    spec:
+      serviceAccountName: {{ include "novanet.fullname" . }}-test
+      restartPolicy: Never
+      containers:
+        - name: smoke-test
+          image: {{ .Values.tests.image | default "bitnami/kubectl:latest" }}
+          command:
+            - /bin/bash
+            - -ec
+            - |
+              echo "=== NovaNET Smoke Test ==="
+
+              echo "1. Checking DaemonSet status..."
+              DS_STATUS=$(kubectl get daemonset {{ include "novanet.fullname" . }} -n {{ .Release.Namespace }} -o jsonpath='{.status}')
+              DESIRED=$(echo "$DS_STATUS" | kubectl get daemonset {{ include "novanet.fullname" . }} -n {{ .Release.Namespace }} -o jsonpath='{.status.desiredNumberScheduled}')
+              READY=$(kubectl get daemonset {{ include "novanet.fullname" . }} -n {{ .Release.Namespace }} -o jsonpath='{.status.numberReady}')
+              echo "   DaemonSet: $READY/$DESIRED pods ready"
+              if [ "$READY" -lt 1 ]; then
+                echo "FAIL: No novanet pods are ready"
+                exit 1
+              fi
+
+              echo "2. Checking all novanet pods are Running..."
+              NOT_RUNNING=$(kubectl get pods -n {{ .Release.Namespace }} -l app.kubernetes.io/name={{ include "novanet.name" . }} --field-selector=status.phase!=Running --no-headers 2>/dev/null | wc -l)
+              if [ "$NOT_RUNNING" -gt 0 ]; then
+                echo "FAIL: $NOT_RUNNING novanet pod(s) are not running"
+                kubectl get pods -n {{ .Release.Namespace }} -l app.kubernetes.io/name={{ include "novanet.name" . }} --field-selector=status.phase!=Running
+                exit 1
+              fi
+              echo "   All pods running"
+
+              echo "3. Checking both containers (agent + dataplane) are ready in each pod..."
+              PODS=$(kubectl get pods -n {{ .Release.Namespace }} -l app.kubernetes.io/name={{ include "novanet.name" . }} -o jsonpath='{.items[*].metadata.name}')
+              for POD in $PODS; do
+                CONTAINERS_READY=$(kubectl get pod $POD -n {{ .Release.Namespace }} -o jsonpath='{.status.containerStatuses[*].ready}')
+                for STATUS in $CONTAINERS_READY; do
+                  if [ "$STATUS" != "true" ]; then
+                    echo "FAIL: Container not ready in pod $POD"
+                    kubectl describe pod $POD -n {{ .Release.Namespace }} | tail -20
+                    exit 1
+                  fi
+                done
+              done
+              echo "   All containers ready"
+
+              echo ""
+              echo "=== Smoke Test PASSED ==="
+{{- end }}
