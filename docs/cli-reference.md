@@ -22,20 +22,27 @@ When running inside a NovaNet pod, the defaults work automatically. From the hos
 Show the overall status of the agent and dataplane.
 
 ```bash
-novanetctl status
+novanetctl status [flags]
 ```
+
+| Flag | Description |
+|------|-------------|
+| `--output / -o` | Output format: `table` (default) or `json` |
 
 Example output:
 
 ```
 NovaNet Agent Status
-  Version:           0.1.0
+  Node IP:           192.168.100.21
+  Pod CIDR:          10.42.1.0/24
+  Cluster CIDR:      10.42.0.0/16
   Mode:              overlay
   Tunnel Protocol:   geneve
   Endpoints:         12
   Policies:          48
   Identities:        6
   Tunnels:           4
+  Attached Programs: 26
   Dataplane:         connected
   NovaRoute:         not connected
 ```
@@ -53,7 +60,8 @@ novanetctl flows [flags]
 | Flag | Description |
 |------|-------------|
 | `--identity <id>` | Filter events by source or destination identity |
-| `--drops-only` | Show only denied/dropped flows |
+
+> **Note:** To view only dropped packets, use the dedicated `drops` subcommand instead of a flag on `flows`.
 
 Example output:
 

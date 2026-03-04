@@ -39,6 +39,13 @@ The following table lists all configurable values in the NovaNet Helm chart (`de
 | `novaroute.protocol` | `"bgp"` | Routing protocol to use. `"bgp"` for eBGP peering or `"ospf"` for OSPF area injection. |
 
 
+### CNI Configuration
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `cni.binPath` | `"/opt/cni/bin"` | Directory where the CNI binary is installed on the host. |
+| `cni.confPath` | `"/etc/cni/net.d"` | Directory where the CNI configuration file is written on the host. |
+
 ### Egress Configuration
 
 | Key | Default | Description |
@@ -75,8 +82,8 @@ The following table lists all configurable values in the NovaNet Helm chart (`de
 
 | Key | Default | Description |
 |-----|---------|-------------|
-| `tolerations` | `[{"operator": "Exists"}]` | Tolerations applied to the DaemonSet pods. The default tolerates all taints so NovaNet runs on every node, including control-plane nodes. |
-| `nodeSelector` | `{}` | Node selector for the DaemonSet. |
+| `tolerations` | `[{"operator": "Exists", "effect": "NoSchedule"}, {"operator": "Exists", "effect": "NoExecute"}]` | Tolerations applied to the DaemonSet pods. Defaults tolerate all taints with NoSchedule and NoExecute effects so NovaNet runs on every node. |
+| `nodeSelector` | `{kubernetes.io/os: linux}` | Node selector for the DaemonSet. Defaults to Linux nodes only. |
 | `priorityClassName` | `"system-node-critical"` | Priority class for NovaNet pods. CNI pods must be high priority to ensure networking is available for other workloads. |
 | `updateStrategy.type` | `"RollingUpdate"` | DaemonSet update strategy. |
 | `updateStrategy.rollingUpdate.maxUnavailable` | `1` | Maximum number of nodes updated simultaneously during a rolling update. |
@@ -95,11 +102,19 @@ The Helm chart generates a ConfigMap that is mounted as `/etc/novanet/novanet.js
   "cni_socket": "/run/novanet/cni.sock",
   "dataplane_socket": "/run/novanet/dataplane.sock",
   "cluster_cidr": "10.42.0.0/16",
+  "node_cidr_mask_size": 24,
   "tunnel_protocol": "geneve",
   "routing_mode": "overlay",
   "novaroute": {
     "socket": "/run/novaroute/novaroute.sock",
-    "token": "novanet-secret-token"
+    "token": "novanet-secret-token",
+    "protocol": "bgp"
+  },
+  "egress": {
+    "masquerade_enabled": true
+  },
+  "policy": {
+    "default_deny": false
   },
   "log_level": "info",
   "metrics_address": ":9103"
@@ -114,10 +129,14 @@ The Helm chart generates a ConfigMap that is mounted as `/etc/novanet/novanet.js
 | `cni_socket` | string | Unix socket path where the agent listens for CNI binary requests. |
 | `dataplane_socket` | string | Unix socket path for agent-to-dataplane gRPC communication. |
 | `cluster_cidr` | string | Cluster-wide pod CIDR in notation like `"10.42.0.0/16"`. |
+| `node_cidr_mask_size` | int | Subnet mask size for per-node PodCIDR allocation (e.g., `24`). |
 | `tunnel_protocol` | string | `"geneve"` or `"vxlan"`. Only used in overlay mode. |
 | `routing_mode` | string | `"overlay"` or `"native"`. |
 | `novaroute.socket` | string | Path to NovaRoute's gRPC Unix socket. Only used in native mode. |
 | `novaroute.token` | string | Token for authenticating with NovaRoute. Only used in native mode. |
+| `novaroute.protocol` | string | Routing protocol: `"bgp"` or `"ospf"`. Only used in native mode. |
+| `egress.masquerade_enabled` | bool | Enable SNAT/masquerade for pod-to-external traffic. |
+| `policy.default_deny` | bool | Enable cluster-wide default-deny policy. |
 | `log_level` | string | One of `"debug"`, `"info"`, `"warn"`, `"error"`. |
 | `metrics_address` | string | Address for the Prometheus metrics HTTP endpoint. |
 
@@ -141,6 +160,9 @@ The following environment variables are set automatically by the Helm chart via 
 | `NOVANET_NODE_NAME` | Downward API (`spec.nodeName`) | Name of the Kubernetes node this agent is running on. Used to identify the node in Kubernetes API queries. |
 | `NOVANET_NODE_IP` | Downward API (`status.hostIP`) | IP address of the node. Used as the tunnel source IP in overlay mode and as the router ID in native mode. |
 | `NOVANET_POD_CIDR` | Kubernetes Node spec | The PodCIDR allocated to this node by the cluster. Discovered via the Kubernetes API using `NOVANET_NODE_NAME`. |
+| `NOVANET_CLUSTER_CIDR` | ConfigMap | The cluster-wide pod CIDR (e.g., `10.42.0.0/16`). Overrides `cluster_cidr` in the config file. |
+| `NOVANET_ROUTING_MODE` | ConfigMap | Routing mode (`overlay` or `native`). Overrides `routing_mode` in the config file. |
+| `NOVANET_TUNNEL_PROTOCOL` | ConfigMap | Tunnel protocol (`geneve` or `vxlan`). Overrides `tunnel_protocol` in the config file. |
 
 The config file supports environment variable expansion. Any value in `novanet.json` containing `${VAR_NAME}` will be replaced with the environment variable's value at load time.
 

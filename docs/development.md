@@ -39,8 +39,11 @@ Building the eBPF dataplane requires a Linux environment. On macOS, use Docker.
 cmd/
   novanet-agent/         Main agent binary (Go)
   novanet-cni/           CNI plugin binary (Go)
+  novanet-operator/      Kubernetes operator binary (Go)
   novanetctl/            CLI tool (Go)
 internal/
+  operator/              Operator reconciliation logic
+  operator/controller/   NovaNetCluster CRD controller
   cni/                   Veth/namespace setup (Linux-only)
   config/                Config loading and validation
   dataplane/             Dataplane gRPC client interface
@@ -256,6 +259,8 @@ git push origin v0.2.0
 | `build-agent` | Build novanet-agent |
 | `build-cni` | Build novanet-cni |
 | `build-ctl` | Build novanetctl |
+| `build-operator` | Build novanet-operator |
+| `generate-crd` | Generate NovaNetCluster CRD manifests |
 | `build-docker-rust` | Build Rust/eBPF in Docker (works on macOS) |
 | `build-rust-native` | Build Rust natively (Linux only) |
 | `test` | Run all tests (Go + Rust) |
