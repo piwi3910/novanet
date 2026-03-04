@@ -61,7 +61,7 @@ Processes packets leaving a pod.
 
 1. Parse headers and determine destination
 2. Check egress policy in EGRESS_POLICIES map
-3. **Local delivery**: If destination IP is in ENDPOINTS map (local pod), redirect directly to that pod's veth ifindex
+3. **Local delivery**: If destination IP is in ENDPOINTS map (local pod), return TC_ACT_OK to let the kernel route the packet to that pod's veth
 4. **Overlay remote delivery**: Look up TUNNELS map by destination node IP. Redirect to tunnel interface with identity injected into Geneve TLV
 5. **Native routing**: Let the kernel routing table handle forwarding (routes installed by NovaRoute)
 6. **External traffic**: Passes through iptables MASQUERADE for SNAT
@@ -77,10 +77,9 @@ Overlay mode only. Processes decapsulated tunnel traffic arriving from remote no
 
 ### tc_tunnel_egress (Tunnel interface, egress)
 
-Overlay mode only. Processes traffic being sent to remote nodes through the tunnel.
+Overlay mode only. Pass-through (TC_ACT_OK), reserved for future identity TLV injection.
 
-1. Inject source identity into Geneve TLV option
-2. Forward through tunnel encapsulation
+Currently a no-op that returns TC_ACT_OK, allowing the kernel to handle tunnel encapsulation directly. A future version may inject source identity into Geneve TLV options at this hook point.
 
 ### Program Attachment
 
@@ -99,23 +98,24 @@ All maps are pinned to `/sys/fs/bpf/novanet/` and shared between the four TC pro
 
 | Map | Type | Key | Value | Max Entries | Purpose |
 |-----|------|-----|-------|-------------|---------|
-| ENDPOINTS | HashMap | `u32` (pod IP) | `{ifindex, mac[6], identity_id}` | 10,240 | Pod lookup for local delivery and identity resolution |
-| POLICIES | HashMap | `{src_id, dst_id, proto, port}` | `{action}` | 102,400 | Ingress/egress policy enforcement |
-| TUNNELS | HashMap | `u32` (node IP) | `{ifindex, vni}` | 100 | Overlay tunnel endpoints |
-| EGRESS_POLICIES | HashMap | `{src_id, dst_cidr, prefix_len}` | `{action, snat_ip}` | 102,400 | Egress CIDR-based policies |
-| CONFIG | Array | `u32` (key index) | `u64` (value) | 16 | Runtime configuration (mode, tunnel type, node IP, etc.) |
-| FLOW_EVENTS | RingBuf | -- | `FlowEvent` struct | 1 MB | Flow event export to userspace |
-| DROP_COUNTERS | PerCpuArray | `u32` (reason) | `u64` (count) | 6 | Per-CPU drop statistics |
+| ENDPOINTS | HashMap | `u32` (pod IP) | `{ifindex, mac[6], _pad[2], identity, node_ip}` | 65,536 | Pod lookup for local delivery and identity resolution |
+| POLICIES | HashMap | `{src_id, dst_id, proto, port}` | `{action}` | 65,536 | Ingress/egress policy enforcement |
+| TUNNELS | HashMap | `u32` (node IP) | `{ifindex, remote_ip, vni}` | 1,024 | Overlay tunnel endpoints |
+| EGRESS_POLICIES | HashMap | `{src_id, dst_cidr, prefix_len}` | `{action, snat_ip}` | 16,384 | Egress CIDR-based policies |
+| CONFIG | HashMap | `u32` (key) | `u64` (value) | 32 | Runtime configuration (mode, tunnel type, node IP, etc.) |
+| FLOW_EVENTS | RingBuf | -- | `FlowEvent` struct | 8 MiB | Flow event export to userspace |
+| DROP_COUNTERS | PerCpuArray | `u32` (reason) | `u64` (count) | 16 | Per-CPU drop statistics |
 
 ### Policy Lookup Order
 
-The policy check uses a three-level fallback:
+The policy check uses a 3x3 grid of lookups (9 total), iterating over identity wildcards and port wildcards:
 
-1. Exact match: `(src_identity, dst_identity, protocol, dst_port)`
-2. Wildcard port: `(src_identity, dst_identity, protocol, 0)`
-3. Wildcard identity: `(0, dst_identity, protocol, dst_port)`
+For each of `(src_identity, dst_identity)`, `(src_identity, 0)`, `(0, dst_identity)` in that order:
+1. Exact: `(src_id, dst_id, protocol, dst_port)`
+2. Wildcard port: `(src_id, dst_id, protocol, 0)`
+3. Wildcard protocol+port: `(src_id, dst_id, 0, 0)`
 
-If no match is found, the CONFIG `default_deny` flag determines the verdict.
+The first match wins. If none of the 9 lookups match, the CONFIG `default_deny` flag determines the verdict.
 
 ---
 
@@ -168,18 +168,18 @@ All local tunnel interfaces share the MAC derived from the local node's IP. Neig
 
 ```
 Pod A eth0 -> tc_egress -> ENDPOINTS lookup (Pod B is local)
-  -> bpf_redirect to Pod B's veth ifindex
+  -> TC_ACT_OK (let kernel route to Pod B's veth)
   -> Pod B eth0 tc_ingress -> policy check -> deliver
 ```
 
-No tunnel or kernel routing involved. Direct eBPF redirect between veth pairs.
+No tunnel involved. The eBPF program returns TC_ACT_OK and lets the kernel route between veth pairs.
 
 ### Cross-Node (Overlay/Geneve)
 
 ```
 Pod A eth0 -> tc_egress -> TUNNELS lookup (remote node)
   -> redirect to geneve tunnel interface
-  -> tc_tunnel_egress -> inject identity TLV
+  -> tc_tunnel_egress -> pass-through (TC_ACT_OK)
   -> kernel Geneve encapsulation -> UDP/6081 to remote node
   ...
   -> remote node kernel decapsulation

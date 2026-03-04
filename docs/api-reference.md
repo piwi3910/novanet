@@ -53,7 +53,7 @@ The Go agent calls these RPCs to manage eBPF maps and programs.
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `policies` | `repeated UpsertPolicyRequest` | Complete set of desired policy rules |
+| `policies` | `repeated PolicyEntry` | Complete set of desired policy rules |
 
 The sync operation computes a diff against the current map and applies only the necessary insertions, updates, and deletions.
 
@@ -126,6 +126,8 @@ Config keys:
 | `src_identity` | `uint32` | Source identity |
 | `dst_cidr_ip` | `uint32` | Destination CIDR IP |
 | `dst_cidr_prefix_len` | `uint32` | Destination CIDR prefix length |
+| `protocol` | `uint32` | IP protocol (6=TCP, 17=UDP, 0=any) |
+| `dst_port` | `uint32` | Destination port (0 = any) |
 | `action` | `EgressAction` | `ALLOW`, `DENY`, or `SNAT` |
 | `snat_ip` | `uint32` | SNAT IP (when action=SNAT) |
 
@@ -194,6 +196,14 @@ Config keys:
 | `GetAgentStatus` | Node-level status overview |
 | `StreamAgentFlows` | Proxy flow events from dataplane |
 | `ListPolicies` | Compiled policy rules |
+
+**StreamAgentFlowsRequest:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `drops_only` | `bool` | If true, stream only denied/dropped flow events |
+
+#### Policy and Identity Listing
 | `ListIdentities` | Pod-to-identity mappings |
 | `ListTunnels` | Active tunnel list |
 | `ListEgressPolicies` | Egress rules |
@@ -206,16 +216,16 @@ Config keys:
 
 | Value | Number | Description |
 |-------|--------|-------------|
-| `ALLOW` | 0 | Permit the packet |
-| `DENY` | 1 | Drop the packet |
+| `POLICY_ACTION_DENY` | 0 | Drop the packet |
+| `POLICY_ACTION_ALLOW` | 1 | Permit the packet |
 
 ### EgressAction
 
 | Value | Number | Description |
 |-------|--------|-------------|
-| `ALLOW` | 0 | Permit egress |
-| `DENY` | 1 | Drop egress |
-| `SNAT` | 2 | Permit with source NAT |
+| `EGRESS_ACTION_DENY` | 0 | Drop egress |
+| `EGRESS_ACTION_ALLOW` | 1 | Permit egress |
+| `EGRESS_ACTION_SNAT` | 2 | Permit with source NAT |
 
 ### DropReason
 
@@ -232,8 +242,8 @@ Config keys:
 
 | Value | Number | Description |
 |-------|--------|-------------|
-| `INGRESS` | 0 | TC ingress hook |
-| `EGRESS` | 1 | TC egress hook |
+| `ATTACH_TC_INGRESS` | 0 | TC ingress hook |
+| `ATTACH_TC_EGRESS` | 1 | TC egress hook |
 
 ---
 

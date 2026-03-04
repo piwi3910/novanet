@@ -32,7 +32,7 @@ kubectl logs -n nova-system <pod-name> -c novanet-agent -f
 novanetctl flows
 
 # Watch only dropped packets with reasons
-novanetctl flows --drops-only
+novanetctl drops
 
 # Filter flows by identity
 novanetctl flows --identity 42
@@ -214,7 +214,7 @@ novanetctl egress
 2. Check egress policy:
 
 ```bash
-novanetctl flows --drops-only
+novanetctl drops
 # Look for drops on traffic to external IPs
 ```
 
@@ -263,7 +263,7 @@ kubectl exec <pod> -- ping -c 1 $(kubectl get svc -n kube-system kube-dns -o jso
 3. Check for policy drops on DNS traffic:
 
 ```bash
-novanetctl flows --drops-only
+novanetctl drops
 # Look for drops on port 53 (UDP or TCP)
 ```
 
@@ -525,7 +525,7 @@ SRC IDENTITY    DST IDENTITY    PROTO    PORT    ACTION
 novanetctl flows
 
 # Watch only denied flows
-novanetctl flows --drops-only
+novanetctl drops
 ```
 
 Flow events include the verdict (ALLOW/DENY) and drop reason for denied packets.

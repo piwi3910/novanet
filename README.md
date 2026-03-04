@@ -69,6 +69,7 @@ NovaNet is part of the **Nova networking stack**:
 | `novanet-cni` | Go | Standard CNI binary called by kubelet for pod ADD/DEL/CHECK |
 | `novanetctl` | Go | CLI tool for status, flows, policies, tunnels, identities |
 | `novanet-ebpf` | Rust (no_std) | TC classifier programs for packet forwarding and policy enforcement |
+| `novanet-operator` | Go | Kubernetes operator managing NovaNetCluster CRD for lifecycle automation |
 
 ---
 
@@ -113,7 +114,7 @@ kubectl exec test-a -- ping -c 3 $(kubectl get pod test-b -o jsonpath='{.status.
 ```
 novanetctl status              # Agent and dataplane overview
 novanetctl flows               # Stream real-time flow events
-novanetctl flows --drops-only  # Watch denied packets only
+novanetctl drops               # Watch denied packets only
 novanetctl tunnels             # List overlay tunnels
 novanetctl policy              # Show compiled policy rules
 novanetctl identity            # Show pod-to-identity mappings
@@ -185,7 +186,7 @@ make test
 ### Project Layout
 
 ```
-cmd/                  Go entry points (agent, cni, ctl)
+cmd/                  Go entry points (agent, cni, ctl, operator)
 internal/             Go packages (ipam, policy, tunnel, identity, ...)
 dataplane/            Rust workspace (dataplane, ebpf, common)
 deploy/helm/novanet/  Kubernetes Helm chart
