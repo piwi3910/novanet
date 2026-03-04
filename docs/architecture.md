@@ -110,7 +110,7 @@ All maps are pinned to `/sys/fs/bpf/novanet/` and shared between the four TC pro
 
 The policy check uses a 3x3 grid of lookups (9 total), iterating over identity wildcards and port wildcards:
 
-For each of `(src_identity, dst_identity)`, `(0, dst_identity)`, `(src_identity, 0)`:
+For each of `(src_identity, dst_identity)`, `(src_identity, 0)`, `(0, dst_identity)` in that order:
 1. Exact: `(src_id, dst_id, protocol, dst_port)`
 2. Wildcard port: `(src_id, dst_id, protocol, 0)`
 3. Wildcard protocol+port: `(src_id, dst_id, 0, 0)`
