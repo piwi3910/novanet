@@ -26,6 +26,7 @@ Integration test suite for NovaNet CNI. These tests run against a real multi-nod
 | `06-egress.sh` | Egress/masquerade (pod to external IP, SNAT verification) |
 | `07-dns.sh` | DNS resolution (cluster services, external domains, resolv.conf) |
 | `08-external.sh` | External HTTP/HTTPS connectivity, TLS, and MTU validation |
+| `09-graceful-restart.sh` | Rolling restart resilience (eBPF persistence, IPAM state, connectivity) |
 
 ## Running
 
@@ -73,3 +74,4 @@ export SSH_PASS=62156215             # SSH password for cluster nodes
 - Each test script cleans up after itself using a trap on EXIT.
 - All test pods are created in the `novanet-test` namespace.
 - The test suite uses `nicolaka/netshoot` as the default test image since it includes networking tools (ping, iperf3, curl, nslookup, nc, tcpdump).
+- Shared test helpers (pod creation, wait functions, cleanup) are defined in `lib.sh` and sourced by all test scripts.

@@ -15,12 +15,13 @@ Initial stable release of NovaNet, an eBPF-based Kubernetes CNI providing identi
 - **Egress Policy** — Per-identity egress rules with ALLOW/DENY/SNAT actions
 - **Flow Observability** — Real-time streaming of flow events with verdict, drop reason, and TCP flags
 - **CLI (novanetctl)** — Full management CLI: status, flows, drops, tunnels, policy, identity, egress, metrics
+- **Kubernetes Operator** — `novanet-operator` with NovaNetCluster CRD for declarative lifecycle management
 
 ### Kubernetes Integration
 
 - **CNI Plugin** — Standards-compliant CNI binary with veth pair setup, /32 addressing, and namespace-aware netlink
 - **Helm Chart** — Production-ready DaemonSet deployment with configurable values
-- **PodDisruptionBudget** — Configurable maxUnavailable for rolling updates
+- **DaemonSet Rolling Update Strategy** — Configurable maxUnavailable for rolling updates
 - **Pod Label Identity** — Automatic identity allocation from pod labels at CNI ADD time
 - **NetworkPolicy Support** — Full K8s NetworkPolicy with MatchExpressions, named ports, and wildcard identities
 
