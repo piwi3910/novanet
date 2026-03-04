@@ -218,21 +218,12 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Run Trivy FS scan
-        uses: aquasecurity/trivy-action@0.28.0
-        with:
-          scan-type: 'fs'
-          scan-ref: '.'
-          format: 'sarif'
-          output: 'trivy-results.sarif'
-          severity: 'CRITICAL,HIGH'
+      - name: Install Trivy
+        run: |
+          curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sudo sh -s -- -b /usr/local/bin
 
-      - name: Upload Trivy results
-        if: always()
-        uses: github/codeql-action/upload-sarif@v3
-        with:
-          sarif_file: trivy-results.sarif
-        continue-on-error: true
+      - name: Run Trivy FS scan
+        run: trivy fs --severity CRITICAL,HIGH --exit-code 1 .
 
   phase2-gate:
     name: "Phase 2: Gate"
@@ -461,21 +452,15 @@ jobs:
           push: false
           tags: novanet-dataplane:test
 
+      - name: Install Trivy
+        run: |
+          curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sudo sh -s -- -b /usr/local/bin
+
       - name: Trivy scan agent image
-        uses: aquasecurity/trivy-action@0.28.0
-        with:
-          image-ref: 'novanet-agent:test'
-          format: 'table'
-          severity: 'CRITICAL,HIGH'
-          exit-code: '1'
+        run: trivy image --severity CRITICAL,HIGH --exit-code 1 novanet-agent:test
 
       - name: Trivy scan dataplane image
-        uses: aquasecurity/trivy-action@0.28.0
-        with:
-          image-ref: 'novanet-dataplane:test'
-          format: 'table'
-          severity: 'CRITICAL,HIGH'
-          exit-code: '1'
+        run: trivy image --severity CRITICAL,HIGH --exit-code 1 novanet-dataplane:test
 
   phase4-gate:
     name: "Phase 4: Gate"
