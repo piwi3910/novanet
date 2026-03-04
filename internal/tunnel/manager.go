@@ -14,6 +14,12 @@ import (
 	"github.com/piwi3910/novanet/internal/dataplane"
 )
 
+// Protocol constants for tunnel types.
+const (
+	protocolGeneve = "geneve"
+	protocolVxlan  = "vxlan"
+)
+
 // Sentinel errors for tunnel operations.
 var (
 	ErrInvalidNodeIP          = errors.New("invalid node IP")
@@ -84,9 +90,9 @@ func (m *Manager) AddTunnel(ctx context.Context, nodeName, nodeIP, podCIDR strin
 	var ifindex int
 	var err error
 	switch m.protocol {
-	case "geneve":
+	case protocolGeneve:
 		ifindex, err = createGeneveTunnel(ifName, nodeIP, m.vni, m.nodeIP)
-	case "vxlan":
+	case protocolVxlan:
 		// VXLAN uses a single shared interface for all remotes.
 		// The interface name is always "nvx0" regardless of nodeName.
 		ifName = "nvx0"
@@ -167,7 +173,7 @@ func (m *Manager) removeTunnelLocked(ctx context.Context, nodeName string) {
 
 	// For VXLAN, remove FDB entry but keep the shared interface.
 	// For Geneve, destroy the per-node interface.
-	if m.protocol == "vxlan" && parsedIP != nil {
+	if m.protocol == protocolVxlan && parsedIP != nil {
 		remoteMAC := IPToTunnelMAC(parsedIP)
 		if err := removeVxlanFDB(info.InterfaceName, remoteMAC, parsedIP); err != nil {
 			m.logger.Warn("failed to remove VXLAN FDB entry",
@@ -229,7 +235,7 @@ func (m *Manager) Protocol() string {
 // tunnelInterfaceName generates a tunnel interface name. Truncated to 15 chars.
 func tunnelInterfaceName(protocol, nodeName string) string {
 	prefix := "nv_"
-	if protocol == "vxlan" {
+	if protocol == protocolVxlan {
 		prefix = "nvx_"
 	}
 	name := prefix + nodeName

@@ -3,11 +3,15 @@
 package tunnel
 
 import (
+	"errors"
 	"fmt"
 	"net"
 
 	"github.com/vishvananda/netlink"
 )
+
+// ErrInvalidRemoteIP indicates the remote IP string could not be parsed.
+var ErrInvalidRemoteIP = errors.New("invalid remote IP")
 
 // createGeneveTunnel creates a Geneve tunnel interface on Linux.
 // The interface is assigned a MAC derived from localIP so that decapsulated
@@ -16,7 +20,7 @@ import (
 func createGeneveTunnel(name, remoteIP string, vni uint32, localIP net.IP) (int, error) {
 	remote := net.ParseIP(remoteIP)
 	if remote == nil {
-		return 0, fmt.Errorf("invalid remote IP: %s", remoteIP)
+		return 0, fmt.Errorf("%w: %s", ErrInvalidRemoteIP, remoteIP)
 	}
 
 	geneve := &netlink.Geneve{
@@ -31,7 +35,7 @@ func createGeneveTunnel(name, remoteIP string, vni uint32, localIP net.IP) (int,
 
 	// Delete any stale interface from a previous run.
 	if existing, err := netlink.LinkByName(name); err == nil {
-		netlink.LinkDel(existing)
+		_ = netlink.LinkDel(existing)
 	}
 
 	if err := netlink.LinkAdd(geneve); err != nil {
@@ -39,7 +43,7 @@ func createGeneveTunnel(name, remoteIP string, vni uint32, localIP net.IP) (int,
 	}
 
 	if err := netlink.LinkSetUp(geneve); err != nil {
-		netlink.LinkDel(geneve)
+		_ = netlink.LinkDel(geneve)
 		return 0, fmt.Errorf("bringing up geneve interface %s: %w", name, err)
 	}
 

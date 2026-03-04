@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	pb "github.com/piwi3910/novanet/api/v1"
 	"github.com/spf13/cobra"
 )
@@ -99,42 +101,34 @@ func TestDefaultSocketConstants(t *testing.T) {
 // Connect helpers — invalid socket paths
 // ---------------------------------------------------------------------------
 
-// TestConnectAgent_InvalidSocket verifies that connectAgent returns a
-// descriptive error when the socket path does not exist. The function uses
-// grpc.WithBlock so it will time out (dialTimeout = 5 s) if attempted for real;
-// the test sets the global agentSocket to a clearly invalid path to exercise
-// the error path quickly.
+// TestConnectAgent_InvalidSocket verifies that connectAgent creates a client
+// even for a nonexistent socket path. grpc.NewClient uses lazy connections,
+// so the error only surfaces on the first RPC call, not at creation time.
 func TestConnectAgent_InvalidSocket(t *testing.T) {
-	// Save and restore global.
 	orig := agentSocket
 	defer func() { agentSocket = orig }()
 
 	agentSocket = "/nonexistent/novanet.sock"
 
-	_, err := connectAgent()
-	if err == nil {
-		t.Fatal("expected error connecting to nonexistent socket")
-	}
-	if !strings.Contains(err.Error(), "novanet-agent") {
-		t.Errorf("expected error to mention 'novanet-agent', got: %v", err)
-	}
+	conn, err := connectAgent()
+	// grpc.NewClient is lazy — it succeeds even for invalid paths.
+	require.NoError(t, err)
+	require.NotNil(t, conn)
+	_ = conn.Close()
 }
 
-// TestConnectDataplane_InvalidSocket verifies that connectDataplane returns a
-// descriptive error when the socket path does not exist.
+// TestConnectDataplane_InvalidSocket verifies that connectDataplane creates a
+// client even for a nonexistent socket path. grpc.NewClient uses lazy connections.
 func TestConnectDataplane_InvalidSocket(t *testing.T) {
 	orig := dataplaneSocket
 	defer func() { dataplaneSocket = orig }()
 
 	dataplaneSocket = "/nonexistent/dataplane.sock"
 
-	_, err := connectDataplane()
-	if err == nil {
-		t.Fatal("expected error connecting to nonexistent dataplane socket")
-	}
-	if !strings.Contains(err.Error(), "dataplane") {
-		t.Errorf("expected error to mention 'dataplane', got: %v", err)
-	}
+	conn, err := connectDataplane()
+	require.NoError(t, err)
+	require.NotNil(t, conn)
+	_ = conn.Close()
 }
 
 // ---------------------------------------------------------------------------

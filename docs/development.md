@@ -199,16 +199,36 @@ tests/benchmark/run-all.sh
 
 ### CI Pipeline (`.github/workflows/ci.yml`)
 
-Runs on every push to `main` and on pull requests:
+Runs on every push to `main` and on pull requests. The pipeline is organized into sequential phases with gates:
 
-- Go lint (golangci-lint: vet, fmt, staticcheck, etc.)
+**Phase 1: Lint**
+- Change detection (only runs relevant linters)
+- Go lint (`golangci-lint` with errcheck, gosec, goconst, revive, noctx, etc.)
 - Rust lint (clippy, fmt)
 - Helm lint
-- Go unit tests with race detection and coverage
+
+**Phase 2: Security & Docs**
+- `govulncheck` for Go vulnerability scanning
+- `gitleaks` for secret detection
+- Jekyll documentation build
+- Documentation freshness check (PRs that change code must also update `docs/`)
+
+**Phase 3: Tests**
+- Go unit tests with race detection and coverage (minimum 20% threshold)
 - Rust unit tests
-- Go binary builds
+
+**Phase 4: Build**
+- Go binary builds (novanet-agent, novanet-cni, novanetctl, novanet-operator)
 - Rust/eBPF Docker build
-- Security scan (govulncheck)
+- Docker image build verification (agent + dataplane)
+
+### Nightly Security Scan (`.github/workflows/nightly-security.yml`)
+
+Runs daily at 03:00 UTC (and on manual dispatch):
+
+- Trivy filesystem scan for dependency vulnerabilities
+- Trivy image scans for both agent and dataplane Docker images
+- Automatically creates or updates GitHub issues with `security` and `trivy` labels when CRITICAL/HIGH vulnerabilities are found
 
 ### Release Pipeline (`.github/workflows/release.yml`)
 

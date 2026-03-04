@@ -1,6 +1,7 @@
 package policy
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -302,8 +303,11 @@ func TestWatcher_recompileAll_NonNetworkPolicyItems(t *testing.T) {
 		receivedRules = rules
 	})
 
-	// Create a mock store
-	store := cache.NewStore(cache.MetaNamespaceKeyFunc)
+	// Create a mock store with a key func that accepts any type,
+	// so we can test that recompileAll skips non-NetworkPolicy items.
+	store := cache.NewStore(func(obj interface{}) (string, error) {
+		return fmt.Sprintf("%v", obj), nil
+	})
 
 	// Add a non-NetworkPolicy item (should be skipped)
 	err := store.Add("not-a-network-policy")

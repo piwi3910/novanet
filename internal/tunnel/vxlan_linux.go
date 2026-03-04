@@ -36,7 +36,7 @@ func createVxlanTunnel(name string, vni uint32, localIP net.IP) (int, error) {
 	}
 
 	if err := netlink.LinkSetUp(vxlan); err != nil {
-		netlink.LinkDel(vxlan)
+		_ = netlink.LinkDel(vxlan)
 		return 0, fmt.Errorf("bringing up vxlan interface %s: %w", name, err)
 	}
 

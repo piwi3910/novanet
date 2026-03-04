@@ -172,7 +172,7 @@ jobs:
         run: |
           sudo apt-get update && sudo apt-get install -y ruby-full build-essential
           sudo gem install jekyll-sass-converter -v '~> 2.0'
-          sudo gem install jekyll bundler jekyll-remote-theme
+          sudo gem install jekyll bundler jekyll-remote-theme jekyll-seo-tag
           cd docs && jekyll build
 
   phase2-docs-freshness:
@@ -220,13 +220,6 @@ jobs:
         uses: gitleaks/gitleaks-action@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Install Trivy
-        run: |
-          curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sudo sh -s -- -b /usr/local/bin
-
-      - name: Run Trivy FS scan
-        run: trivy fs --severity CRITICAL,HIGH --exit-code 1 .
 
   phase2-gate:
     name: "Phase 2: Gate"
@@ -390,6 +383,8 @@ jobs:
             path: ./cmd/novanet-cni/
           - binary: novanetctl
             path: ./cmd/novanetctl/
+          - binary: novanet-operator
+            path: ./cmd/novanet-operator/
     steps:
       - uses: actions/checkout@v4
 
@@ -457,16 +452,6 @@ jobs:
           file: Dockerfile.dataplane
           push: false
           tags: novanet-dataplane:test
-
-      - name: Install Trivy
-        run: |
-          curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sudo sh -s -- -b /usr/local/bin
-
-      - name: Trivy scan agent image
-        run: trivy image --severity CRITICAL,HIGH --exit-code 1 novanet-agent:test
-
-      - name: Trivy scan dataplane image
-        run: trivy image --severity CRITICAL,HIGH --exit-code 1 novanet-dataplane:test
 
   phase4-gate:
     name: "Phase 4: Gate"

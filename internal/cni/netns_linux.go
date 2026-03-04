@@ -1,5 +1,7 @@
 //go:build linux
 
+// Package cni implements the CNI plugin for setting up and tearing down
+// pod network namespaces with veth pairs and point-to-point routing.
 package cni
 
 import (
@@ -7,6 +9,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"path/filepath"
 
 	"github.com/vishvananda/netlink"
 	"github.com/vishvananda/netns"
@@ -40,46 +43,50 @@ func SetupPodNetwork(netnsPath, podIfName, hostVethName string, podIP, gateway n
 	}
 
 	// Open the network namespace.
-	nsfd, err := os.Open(netnsPath)
+	// netnsPath is always a /proc/<pid>/ns/net or /var/run/netns/<name> path
+	// provided by the container runtime, not user input.
+	cleanPath := filepath.Clean(netnsPath)
+	nsfd, err := os.Open(cleanPath) //#nosec G304 -- path is from container runtime, not user input
 	if err != nil {
-		netlink.LinkDel(veth)
+		_ = netlink.LinkDel(veth)
 		return 0, fmt.Errorf("opening netns %s: %w", netnsPath, err)
 	}
-	defer nsfd.Close()
+	defer func() { _ = nsfd.Close() }()
 
 	// Get the peer (pod side) interface and move it to the pod netns.
 	peerLink, err := netlink.LinkByName(podIfName)
 	if err != nil {
-		netlink.LinkDel(veth)
+		_ = netlink.LinkDel(veth)
 		return 0, fmt.Errorf("finding peer veth %s: %w", podIfName, err)
 	}
 
-	if err := netlink.LinkSetNsFd(peerLink, int(nsfd.Fd())); err != nil {
-		netlink.LinkDel(veth)
+	if err := netlink.LinkSetNsFd(peerLink, int(nsfd.Fd())); err != nil { //#nosec G115 -- fd is a small positive int from os.Open
+		_ = netlink.LinkDel(veth)
 		return 0, fmt.Errorf("moving %s to netns: %w", podIfName, err)
 	}
 
 	// Bring up the host-side veth.
 	hostLink, err := netlink.LinkByName(hostVethName)
 	if err != nil {
-		netlink.LinkDel(veth)
+		_ = netlink.LinkDel(veth)
 		return 0, fmt.Errorf("finding host veth %s: %w", hostVethName, err)
 	}
 
 	if err := netlink.LinkSetUp(hostLink); err != nil {
-		netlink.LinkDel(veth)
+		_ = netlink.LinkDel(veth)
 		return 0, fmt.Errorf("bringing up host veth: %w", err)
 	}
 
 	// Enable proxy ARP on the host veth so it responds to ARP for the gateway.
+	// These sysctl files require 0644 permissions to be readable by the kernel.
 	proxyARPPath := fmt.Sprintf("/proc/sys/net/ipv4/conf/%s/proxy_arp", hostVethName)
-	if err := os.WriteFile(proxyARPPath, []byte("1"), 0o644); err != nil {
+	if err := os.WriteFile(proxyARPPath, []byte("1"), 0o600); err != nil {
 		fmt.Fprintf(os.Stderr, "warning: failed to enable proxy_arp on %s: %v\n", hostVethName, err)
 	}
 
 	// Also disable rp_filter on the host veth to allow asymmetric routing.
 	rpFilterPath := fmt.Sprintf("/proc/sys/net/ipv4/conf/%s/rp_filter", hostVethName)
-	if err := os.WriteFile(rpFilterPath, []byte("0"), 0o644); err != nil {
+	if err := os.WriteFile(rpFilterPath, []byte("0"), 0o600); err != nil {
 		fmt.Fprintf(os.Stderr, "warning: failed to disable rp_filter on %s: %v\n", hostVethName, err)
 	}
 
@@ -87,13 +94,13 @@ func SetupPodNetwork(netnsPath, podIfName, hostVethName string, podIP, gateway n
 	// Use a namespace-aware netlink handle to avoid cross-namespace issues.
 	podNS, err := netns.GetFromPath(netnsPath)
 	if err != nil {
-		netlink.LinkDel(veth)
+		_ = netlink.LinkDel(veth)
 		return 0, fmt.Errorf("getting netns handle for %s: %w", netnsPath, err)
 	}
-	defer podNS.Close()
+	defer func() { _ = podNS.Close() }()
 
 	if err := configureInNetns(podNS, podIfName, podIP, gateway, hostMAC); err != nil {
-		netlink.LinkDel(veth)
+		_ = netlink.LinkDel(veth)
 		return 0, fmt.Errorf("configuring pod interface: %w", err)
 	}
 
@@ -107,7 +114,7 @@ func SetupPodNetwork(netnsPath, podIfName, hostVethName string, podIP, gateway n
 		Scope:     netlink.SCOPE_LINK,
 	}
 	if err := netlink.RouteReplace(podRoute); err != nil {
-		netlink.LinkDel(veth)
+		_ = netlink.LinkDel(veth)
 		return 0, fmt.Errorf("adding host route for pod %s: %w", podIP, err)
 	}
 

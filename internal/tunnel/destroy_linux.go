@@ -12,5 +12,5 @@ func destroyTunnel(ifName string) {
 	if err != nil {
 		return
 	}
-	netlink.LinkDel(link)
+	_ = netlink.LinkDel(link)
 }
