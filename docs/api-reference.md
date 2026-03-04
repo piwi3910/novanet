@@ -223,9 +223,9 @@ Config keys:
 
 | Value | Number | Description |
 |-------|--------|-------------|
-| `DENY` | 0 | Drop egress |
-| `ALLOW` | 1 | Permit egress |
-| `SNAT` | 2 | Permit with source NAT |
+| `EGRESS_ACTION_DENY` | 0 | Drop egress |
+| `EGRESS_ACTION_ALLOW` | 1 | Permit egress |
+| `EGRESS_ACTION_SNAT` | 2 | Permit with source NAT |
 
 ### DropReason
 
