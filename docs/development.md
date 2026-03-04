@@ -207,7 +207,6 @@ Runs on every push to `main` and on pull requests. The pipeline is organized int
 **Phase 2: Security & Docs**
 - `govulncheck` for Go vulnerability scanning
 - `gitleaks` for secret detection
-- Trivy filesystem scan
 - Jekyll documentation build
 - Documentation freshness check (PRs that change code must also update `docs/`)
 
@@ -218,6 +217,15 @@ Runs on every push to `main` and on pull requests. The pipeline is organized int
 **Phase 4: Build**
 - Go binary builds (novanet-agent, novanet-cni, novanetctl, novanet-operator)
 - Rust/eBPF Docker build
+- Docker image build verification (agent + dataplane)
+
+### Nightly Security Scan (`.github/workflows/nightly-security.yml`)
+
+Runs daily at 03:00 UTC (and on manual dispatch):
+
+- Trivy filesystem scan for dependency vulnerabilities
+- Trivy image scans for both agent and dataplane Docker images
+- Automatically creates or updates GitHub issues with `security` and `trivy` labels when CRITICAL/HIGH vulnerabilities are found
 
 ### Release Pipeline (`.github/workflows/release.yml`)
 

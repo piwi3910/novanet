@@ -221,13 +221,6 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Install Trivy
-        run: |
-          curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sudo sh -s -- -b /usr/local/bin
-
-      - name: Run Trivy FS scan
-        run: trivy fs --severity CRITICAL,HIGH --exit-code 1 .
-
   phase2-gate:
     name: "Phase 2: Gate"
     runs-on: arc-runner-novanet
@@ -459,16 +452,6 @@ jobs:
           file: Dockerfile.dataplane
           push: false
           tags: novanet-dataplane:test
-
-      - name: Install Trivy
-        run: |
-          curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sudo sh -s -- -b /usr/local/bin
-
-      - name: Trivy scan agent image
-        run: trivy image --severity CRITICAL,HIGH --exit-code 1 novanet-agent:test
-
-      - name: Trivy scan dataplane image
-        run: trivy image --severity CRITICAL,HIGH --exit-code 1 novanet-dataplane:test
 
   phase4-gate:
     name: "Phase 4: Gate"
