@@ -53,7 +53,7 @@ spec:
               CONFIG_MAP={{ include "novanet.fullname" . }}
               if kubectl get configmap $CONFIG_MAP -n {{ .Release.Namespace }} &>/dev/null; then
                 echo "   ConfigMap exists"
-                CLUSTER_CIDR=$(kubectl get configmap $CONFIG_MAP -n {{ .Release.Namespace }} -o jsonpath='{.data.novanet\.json}' | grep -o '"cluster_cidr":"[^"]*"' || echo "not found")
+                CLUSTER_CIDR=$(kubectl get configmap $CONFIG_MAP -n {{ .Release.Namespace }} -o jsonpath='{.data.novanet\.json}' | grep -oP '"cluster_cidr":\s*"\K[^"]+' || echo "not found")
                 echo "   $CLUSTER_CIDR"
               else
                 echo "FAIL: ConfigMap not found"
