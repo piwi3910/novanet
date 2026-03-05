@@ -488,6 +488,33 @@ REMOTE NODE IP    TUNNEL IFACE    VNI     STATUS
 
 If a tunnel is missing, check agent logs for tunnel creation errors.
 
+### Conntrack and KUBE-FORWARD Drops
+
+In overlay mode, the eBPF `tc_egress` program uses `bpf_redirect()` to send packets
+directly to the tunnel interface, bypassing the kernel's conntrack hooks. When the
+reply arrives via the tunnel on the remote node, conntrack has no record of the
+original connection and classifies the reply as `ctstate INVALID`. Kubernetes
+distributions (e.g., k3s with kube-router) add a `KUBE-FORWARD` iptables rule that
+drops INVALID packets.
+
+NovaNet handles this by setting the `0x4000` skb mark on all packets arriving via
+tunnel interfaces in the `tc_tunnel_ingress` eBPF program. The `KUBE-FORWARD` chain
+has a rule that accepts packets with `mark match 0x4000/0x4000`, which takes
+precedence over the INVALID drop rule.
+
+To diagnose this issue:
+
+```bash
+# Check KUBE-FORWARD chain for INVALID drops (high counter = problem)
+iptables-legacy -L KUBE-FORWARD -v -n
+
+# Check if the 0x4000 mark ACCEPT rule is present
+iptables-legacy -L KUBE-FORWARD -v -n | grep 0x4000
+
+# Monitor drops in real time
+watch -n1 'iptables-legacy -L KUBE-FORWARD -v -n'
+```
+
 ---
 
 ## Policy Debugging
