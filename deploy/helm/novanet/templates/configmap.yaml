@@ -20,6 +20,9 @@ data:
         "socket": {{ .Values.novaroute.socket | quote }},
         "token": {{ .Values.novaroute.token | quote }},
         "protocol": {{ .Values.novaroute.protocol | quote }}
+        {{- if .Values.novaroute.controlPlaneVIP }},
+        "control_plane_vip": {{ .Values.novaroute.controlPlaneVIP | quote }}
+        {{- end }}
       },
       {{- else }}
       "novaroute": {

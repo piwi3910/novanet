@@ -27,6 +27,10 @@ novaroute:
   # WARNING: Set a real authentication token before enabling NovaRoute.
   token: ""
   protocol: "bgp"  # bgp or ospf
+  # controlPlaneVIP is the virtual IP for the Kubernetes API server.
+  # On control-plane nodes, the agent binds this IP on loopback and
+  # advertises it via BGP for ECMP.
+  controlPlaneVIP: ""
 
 egress:
   masqueradeEnabled: true
