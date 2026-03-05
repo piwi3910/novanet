@@ -1384,7 +1384,7 @@ impl RealMaps {
         // arriving at host veth from pod, egress = leaving host veth toward pod).
         // So we swap: TC ingress hook → tc_egress program (handles pod egress),
         //             TC egress hook → tc_ingress program (handles pod ingress).
-        let prog_name = if interface.starts_with("geneve") || interface.starts_with("vxlan") {
+        let prog_name = if interface.starts_with("geneve") || interface.starts_with("vxlan") || interface.starts_with("nv_") {
             match attach_type {
                 AttachDirection::Ingress => "tc_tunnel_ingress",
                 AttachDirection::Egress => "tc_tunnel_egress",
