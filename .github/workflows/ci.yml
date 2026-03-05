@@ -326,7 +326,11 @@ jobs:
 
       - name: Install cargo-nextest
         run: |
-          curl -LsSf https://get.nexte.st/latest/linux | tar zxf - -C ${CARGO_HOME:-~/.cargo}/bin
+          case "$(uname -m)" in
+            aarch64) URL="https://get.nexte.st/latest/linux-arm" ;;
+            *)       URL="https://get.nexte.st/latest/linux" ;;
+          esac
+          curl -LsSf "$URL" | tar zxf - -C ${CARGO_HOME:-~/.cargo}/bin
 
       - name: Run Rust tests
         working-directory: dataplane
