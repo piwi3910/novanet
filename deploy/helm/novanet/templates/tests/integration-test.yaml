@@ -40,7 +40,7 @@ spec:
 
               {{- if .Values.metrics.enabled }}
               echo "2. Checking metrics endpoint availability..."
-              METRICS_SVC={{ include "novanet.fullname" . }}
+              METRICS_SVC={{ include "novanet.fullname" . }}-metrics
               if kubectl get service $METRICS_SVC -n {{ .Release.Namespace }} &>/dev/null; then
                 echo "   Metrics service exists"
               else
