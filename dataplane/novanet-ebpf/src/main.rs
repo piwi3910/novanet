@@ -326,7 +326,14 @@ pub fn tc_ingress(ctx: TcContext) -> i32 {
 #[inline(always)]
 fn ip_to_tunnel_mac(ip: u64) -> [u8; 6] {
     let ip_bytes = (ip as u32).to_be_bytes();
-    [0xaa, 0xbb, ip_bytes[0], ip_bytes[1], ip_bytes[2], ip_bytes[3]]
+    [
+        0xaa,
+        0xbb,
+        ip_bytes[0],
+        ip_bytes[1],
+        ip_bytes[2],
+        ip_bytes[3],
+    ]
 }
 
 #[inline(always)]
