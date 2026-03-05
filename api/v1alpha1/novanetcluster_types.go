@@ -159,6 +159,12 @@ type NetworkingSpec struct {
 	// +kubebuilder:default=0
 	// +optional
 	MTU *int32 `json:"mtu,omitempty"`
+
+	// ControlPlaneVIP is the virtual IP address for the Kubernetes API server.
+	// When set, control-plane nodes will bind this IP on loopback and advertise
+	// it via BGP through NovaRoute for ECMP load balancing across API servers.
+	// +optional
+	ControlPlaneVIP string `json:"controlPlaneVIP,omitempty"`
 }
 
 // NovaRouteIntegrationSpec configures native routing via NovaRoute.

@@ -423,6 +423,11 @@ spec:
                   clusterCIDR:
                     description: ClusterCIDR is the pod IP range.
                     type: string
+                  controlPlaneVIP:
+                    description: ControlPlaneVIP is the virtual IP for the Kubernetes
+                      API server. On control-plane nodes, the agent binds this IP
+                      on loopback and advertises it via BGP for ECMP.
+                    type: string
                   mtu:
                     default: 0
                     description: MTU for pod interfaces. 0 = auto-detect.

@@ -41,3 +41,13 @@ func RemoveBlackholeRoute(_ string) error {
 func RemoveRoute(_ string) error {
 	return errTunnelRoutesUnsupported
 }
+
+// AddLoopbackAddress is not supported on non-Linux platforms.
+func AddLoopbackAddress(_ string) error {
+	return errTunnelRoutesUnsupported
+}
+
+// RemoveLoopbackAddress is not supported on non-Linux platforms.
+func RemoveLoopbackAddress(_ string) error {
+	return errTunnelRoutesUnsupported
+}

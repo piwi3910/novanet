@@ -917,15 +917,16 @@ type agentParams struct {
 
 // shutdownState holds references needed for graceful shutdown.
 type shutdownState struct {
-	logger        *zap.Logger
-	cancel        context.CancelFunc
-	bgWg          *sync.WaitGroup
-	cniGRPC       *grpc.Server
-	agentGRPC     *grpc.Server
-	metricsServer *http.Server
-	dpConn        *grpc.ClientConn
-	nrClient      *novaroute.Client
-	podCIDR       string
+	logger           *zap.Logger
+	cancel           context.CancelFunc
+	bgWg             *sync.WaitGroup
+	cniGRPC          *grpc.Server
+	agentGRPC        *grpc.Server
+	metricsServer    *http.Server
+	dpConn           *grpc.ClientConn
+	nrClient         *novaroute.Client
+	podCIDR          string
+	controlPlaneVIP  string
 }
 
 func main() {
@@ -1018,8 +1019,9 @@ func main() {
 		agentGRPC:     agentGRPC,
 		metricsServer: metricsServer,
 		dpConn:        dpConn,
-		nrClient:      nrClient,
-		podCIDR:       params.podCIDR,
+		nrClient:        nrClient,
+		podCIDR:         params.podCIDR,
+		controlPlaneVIP: cfg.NovaRoute.ControlPlaneVIP,
 	})
 }
 
@@ -1465,6 +1467,30 @@ func initNativeMode(ctx context.Context, logger *zap.Logger, cfg *config.Config,
 	logger.Info("advertised PodCIDR via BGP", zap.String("pod_cidr", podCIDR))
 	agentSrv.novarouteConnected = true
 
+	// Control-plane VIP: bind on loopback and advertise via BGP.
+	if vip := cfg.NovaRoute.ControlPlaneVIP; vip != "" {
+		if isControlPlaneNode(ctx, k8sClient, nodeName, logger) {
+			vipCIDR := vip + "/32"
+
+			// Bind VIP on loopback so the node can respond to traffic.
+			if err := tunnel.AddLoopbackAddress(vipCIDR); err != nil {
+				logger.Warn("failed to bind cp-vip on loopback (may already exist)",
+					zap.String("vip", vipCIDR), zap.Error(err))
+			} else {
+				logger.Info("bound control-plane VIP on loopback", zap.String("vip", vipCIDR))
+			}
+
+			// Advertise VIP via BGP for ECMP across control-plane nodes.
+			if err := nrClient.AdvertisePrefix(ctx, vipCIDR); err != nil {
+				logger.Error("failed to advertise cp-vip", zap.String("vip", vipCIDR), zap.Error(err))
+			} else {
+				logger.Info("advertised control-plane VIP via BGP", zap.String("vip", vipCIDR))
+			}
+		} else {
+			logger.Debug("skipping cp-vip: not a control-plane node", zap.String("node", nodeName))
+		}
+	}
+
 	// Watch nodes and establish eBGP peering with each remote node.
 	bgWg.Add(1)
 	go func() {
@@ -1473,6 +1499,17 @@ func initNativeMode(ctx context.Context, logger *zap.Logger, cfg *config.Config,
 	}()
 
 	return nrClient
+}
+
+// isControlPlaneNode checks if the given node has the control-plane role label.
+func isControlPlaneNode(ctx context.Context, k8sClient *kubernetes.Clientset, nodeName string, logger *zap.Logger) bool {
+	node, err := k8sClient.CoreV1().Nodes().Get(ctx, nodeName, metav1.GetOptions{})
+	if err != nil {
+		logger.Error("failed to get node for cp-vip check", zap.String("node", nodeName), zap.Error(err))
+		return false
+	}
+	_, ok := node.Labels["node-role.kubernetes.io/control-plane"]
+	return ok
 }
 
 // waitForSignal blocks until a SIGTERM or SIGINT signal is received.
@@ -1497,7 +1534,7 @@ func gracefulShutdown(s *shutdownState) {
 	s.logger.Info("background goroutines stopped")
 
 	// If native mode, withdraw prefix and close NovaRoute connection.
-	shutdownNovaRoute(shutdownCtx, s.logger, s.nrClient, s.podCIDR)
+	shutdownNovaRoute(shutdownCtx, s.logger, s.nrClient, s.podCIDR, s.controlPlaneVIP)
 
 	// Stop gRPC servers.
 	s.cniGRPC.GracefulStop()
@@ -1521,11 +1558,24 @@ func gracefulShutdown(s *shutdownState) {
 	s.logger.Info("novanet-agent shutdown complete")
 }
 
-// shutdownNovaRoute withdraws the PodCIDR prefix and closes the NovaRoute connection.
-func shutdownNovaRoute(ctx context.Context, logger *zap.Logger, nrClient *novaroute.Client, podCIDR string) {
+// shutdownNovaRoute withdraws prefixes (PodCIDR and optional cp-vip) and closes the NovaRoute connection.
+func shutdownNovaRoute(ctx context.Context, logger *zap.Logger, nrClient *novaroute.Client, podCIDR, controlPlaneVIP string) {
 	if nrClient == nil {
 		return
 	}
+
+	// Withdraw cp-vip prefix and remove from loopback if configured.
+	if controlPlaneVIP != "" {
+		vipCIDR := controlPlaneVIP + "/32"
+		logger.Info("withdrawing cp-vip from NovaRoute", zap.String("vip", vipCIDR))
+		if err := nrClient.WithdrawPrefix(ctx, vipCIDR); err != nil {
+			logger.Error("failed to withdraw cp-vip prefix", zap.String("vip", vipCIDR), zap.Error(err))
+		}
+		if err := tunnel.RemoveLoopbackAddress(vipCIDR); err != nil {
+			logger.Warn("failed to remove cp-vip from loopback", zap.String("vip", vipCIDR), zap.Error(err))
+		}
+	}
+
 	logger.Info("withdrawing PodCIDR from NovaRoute", zap.String("pod_cidr", podCIDR))
 	if err := nrClient.WithdrawPrefix(ctx, podCIDR); err != nil {
 		logger.Error("failed to withdraw prefix", zap.Error(err))

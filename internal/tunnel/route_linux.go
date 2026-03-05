@@ -179,3 +179,37 @@ func RemoveRoute(cidr string) error {
 
 	return nil
 }
+
+// AddLoopbackAddress adds an IP address to the loopback interface.
+// This is used to bind VIPs so the node can respond to traffic
+// routed via BGP ECMP.
+func AddLoopbackAddress(cidr string) error {
+	lo, err := netlink.LinkByName("lo")
+	if err != nil {
+		return fmt.Errorf("finding loopback interface: %w", err)
+	}
+	addr, err := netlink.ParseAddr(cidr)
+	if err != nil {
+		return fmt.Errorf("parsing address %s: %w", cidr, err)
+	}
+	if err := netlink.AddrAdd(lo, addr); err != nil {
+		return fmt.Errorf("adding %s to loopback: %w", cidr, err)
+	}
+	return nil
+}
+
+// RemoveLoopbackAddress removes an IP address from the loopback interface.
+func RemoveLoopbackAddress(cidr string) error {
+	lo, err := netlink.LinkByName("lo")
+	if err != nil {
+		return fmt.Errorf("finding loopback interface: %w", err)
+	}
+	addr, err := netlink.ParseAddr(cidr)
+	if err != nil {
+		return fmt.Errorf("parsing address %s: %w", cidr, err)
+	}
+	if err := netlink.AddrDel(lo, addr); err != nil {
+		return fmt.Errorf("removing %s from loopback: %w", cidr, err)
+	}
+	return nil
+}

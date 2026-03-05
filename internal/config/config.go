@@ -78,6 +78,11 @@ type NovaRouteConfig struct {
 
 	// Protocol selects the routing protocol: "bgp" or "ospf".
 	Protocol string `json:"protocol"`
+
+	// ControlPlaneVIP is the virtual IP for the Kubernetes API server.
+	// When set on a control-plane node, the agent binds this IP on loopback
+	// and advertises it via BGP through NovaRoute.
+	ControlPlaneVIP string `json:"control_plane_vip"`
 }
 
 // EgressConfig holds egress control settings.

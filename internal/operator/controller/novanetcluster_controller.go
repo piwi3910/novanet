@@ -292,9 +292,10 @@ type novanetConfig struct {
 }
 
 type novanetNovaRouteCfg struct {
-	Socket   string `json:"socket"`
-	Token    string `json:"token"`
-	Protocol string `json:"protocol"`
+	Socket          string `json:"socket"`
+	Token           string `json:"token"`
+	Protocol        string `json:"protocol"`
+	ControlPlaneVIP string `json:"control_plane_vip,omitempty"`
 }
 
 type novanetEgressCfg struct {
@@ -331,9 +332,10 @@ func (r *NovaNetClusterReconciler) reconcileConfigMap(ctx context.Context, clust
 			socketPath = cluster.Spec.NovaRouteIntegration.SocketPath
 		}
 		cfg.NovaRoute = novanetNovaRouteCfg{
-			Socket:   socketPath,
-			Token:    cluster.Spec.NovaRouteIntegration.OwnerToken,
-			Protocol: "bgp",
+			Socket:          socketPath,
+			Token:           cluster.Spec.NovaRouteIntegration.OwnerToken,
+			Protocol:        "bgp",
+			ControlPlaneVIP: cluster.Spec.Networking.ControlPlaneVIP,
 		}
 	}
 
