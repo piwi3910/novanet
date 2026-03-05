@@ -1495,7 +1495,16 @@ func initNativeMode(ctx context.Context, logger *zap.Logger, cfg *config.Config,
 	bgWg.Add(1)
 	go func() {
 		defer bgWg.Done()
-		watchNodesNative(ctx, logger, k8sClient, nrClient, nodeName)
+		var bfdOpts *novaroute.BFDOptions
+		if cfg.NovaRoute.BFDEnabled {
+			bfdOpts = &novaroute.BFDOptions{
+				Enabled:          true,
+				MinRxMs:          cfg.NovaRoute.BFDMinRxMs,
+				MinTxMs:          cfg.NovaRoute.BFDMinTxMs,
+				DetectMultiplier: cfg.NovaRoute.BFDDetectMultiplier,
+			}
+		}
+		watchNodesNative(ctx, logger, k8sClient, nrClient, nodeName, bfdOpts)
 	}()
 
 	return nrClient
@@ -1746,7 +1755,7 @@ func pushDataplaneConfig(ctx context.Context, logger *zap.Logger, client pb.Data
 // watchNodesNative periodically lists Kubernetes nodes and establishes
 // eBGP peering via NovaRoute for each remote node.
 func watchNodesNative(ctx context.Context, logger *zap.Logger, k8sClient *kubernetes.Clientset,
-	nrClient *novaroute.Client, selfNode string) {
+	nrClient *novaroute.Client, selfNode string, bfdOpts *novaroute.BFDOptions) {
 
 	const pollInterval = 15 * time.Second
 
@@ -1800,7 +1809,7 @@ func watchNodesNative(ctx context.Context, logger *zap.Logger, k8sClient *kubern
 			}
 			remoteAS := uint32(65000) + uint32(ip[3])
 
-			if err := nrClient.ApplyPeer(ctx, remoteIP, remoteAS); err != nil {
+			if err := nrClient.ApplyPeer(ctx, remoteIP, remoteAS, bfdOpts); err != nil {
 				logger.Error("failed to apply BGP peer",
 					zap.Error(err),
 					zap.String("node", n.Name),

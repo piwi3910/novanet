@@ -19,7 +19,11 @@ data:
       "novaroute": {
         "socket": {{ .Values.novaroute.socket | quote }},
         "token": {{ .Values.novaroute.token | quote }},
-        "protocol": {{ .Values.novaroute.protocol | quote }}
+        "protocol": {{ .Values.novaroute.protocol | quote }},
+        "bfd_enabled": {{ .Values.novaroute.bfd.enabled }},
+        "bfd_min_rx_ms": {{ .Values.novaroute.bfd.minRxMs | int }},
+        "bfd_min_tx_ms": {{ .Values.novaroute.bfd.minTxMs | int }},
+        "bfd_detect_multiplier": {{ .Values.novaroute.bfd.detectMultiplier | int }}
         {{- if .Values.novaroute.controlPlaneVIP }},
         "control_plane_vip": {{ .Values.novaroute.controlPlaneVIP | quote }}
         {{- end }}

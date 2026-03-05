@@ -4,7 +4,7 @@ go 1.26.0
 
 require (
 	github.com/containernetworking/cni v1.3.0
-	github.com/piwi3910/NovaRoute v0.0.0-20260225140427-291f60fa5dda
+	github.com/piwi3910/NovaRoute v0.5.2
 	github.com/prometheus/client_golang v1.23.2
 	github.com/prometheus/client_model v0.6.2
 	github.com/spf13/cobra v1.10.2
@@ -14,8 +14,8 @@ require (
 	go.uber.org/zap v1.27.1
 	google.golang.org/grpc v1.79.1
 	google.golang.org/protobuf v1.36.11
-	k8s.io/api v0.35.1
-	k8s.io/apimachinery v0.35.1
+	k8s.io/api v0.35.2
+	k8s.io/apimachinery v0.35.2
 	k8s.io/client-go v0.35.1
 	sigs.k8s.io/controller-runtime v0.23.1
 )

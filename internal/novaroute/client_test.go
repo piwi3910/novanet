@@ -50,7 +50,7 @@ func TestConfigureBGPNotConnected(t *testing.T) {
 func TestApplyPeerNotConnected(t *testing.T) {
 	c := NewClient("/run/novaroute/novaroute.sock", "novanet", "test-token", testLogger())
 
-	err := c.ApplyPeer(context.Background(), "192.168.100.12", 65012)
+	err := c.ApplyPeer(context.Background(), "192.168.100.12", 65012, nil)
 	if err == nil {
 		t.Fatal("expected error when not connected")
 	}

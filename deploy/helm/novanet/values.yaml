@@ -31,6 +31,16 @@ novaroute:
   # On control-plane nodes, the agent binds this IP on loopback and
   # advertises it via BGP for ECMP.
   controlPlaneVIP: ""
+  # BFD (Bidirectional Forwarding Detection) for sub-second failover.
+  bfd:
+    # -- Enable BFD on mesh BGP peers
+    enabled: true
+    # -- Minimum receive interval in milliseconds (0 = FRR default 300ms)
+    minRxMs: 300
+    # -- Minimum transmit interval in milliseconds (0 = FRR default 300ms)
+    minTxMs: 300
+    # -- Detect multiplier (0 = FRR default 3)
+    detectMultiplier: 3
 
 egress:
   masqueradeEnabled: true

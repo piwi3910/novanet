@@ -131,8 +131,16 @@ func (c *Client) ConfigureBGP(ctx context.Context, localAS uint32, routerID stri
 	return nil
 }
 
-// ApplyPeer adds or updates a BGP peer.
-func (c *Client) ApplyPeer(ctx context.Context, neighborAddr string, remoteAS uint32) error {
+// BFDOptions holds BFD configuration for a BGP peer.
+type BFDOptions struct {
+	Enabled         bool
+	MinRxMs         uint32
+	MinTxMs         uint32
+	DetectMultiplier uint32
+}
+
+// ApplyPeer adds or updates a BGP peer with optional BFD configuration.
+func (c *Client) ApplyPeer(ctx context.Context, neighborAddr string, remoteAS uint32, bfd *BFDOptions) error {
 	c.mu.Lock()
 	cl := c.client
 	c.mu.Unlock()
@@ -141,15 +149,23 @@ func (c *Client) ApplyPeer(ctx context.Context, neighborAddr string, remoteAS ui
 		return ErrNotConnected
 	}
 
+	peer := &nrpb.BGPPeer{
+		NeighborAddress: neighborAddr,
+		RemoteAs:        remoteAS,
+		PeerType:        nrpb.PeerType_PEER_TYPE_EXTERNAL,
+		AddressFamilies: []nrpb.AddressFamily{nrpb.AddressFamily_ADDRESS_FAMILY_IPV4_UNICAST},
+	}
+	if bfd != nil && bfd.Enabled {
+		peer.BfdEnabled = true
+		peer.BfdMinRxMs = bfd.MinRxMs
+		peer.BfdMinTxMs = bfd.MinTxMs
+		peer.BfdDetectMultiplier = bfd.DetectMultiplier
+	}
+
 	_, err := cl.ApplyPeer(ctx, &nrpb.ApplyPeerRequest{
 		Owner: c.owner,
 		Token: c.token,
-		Peer: &nrpb.BGPPeer{
-			NeighborAddress: neighborAddr,
-			RemoteAs:        remoteAS,
-			PeerType:        nrpb.PeerType_PEER_TYPE_EXTERNAL,
-			AddressFamilies: []nrpb.AddressFamily{nrpb.AddressFamily_ADDRESS_FAMILY_IPV4_UNICAST},
-		},
+		Peer:  peer,
 	})
 	if err != nil {
 		return fmt.Errorf("apply peer %s AS%d: %w", neighborAddr, remoteAS, err)
@@ -158,6 +174,7 @@ func (c *Client) ApplyPeer(ctx context.Context, neighborAddr string, remoteAS ui
 	c.logger.Info("applied BGP peer",
 		zap.String("neighbor", neighborAddr),
 		zap.Uint32("remote_as", remoteAS),
+		zap.Bool("bfd", bfd != nil && bfd.Enabled),
 	)
 	return nil
 }

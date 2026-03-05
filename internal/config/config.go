@@ -83,6 +83,22 @@ type NovaRouteConfig struct {
 	// When set on a control-plane node, the agent binds this IP on loopback
 	// and advertises it via BGP through NovaRoute.
 	ControlPlaneVIP string `json:"control_plane_vip"`
+
+	// BFDEnabled enables BFD (Bidirectional Forwarding Detection) on mesh
+	// BGP peers for sub-second failover detection.
+	BFDEnabled bool `json:"bfd_enabled"`
+
+	// BFDMinRxMs is the minimum BFD receive interval in milliseconds.
+	// 0 means use FRR defaults (300ms).
+	BFDMinRxMs uint32 `json:"bfd_min_rx_ms"`
+
+	// BFDMinTxMs is the minimum BFD transmit interval in milliseconds.
+	// 0 means use FRR defaults (300ms).
+	BFDMinTxMs uint32 `json:"bfd_min_tx_ms"`
+
+	// BFDDetectMultiplier is the number of missed BFD packets before
+	// declaring the peer down. 0 means use FRR defaults (3).
+	BFDDetectMultiplier uint32 `json:"bfd_detect_multiplier"`
 }
 
 // EgressConfig holds egress control settings.
