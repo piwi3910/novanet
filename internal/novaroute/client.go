@@ -133,9 +133,9 @@ func (c *Client) ConfigureBGP(ctx context.Context, localAS uint32, routerID stri
 
 // BFDOptions holds BFD configuration for a BGP peer.
 type BFDOptions struct {
-	Enabled         bool
-	MinRxMs         uint32
-	MinTxMs         uint32
+	Enabled          bool
+	MinRxMs          uint32
+	MinTxMs          uint32
 	DetectMultiplier uint32
 }
 

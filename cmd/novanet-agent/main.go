@@ -917,16 +917,16 @@ type agentParams struct {
 
 // shutdownState holds references needed for graceful shutdown.
 type shutdownState struct {
-	logger           *zap.Logger
-	cancel           context.CancelFunc
-	bgWg             *sync.WaitGroup
-	cniGRPC          *grpc.Server
-	agentGRPC        *grpc.Server
-	metricsServer    *http.Server
-	dpConn           *grpc.ClientConn
-	nrClient         *novaroute.Client
-	podCIDR          string
-	controlPlaneVIP  string
+	logger          *zap.Logger
+	cancel          context.CancelFunc
+	bgWg            *sync.WaitGroup
+	cniGRPC         *grpc.Server
+	agentGRPC       *grpc.Server
+	metricsServer   *http.Server
+	dpConn          *grpc.ClientConn
+	nrClient        *novaroute.Client
+	podCIDR         string
+	controlPlaneVIP string
 }
 
 func main() {
@@ -1012,13 +1012,13 @@ func main() {
 	// Wait for termination signal and shut down gracefully.
 	waitForSignal(logger)
 	gracefulShutdown(&shutdownState{
-		logger:        logger,
-		cancel:        cancel,
-		bgWg:          &bgWg,
-		cniGRPC:       cniGRPC,
-		agentGRPC:     agentGRPC,
-		metricsServer: metricsServer,
-		dpConn:        dpConn,
+		logger:          logger,
+		cancel:          cancel,
+		bgWg:            &bgWg,
+		cniGRPC:         cniGRPC,
+		agentGRPC:       agentGRPC,
+		metricsServer:   metricsServer,
+		dpConn:          dpConn,
 		nrClient:        nrClient,
 		podCIDR:         params.podCIDR,
 		controlPlaneVIP: cfg.NovaRoute.ControlPlaneVIP,
