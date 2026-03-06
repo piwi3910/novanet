@@ -14,7 +14,7 @@
 use aya_ebpf::{
     bindings::TC_ACT_OK as BPF_TC_ACT_OK,
     bindings::TC_ACT_SHOT as BPF_TC_ACT_SHOT,
-    bindings::{BPF_F_ZERO_CSUM_TX, bpf_tunnel_key},
+    bindings::{bpf_tunnel_key, BPF_F_ZERO_CSUM_TX},
     helpers::{bpf_redirect, bpf_skb_set_tunnel_key},
     macros::{classifier, map},
     maps::{HashMap, PerCpuArray, RingBuf},
@@ -612,10 +612,17 @@ fn try_tc_egress(ctx: &mut TcContext) -> Result<i32, ()> {
                     Some(ACTION_DENY) => {
                         inc_drop_counter(DROP_REASON_POLICY_DENIED);
                         emit_flow_event(
-                            src_ip, dst_ip, src_identity, dst_identity,
-                            protocol, src_port, dst_port,
-                            ACTION_DENY, DROP_REASON_POLICY_DENIED,
-                            tcp_flags, total_len,
+                            src_ip,
+                            dst_ip,
+                            src_identity,
+                            dst_identity,
+                            protocol,
+                            src_port,
+                            dst_port,
+                            ACTION_DENY,
+                            DROP_REASON_POLICY_DENIED,
+                            tcp_flags,
+                            total_len,
                         );
                         return Ok(BPF_TC_ACT_SHOT as i32);
                     }
@@ -628,10 +635,17 @@ fn try_tc_egress(ctx: &mut TcContext) -> Result<i32, ()> {
                         if default_deny == 1 {
                             inc_drop_counter(DROP_REASON_POLICY_DENIED);
                             emit_flow_event(
-                                src_ip, dst_ip, src_identity, dst_identity,
-                                protocol, src_port, dst_port,
-                                ACTION_DENY, DROP_REASON_POLICY_DENIED,
-                                tcp_flags, total_len,
+                                src_ip,
+                                dst_ip,
+                                src_identity,
+                                dst_identity,
+                                protocol,
+                                src_port,
+                                dst_port,
+                                ACTION_DENY,
+                                DROP_REASON_POLICY_DENIED,
+                                tcp_flags,
+                                total_len,
                             );
                             return Ok(BPF_TC_ACT_SHOT as i32);
                         }
@@ -649,10 +663,17 @@ fn try_tc_egress(ctx: &mut TcContext) -> Result<i32, ()> {
                 }
 
                 emit_flow_event(
-                    src_ip, dst_ip, src_identity, dst_identity,
-                    protocol, src_port, dst_port,
-                    ACTION_ALLOW, DROP_REASON_NONE,
-                    tcp_flags, total_len,
+                    src_ip,
+                    dst_ip,
+                    src_identity,
+                    dst_identity,
+                    protocol,
+                    src_port,
+                    dst_port,
+                    ACTION_ALLOW,
+                    DROP_REASON_NONE,
+                    tcp_flags,
+                    total_len,
                 );
                 // Redirect to the tunnel interface. The kernel will read the
                 // tunnel metadata we just set and do Geneve/VXLAN encapsulation.
@@ -663,10 +684,17 @@ fn try_tc_egress(ctx: &mut TcContext) -> Result<i32, ()> {
                 // No tunnel entry for remote node.
                 inc_drop_counter(DROP_REASON_NO_TUNNEL);
                 emit_flow_event(
-                    src_ip, dst_ip, src_identity, dst_identity,
-                    protocol, src_port, dst_port,
-                    ACTION_DENY, DROP_REASON_NO_TUNNEL,
-                    tcp_flags, total_len,
+                    src_ip,
+                    dst_ip,
+                    src_identity,
+                    dst_identity,
+                    protocol,
+                    src_port,
+                    dst_port,
+                    ACTION_DENY,
+                    DROP_REASON_NO_TUNNEL,
+                    tcp_flags,
+                    total_len,
                 );
                 return Ok(BPF_TC_ACT_SHOT as i32);
             }
@@ -779,10 +807,17 @@ fn try_tc_egress(ctx: &mut TcContext) -> Result<i32, ()> {
     if mode == MODE_OVERLAY {
         inc_drop_counter(DROP_REASON_NO_ROUTE);
         emit_flow_event(
-            src_ip, dst_ip, src_identity, 0,
-            protocol, src_port, dst_port,
-            ACTION_DENY, DROP_REASON_NO_ROUTE,
-            tcp_flags, total_len,
+            src_ip,
+            dst_ip,
+            src_identity,
+            0,
+            protocol,
+            src_port,
+            dst_port,
+            ACTION_DENY,
+            DROP_REASON_NO_ROUTE,
+            tcp_flags,
+            total_len,
         );
         Ok(BPF_TC_ACT_SHOT as i32)
     } else {

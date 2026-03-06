@@ -27,7 +27,7 @@ func createGeneveTunnel(name string, vni uint32, localIP net.IP) (int, error) {
 		},
 		ID:        vni,
 		FlowBased: true, // Collect-metadata mode — no static Remote.
-		Dport:     6081,  // Standard Geneve port.
+		Dport:     6081, // Standard Geneve port.
 	}
 
 	if err := netlink.LinkAdd(geneve); err != nil {
