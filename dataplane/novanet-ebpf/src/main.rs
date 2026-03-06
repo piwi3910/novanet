@@ -856,7 +856,8 @@ fn try_tc_tunnel_ingress(ctx: &mut TcContext) -> Result<i32, ()> {
     // We parse the inner frame, resolve identities, enforce policy,
     // and redirect to the destination pod's veth interface.
     let eth: EthHdr = ctx.load(0).map_err(|_| ())?;
-    if eth.ether_type != EtherType::Ipv4 {
+    let ether_type = eth.ether_type;
+    if ether_type != EtherType::Ipv4 {
         return Ok(BPF_TC_ACT_OK as i32);
     }
 
@@ -866,7 +867,8 @@ fn try_tc_tunnel_ingress(ctx: &mut TcContext) -> Result<i32, ()> {
     let protocol = ipv4.proto as u8;
     let ihl = (ipv4.ihl() as usize) * 4;
     let l4_offset = ETH_HLEN + ihl;
-    let total_len = u16::from_be(ipv4.tot_len) as u64;
+    let tot_len = ipv4.tot_len;
+    let total_len = u16::from_be(tot_len) as u64;
 
     let (src_port, dst_port, tcp_flags) = parse_l4_ports(ctx, l4_offset, protocol);
 
