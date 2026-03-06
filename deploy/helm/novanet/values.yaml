@@ -52,6 +52,10 @@ cni:
 policy:
   defaultDeny: false
 
+l4lb:
+  enabled: false
+  defaultAlgorithm: random  # random, round-robin, maglev
+
 metrics:
   enabled: true
   port: 9103

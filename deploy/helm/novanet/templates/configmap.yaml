@@ -41,6 +41,10 @@ data:
       "policy": {
         "default_deny": {{ .Values.policy.defaultDeny }}
       },
+      "l4lb": {
+        "enabled": {{ .Values.l4lb.enabled }},
+        "default_algorithm": {{ .Values.l4lb.defaultAlgorithm | quote }}
+      },
       "log_level": {{ .Values.config.logLevel | quote }},
       "metrics_address": ":{{ .Values.metrics.port }}"
     }
