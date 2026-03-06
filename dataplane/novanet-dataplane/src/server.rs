@@ -273,6 +273,197 @@ impl proto::dataplane_control_server::DataplaneControl for DataplaneService {
     }
 
     // -----------------------------------------------------------------------
+    // L4 Load Balancer
+    // -----------------------------------------------------------------------
+
+    async fn upsert_service(
+        &self,
+        request: Request<proto::UpsertServiceRequest>,
+    ) -> Result<Response<proto::UpsertServiceResponse>, Status> {
+        let req = request.into_inner();
+
+        let key = ServiceKey {
+            ip: req.ip,
+            port: req.port as u16,
+            protocol: req.protocol as u8,
+            scope: req.scope as u8,
+        };
+
+        let value = ServiceValue {
+            backend_count: req.backend_count as u16,
+            backend_offset: req.backend_offset as u16,
+            algorithm: req.algorithm as u8,
+            flags: req.flags as u8,
+            affinity_timeout: req.affinity_timeout as u16,
+            maglev_offset: req.maglev_offset,
+        };
+
+        self.maps
+            .upsert_service(key, value)
+            .map_err(|e| Status::internal(format!("Failed to upsert service: {}", e)))?;
+
+        debug!(
+            ip = req.ip,
+            port = req.port,
+            protocol = req.protocol,
+            scope = req.scope,
+            backends = req.backend_count,
+            "Upserted service"
+        );
+
+        Ok(Response::new(proto::UpsertServiceResponse {}))
+    }
+
+    async fn delete_service(
+        &self,
+        request: Request<proto::DeleteServiceRequest>,
+    ) -> Result<Response<proto::DeleteServiceResponse>, Status> {
+        let req = request.into_inner();
+
+        let key = ServiceKey {
+            ip: req.ip,
+            port: req.port as u16,
+            protocol: req.protocol as u8,
+            scope: req.scope as u8,
+        };
+
+        self.maps
+            .delete_service(&key)
+            .map_err(|e| Status::internal(format!("Failed to delete service: {}", e)))?;
+
+        debug!(
+            ip = req.ip,
+            port = req.port,
+            "Deleted service"
+        );
+
+        Ok(Response::new(proto::DeleteServiceResponse {}))
+    }
+
+    async fn upsert_backends(
+        &self,
+        request: Request<proto::UpsertBackendsRequest>,
+    ) -> Result<Response<proto::UpsertBackendsResponse>, Status> {
+        let req = request.into_inner();
+
+        for entry in &req.backends {
+            let value = BackendValue {
+                ip: entry.ip,
+                port: entry.port as u16,
+                _pad: [0; 2],
+                node_ip: entry.node_ip,
+            };
+
+            self.maps
+                .upsert_backend(entry.index, value)
+                .map_err(|e| {
+                    Status::internal(format!(
+                        "Failed to upsert backend at index {}: {}",
+                        entry.index, e
+                    ))
+                })?;
+        }
+
+        debug!(count = req.backends.len(), "Upserted backends");
+
+        Ok(Response::new(proto::UpsertBackendsResponse {}))
+    }
+
+    async fn sync_services(
+        &self,
+        request: Request<proto::SyncServicesRequest>,
+    ) -> Result<Response<proto::SyncServicesResponse>, Status> {
+        let req = request.into_inner();
+
+        // Clear existing services and backends.
+        self.maps.clear_services();
+        self.maps.clear_backends();
+
+        // Insert all services.
+        for entry in &req.services {
+            let key = ServiceKey {
+                ip: entry.ip,
+                port: entry.port as u16,
+                protocol: entry.protocol as u8,
+                scope: entry.scope as u8,
+            };
+
+            let value = ServiceValue {
+                backend_count: entry.backend_count as u16,
+                backend_offset: entry.backend_offset as u16,
+                algorithm: entry.algorithm as u8,
+                flags: entry.flags as u8,
+                affinity_timeout: entry.affinity_timeout as u16,
+                maglev_offset: entry.maglev_offset,
+            };
+
+            self.maps
+                .upsert_service(key, value)
+                .map_err(|e| Status::internal(format!("Failed to upsert service: {}", e)))?;
+        }
+
+        // Insert all backends.
+        for entry in &req.backends {
+            let value = BackendValue {
+                ip: entry.ip,
+                port: entry.port as u16,
+                _pad: [0; 2],
+                node_ip: entry.node_ip,
+            };
+
+            self.maps
+                .upsert_backend(entry.index, value)
+                .map_err(|e| {
+                    Status::internal(format!(
+                        "Failed to upsert backend at index {}: {}",
+                        entry.index, e
+                    ))
+                })?;
+        }
+
+        let services_synced = req.services.len() as u32;
+        let backends_synced = req.backends.len() as u32;
+
+        info!(
+            services_synced,
+            backends_synced,
+            "Synced services and backends"
+        );
+
+        Ok(Response::new(proto::SyncServicesResponse {
+            services_synced,
+            backends_synced,
+        }))
+    }
+
+    async fn upsert_maglev_table(
+        &self,
+        request: Request<proto::UpsertMaglevTableRequest>,
+    ) -> Result<Response<proto::UpsertMaglevTableResponse>, Status> {
+        let req = request.into_inner();
+
+        for (i, &backend_index) in req.entries.iter().enumerate() {
+            let map_index = req.offset + i as u32;
+            self.maps
+                .upsert_maglev_entry(map_index, backend_index)
+                .map_err(|e| {
+                    Status::internal(format!(
+                        "Failed to upsert maglev entry at index {}: {}",
+                        map_index, e
+                    ))
+                })?;
+        }
+
+        debug!(
+            offset = req.offset,
+            count = req.entries.len(),
+            "Upserted maglev table entries"
+        );
+
+        Ok(Response::new(proto::UpsertMaglevTableResponse {}))
+    }
+
+    // -----------------------------------------------------------------------
     // Tunnel management
     // -----------------------------------------------------------------------
 
@@ -458,6 +649,8 @@ impl proto::dataplane_control_server::DataplaneControl for DataplaneService {
             mode: self.maps.mode_string(),
             tunnel_protocol: self.maps.tunnel_protocol_string(),
             drop_counters: self.maps.get_drop_counters(),
+            service_count: self.maps.service_count() as u32,
+            conntrack_count: 0, // Conntrack is managed by eBPF LRU map; count not yet exposed.
         };
 
         Ok(Response::new(resp))

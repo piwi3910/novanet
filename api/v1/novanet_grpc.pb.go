@@ -31,6 +31,11 @@ const (
 	DataplaneControl_DetachProgram_FullMethodName      = "/novanet.v1.DataplaneControl/DetachProgram"
 	DataplaneControl_UpsertEgressPolicy_FullMethodName = "/novanet.v1.DataplaneControl/UpsertEgressPolicy"
 	DataplaneControl_DeleteEgressPolicy_FullMethodName = "/novanet.v1.DataplaneControl/DeleteEgressPolicy"
+	DataplaneControl_UpsertService_FullMethodName      = "/novanet.v1.DataplaneControl/UpsertService"
+	DataplaneControl_DeleteService_FullMethodName      = "/novanet.v1.DataplaneControl/DeleteService"
+	DataplaneControl_UpsertBackends_FullMethodName     = "/novanet.v1.DataplaneControl/UpsertBackends"
+	DataplaneControl_SyncServices_FullMethodName       = "/novanet.v1.DataplaneControl/SyncServices"
+	DataplaneControl_UpsertMaglevTable_FullMethodName  = "/novanet.v1.DataplaneControl/UpsertMaglevTable"
 	DataplaneControl_StreamFlows_FullMethodName        = "/novanet.v1.DataplaneControl/StreamFlows"
 	DataplaneControl_GetDataplaneStatus_FullMethodName = "/novanet.v1.DataplaneControl/GetDataplaneStatus"
 )
@@ -61,6 +66,12 @@ type DataplaneControlClient interface {
 	// Egress policy management
 	UpsertEgressPolicy(ctx context.Context, in *UpsertEgressPolicyRequest, opts ...grpc.CallOption) (*UpsertEgressPolicyResponse, error)
 	DeleteEgressPolicy(ctx context.Context, in *DeleteEgressPolicyRequest, opts ...grpc.CallOption) (*DeleteEgressPolicyResponse, error)
+	// L4 Load Balancer
+	UpsertService(ctx context.Context, in *UpsertServiceRequest, opts ...grpc.CallOption) (*UpsertServiceResponse, error)
+	DeleteService(ctx context.Context, in *DeleteServiceRequest, opts ...grpc.CallOption) (*DeleteServiceResponse, error)
+	UpsertBackends(ctx context.Context, in *UpsertBackendsRequest, opts ...grpc.CallOption) (*UpsertBackendsResponse, error)
+	SyncServices(ctx context.Context, in *SyncServicesRequest, opts ...grpc.CallOption) (*SyncServicesResponse, error)
+	UpsertMaglevTable(ctx context.Context, in *UpsertMaglevTableRequest, opts ...grpc.CallOption) (*UpsertMaglevTableResponse, error)
 	// Observability
 	StreamFlows(ctx context.Context, in *StreamFlowsRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[FlowEvent], error)
 	GetDataplaneStatus(ctx context.Context, in *GetDataplaneStatusRequest, opts ...grpc.CallOption) (*GetDataplaneStatusResponse, error)
@@ -194,6 +205,56 @@ func (c *dataplaneControlClient) DeleteEgressPolicy(ctx context.Context, in *Del
 	return out, nil
 }
 
+func (c *dataplaneControlClient) UpsertService(ctx context.Context, in *UpsertServiceRequest, opts ...grpc.CallOption) (*UpsertServiceResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(UpsertServiceResponse)
+	err := c.cc.Invoke(ctx, DataplaneControl_UpsertService_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dataplaneControlClient) DeleteService(ctx context.Context, in *DeleteServiceRequest, opts ...grpc.CallOption) (*DeleteServiceResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DeleteServiceResponse)
+	err := c.cc.Invoke(ctx, DataplaneControl_DeleteService_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dataplaneControlClient) UpsertBackends(ctx context.Context, in *UpsertBackendsRequest, opts ...grpc.CallOption) (*UpsertBackendsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(UpsertBackendsResponse)
+	err := c.cc.Invoke(ctx, DataplaneControl_UpsertBackends_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dataplaneControlClient) SyncServices(ctx context.Context, in *SyncServicesRequest, opts ...grpc.CallOption) (*SyncServicesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SyncServicesResponse)
+	err := c.cc.Invoke(ctx, DataplaneControl_SyncServices_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dataplaneControlClient) UpsertMaglevTable(ctx context.Context, in *UpsertMaglevTableRequest, opts ...grpc.CallOption) (*UpsertMaglevTableResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(UpsertMaglevTableResponse)
+	err := c.cc.Invoke(ctx, DataplaneControl_UpsertMaglevTable_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *dataplaneControlClient) StreamFlows(ctx context.Context, in *StreamFlowsRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[FlowEvent], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	stream, err := c.cc.NewStream(ctx, &DataplaneControl_ServiceDesc.Streams[0], DataplaneControl_StreamFlows_FullMethodName, cOpts...)
@@ -249,6 +310,12 @@ type DataplaneControlServer interface {
 	// Egress policy management
 	UpsertEgressPolicy(context.Context, *UpsertEgressPolicyRequest) (*UpsertEgressPolicyResponse, error)
 	DeleteEgressPolicy(context.Context, *DeleteEgressPolicyRequest) (*DeleteEgressPolicyResponse, error)
+	// L4 Load Balancer
+	UpsertService(context.Context, *UpsertServiceRequest) (*UpsertServiceResponse, error)
+	DeleteService(context.Context, *DeleteServiceRequest) (*DeleteServiceResponse, error)
+	UpsertBackends(context.Context, *UpsertBackendsRequest) (*UpsertBackendsResponse, error)
+	SyncServices(context.Context, *SyncServicesRequest) (*SyncServicesResponse, error)
+	UpsertMaglevTable(context.Context, *UpsertMaglevTableRequest) (*UpsertMaglevTableResponse, error)
 	// Observability
 	StreamFlows(*StreamFlowsRequest, grpc.ServerStreamingServer[FlowEvent]) error
 	GetDataplaneStatus(context.Context, *GetDataplaneStatusRequest) (*GetDataplaneStatusResponse, error)
@@ -297,6 +364,21 @@ func (UnimplementedDataplaneControlServer) UpsertEgressPolicy(context.Context, *
 }
 func (UnimplementedDataplaneControlServer) DeleteEgressPolicy(context.Context, *DeleteEgressPolicyRequest) (*DeleteEgressPolicyResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method DeleteEgressPolicy not implemented")
+}
+func (UnimplementedDataplaneControlServer) UpsertService(context.Context, *UpsertServiceRequest) (*UpsertServiceResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method UpsertService not implemented")
+}
+func (UnimplementedDataplaneControlServer) DeleteService(context.Context, *DeleteServiceRequest) (*DeleteServiceResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method DeleteService not implemented")
+}
+func (UnimplementedDataplaneControlServer) UpsertBackends(context.Context, *UpsertBackendsRequest) (*UpsertBackendsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method UpsertBackends not implemented")
+}
+func (UnimplementedDataplaneControlServer) SyncServices(context.Context, *SyncServicesRequest) (*SyncServicesResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method SyncServices not implemented")
+}
+func (UnimplementedDataplaneControlServer) UpsertMaglevTable(context.Context, *UpsertMaglevTableRequest) (*UpsertMaglevTableResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method UpsertMaglevTable not implemented")
 }
 func (UnimplementedDataplaneControlServer) StreamFlows(*StreamFlowsRequest, grpc.ServerStreamingServer[FlowEvent]) error {
 	return status.Error(codes.Unimplemented, "method StreamFlows not implemented")
@@ -541,6 +623,96 @@ func _DataplaneControl_DeleteEgressPolicy_Handler(srv interface{}, ctx context.C
 	return interceptor(ctx, in, info, handler)
 }
 
+func _DataplaneControl_UpsertService_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UpsertServiceRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DataplaneControlServer).UpsertService(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DataplaneControl_UpsertService_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DataplaneControlServer).UpsertService(ctx, req.(*UpsertServiceRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DataplaneControl_DeleteService_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeleteServiceRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DataplaneControlServer).DeleteService(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DataplaneControl_DeleteService_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DataplaneControlServer).DeleteService(ctx, req.(*DeleteServiceRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DataplaneControl_UpsertBackends_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UpsertBackendsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DataplaneControlServer).UpsertBackends(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DataplaneControl_UpsertBackends_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DataplaneControlServer).UpsertBackends(ctx, req.(*UpsertBackendsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DataplaneControl_SyncServices_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SyncServicesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DataplaneControlServer).SyncServices(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DataplaneControl_SyncServices_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DataplaneControlServer).SyncServices(ctx, req.(*SyncServicesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DataplaneControl_UpsertMaglevTable_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UpsertMaglevTableRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DataplaneControlServer).UpsertMaglevTable(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DataplaneControl_UpsertMaglevTable_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DataplaneControlServer).UpsertMaglevTable(ctx, req.(*UpsertMaglevTableRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _DataplaneControl_StreamFlows_Handler(srv interface{}, stream grpc.ServerStream) error {
 	m := new(StreamFlowsRequest)
 	if err := stream.RecvMsg(m); err != nil {
@@ -626,6 +798,26 @@ var DataplaneControl_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _DataplaneControl_DeleteEgressPolicy_Handler,
 		},
 		{
+			MethodName: "UpsertService",
+			Handler:    _DataplaneControl_UpsertService_Handler,
+		},
+		{
+			MethodName: "DeleteService",
+			Handler:    _DataplaneControl_DeleteService_Handler,
+		},
+		{
+			MethodName: "UpsertBackends",
+			Handler:    _DataplaneControl_UpsertBackends_Handler,
+		},
+		{
+			MethodName: "SyncServices",
+			Handler:    _DataplaneControl_SyncServices_Handler,
+		},
+		{
+			MethodName: "UpsertMaglevTable",
+			Handler:    _DataplaneControl_UpsertMaglevTable_Handler,
+		},
+		{
 			MethodName: "GetDataplaneStatus",
 			Handler:    _DataplaneControl_GetDataplaneStatus_Handler,
 		},
@@ -649,6 +841,7 @@ const (
 	AgentControl_ListIdentities_FullMethodName     = "/novanet.v1.AgentControl/ListIdentities"
 	AgentControl_ListTunnels_FullMethodName        = "/novanet.v1.AgentControl/ListTunnels"
 	AgentControl_ListEgressPolicies_FullMethodName = "/novanet.v1.AgentControl/ListEgressPolicies"
+	AgentControl_ListServices_FullMethodName       = "/novanet.v1.AgentControl/ListServices"
 )
 
 // AgentControlClient is the client API for AgentControl service.
@@ -670,6 +863,7 @@ type AgentControlClient interface {
 	ListIdentities(ctx context.Context, in *ListIdentitiesRequest, opts ...grpc.CallOption) (*ListIdentitiesResponse, error)
 	ListTunnels(ctx context.Context, in *ListTunnelsRequest, opts ...grpc.CallOption) (*ListTunnelsResponse, error)
 	ListEgressPolicies(ctx context.Context, in *ListEgressPoliciesRequest, opts ...grpc.CallOption) (*ListEgressPoliciesResponse, error)
+	ListServices(ctx context.Context, in *ListServicesRequest, opts ...grpc.CallOption) (*ListServicesResponse, error)
 }
 
 type agentControlClient struct {
@@ -769,6 +963,16 @@ func (c *agentControlClient) ListEgressPolicies(ctx context.Context, in *ListEgr
 	return out, nil
 }
 
+func (c *agentControlClient) ListServices(ctx context.Context, in *ListServicesRequest, opts ...grpc.CallOption) (*ListServicesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListServicesResponse)
+	err := c.cc.Invoke(ctx, AgentControl_ListServices_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // AgentControlServer is the server API for AgentControl service.
 // All implementations must embed UnimplementedAgentControlServer
 // for forward compatibility.
@@ -788,6 +992,7 @@ type AgentControlServer interface {
 	ListIdentities(context.Context, *ListIdentitiesRequest) (*ListIdentitiesResponse, error)
 	ListTunnels(context.Context, *ListTunnelsRequest) (*ListTunnelsResponse, error)
 	ListEgressPolicies(context.Context, *ListEgressPoliciesRequest) (*ListEgressPoliciesResponse, error)
+	ListServices(context.Context, *ListServicesRequest) (*ListServicesResponse, error)
 	mustEmbedUnimplementedAgentControlServer()
 }
 
@@ -821,6 +1026,9 @@ func (UnimplementedAgentControlServer) ListTunnels(context.Context, *ListTunnels
 }
 func (UnimplementedAgentControlServer) ListEgressPolicies(context.Context, *ListEgressPoliciesRequest) (*ListEgressPoliciesResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListEgressPolicies not implemented")
+}
+func (UnimplementedAgentControlServer) ListServices(context.Context, *ListServicesRequest) (*ListServicesResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListServices not implemented")
 }
 func (UnimplementedAgentControlServer) mustEmbedUnimplementedAgentControlServer() {}
 func (UnimplementedAgentControlServer) testEmbeddedByValue()                      {}
@@ -980,6 +1188,24 @@ func _AgentControl_ListEgressPolicies_Handler(srv interface{}, ctx context.Conte
 	return interceptor(ctx, in, info, handler)
 }
 
+func _AgentControl_ListServices_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListServicesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AgentControlServer).ListServices(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AgentControl_ListServices_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AgentControlServer).ListServices(ctx, req.(*ListServicesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // AgentControl_ServiceDesc is the grpc.ServiceDesc for AgentControl service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -1014,6 +1240,10 @@ var AgentControl_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ListEgressPolicies",
 			Handler:    _AgentControl_ListEgressPolicies_Handler,
+		},
+		{
+			MethodName: "ListServices",
+			Handler:    _AgentControl_ListServices_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

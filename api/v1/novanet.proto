@@ -32,6 +32,13 @@ service DataplaneControl {
   rpc UpsertEgressPolicy(UpsertEgressPolicyRequest) returns (UpsertEgressPolicyResponse);
   rpc DeleteEgressPolicy(DeleteEgressPolicyRequest) returns (DeleteEgressPolicyResponse);
 
+  // L4 Load Balancer
+  rpc UpsertService(UpsertServiceRequest) returns (UpsertServiceResponse);
+  rpc DeleteService(DeleteServiceRequest) returns (DeleteServiceResponse);
+  rpc UpsertBackends(UpsertBackendsRequest) returns (UpsertBackendsResponse);
+  rpc SyncServices(SyncServicesRequest) returns (SyncServicesResponse);
+  rpc UpsertMaglevTable(UpsertMaglevTableRequest) returns (UpsertMaglevTableResponse);
+
   // Observability
   rpc StreamFlows(StreamFlowsRequest) returns (stream FlowEvent);
   rpc GetDataplaneStatus(GetDataplaneStatusRequest) returns (GetDataplaneStatusResponse);
@@ -55,6 +62,7 @@ service AgentControl {
   rpc ListIdentities(ListIdentitiesRequest) returns (ListIdentitiesResponse);
   rpc ListTunnels(ListTunnelsRequest) returns (ListTunnelsResponse);
   rpc ListEgressPolicies(ListEgressPoliciesRequest) returns (ListEgressPoliciesResponse);
+  rpc ListServices(ListServicesRequest) returns (ListServicesResponse);
 }
 
 // --- Endpoints ---
@@ -194,6 +202,8 @@ message GetDataplaneStatusResponse {
   string mode = 5;
   string tunnel_protocol = 6;
   map<uint32, uint64> drop_counters = 7;
+  uint32 service_count = 8;
+  uint32 conntrack_count = 9;
 }
 
 message AttachedProgram {
@@ -284,6 +294,68 @@ enum EgressAction {
   EGRESS_ACTION_SNAT = 2;
 }
 
+// --- L4 Load Balancer ---
+
+message UpsertServiceRequest {
+  uint32 ip = 1;
+  uint32 port = 2;
+  uint32 protocol = 3;
+  uint32 scope = 4;
+  uint32 backend_count = 5;
+  uint32 backend_offset = 6;
+  uint32 algorithm = 7;
+  uint32 flags = 8;
+  uint32 affinity_timeout = 9;
+  uint32 maglev_offset = 10;
+}
+message UpsertServiceResponse {}
+
+message DeleteServiceRequest {
+  uint32 ip = 1;
+  uint32 port = 2;
+  uint32 protocol = 3;
+  uint32 scope = 4;
+}
+message DeleteServiceResponse {}
+
+message UpsertBackendsRequest {
+  repeated BackendEntry backends = 1;
+}
+message BackendEntry {
+  uint32 index = 1;
+  uint32 ip = 2;
+  uint32 port = 3;
+  uint32 node_ip = 4;
+}
+message UpsertBackendsResponse {}
+
+message SyncServicesRequest {
+  repeated ServiceEntry services = 1;
+  repeated BackendEntry backends = 2;
+}
+message ServiceEntry {
+  uint32 ip = 1;
+  uint32 port = 2;
+  uint32 protocol = 3;
+  uint32 scope = 4;
+  uint32 backend_count = 5;
+  uint32 backend_offset = 6;
+  uint32 algorithm = 7;
+  uint32 flags = 8;
+  uint32 affinity_timeout = 9;
+  uint32 maglev_offset = 10;
+}
+message SyncServicesResponse {
+  uint32 services_synced = 1;
+  uint32 backends_synced = 2;
+}
+
+message UpsertMaglevTableRequest {
+  uint32 offset = 1;
+  repeated uint32 entries = 2;
+}
+message UpsertMaglevTableResponse {}
+
 // --- List RPCs (CLI) ---
 
 message ListPoliciesRequest {}
@@ -333,4 +405,18 @@ message EgressPolicyInfo {
   uint32 protocol = 5;
   uint32 dst_port = 6;
   EgressAction action = 7;
+}
+
+message ListServicesRequest {}
+message ListServicesResponse {
+  repeated ServiceInfo services = 1;
+}
+message ServiceInfo {
+  string cluster_ip = 1;
+  uint32 port = 2;
+  string protocol = 3;
+  string scope = 4;
+  uint32 backend_count = 5;
+  string algorithm = 6;
+  repeated string backends = 7;
 }

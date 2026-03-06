@@ -181,6 +181,64 @@ impl MapManager {
         }
     }
 
+    // -- Service operations --
+
+    pub fn upsert_service(&self, key: ServiceKey, value: ServiceValue) -> anyhow::Result<()> {
+        match &self.inner {
+            MapManagerInner::Mock(m) => m.upsert_service(key, value),
+            #[cfg(target_os = "linux")]
+            MapManagerInner::Real(m) => m.upsert_service(key, value),
+        }
+    }
+
+    pub fn delete_service(&self, key: &ServiceKey) -> anyhow::Result<()> {
+        match &self.inner {
+            MapManagerInner::Mock(m) => m.delete_service(key),
+            #[cfg(target_os = "linux")]
+            MapManagerInner::Real(m) => m.delete_service(key),
+        }
+    }
+
+    pub fn service_count(&self) -> usize {
+        match &self.inner {
+            MapManagerInner::Mock(m) => m.service_count(),
+            #[cfg(target_os = "linux")]
+            MapManagerInner::Real(m) => m.service_count(),
+        }
+    }
+
+    pub fn upsert_backend(&self, index: u32, value: BackendValue) -> anyhow::Result<()> {
+        match &self.inner {
+            MapManagerInner::Mock(m) => m.upsert_backend(index, value),
+            #[cfg(target_os = "linux")]
+            MapManagerInner::Real(m) => m.upsert_backend(index, value),
+        }
+    }
+
+    pub fn upsert_maglev_entry(&self, index: u32, value: u32) -> anyhow::Result<()> {
+        match &self.inner {
+            MapManagerInner::Mock(m) => m.upsert_maglev_entry(index, value),
+            #[cfg(target_os = "linux")]
+            MapManagerInner::Real(m) => m.upsert_maglev_entry(index, value),
+        }
+    }
+
+    pub fn clear_services(&self) {
+        match &self.inner {
+            MapManagerInner::Mock(m) => m.clear_services(),
+            #[cfg(target_os = "linux")]
+            MapManagerInner::Real(m) => m.clear_services(),
+        }
+    }
+
+    pub fn clear_backends(&self) {
+        match &self.inner {
+            MapManagerInner::Mock(m) => m.clear_backends(),
+            #[cfg(target_os = "linux")]
+            MapManagerInner::Real(m) => m.clear_backends(),
+        }
+    }
+
     // -- Program attach/detach --
 
     pub fn attached_programs(&self) -> Vec<AttachedProgramInfo> {
@@ -279,6 +337,9 @@ struct MockMaps {
     tunnels: RwLock<StdHashMap<u32, TunnelValue>>,
     config: RwLock<StdHashMap<u32, u64>>,
     egress: RwLock<StdHashMap<EgressKeyFlat, EgressValue>>,
+    services: RwLock<StdHashMap<ServiceKeyFlat, ServiceValue>>,
+    backends: RwLock<StdHashMap<u32, BackendValue>>,
+    maglev: RwLock<StdHashMap<u32, u32>>,
     attached: RwLock<Vec<AttachedProgramInfo>>,
     next_prog_id: RwLock<u32>,
 }
@@ -332,6 +393,26 @@ impl From<&EgressKey> for EgressKeyFlat {
     }
 }
 
+/// Flattened service key for use as HashMap key (needs Hash + Eq).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+struct ServiceKeyFlat {
+    ip: u32,
+    port: u16,
+    protocol: u8,
+    scope: u8,
+}
+
+impl From<&ServiceKey> for ServiceKeyFlat {
+    fn from(k: &ServiceKey) -> Self {
+        Self {
+            ip: k.ip,
+            port: k.port,
+            protocol: k.protocol,
+            scope: k.scope,
+        }
+    }
+}
+
 impl MockMaps {
     fn new() -> Self {
         Self {
@@ -340,6 +421,9 @@ impl MockMaps {
             tunnels: RwLock::new(StdHashMap::new()),
             config: RwLock::new(StdHashMap::new()),
             egress: RwLock::new(StdHashMap::new()),
+            services: RwLock::new(StdHashMap::new()),
+            backends: RwLock::new(StdHashMap::new()),
+            maglev: RwLock::new(StdHashMap::new()),
             attached: RwLock::new(Vec::new()),
             next_prog_id: RwLock::new(1),
         }
@@ -532,6 +616,77 @@ impl MockMaps {
             .expect("egress lock poisoned")
             .remove(&flat);
         Ok(())
+    }
+
+    fn upsert_service(&self, key: ServiceKey, value: ServiceValue) -> anyhow::Result<()> {
+        debug!(
+            ip = key.ip,
+            port = key.port,
+            protocol = key.protocol,
+            scope = key.scope,
+            "mock: upsert service"
+        );
+        let flat: ServiceKeyFlat = (&key).into();
+        self.services
+            .write()
+            .expect("services lock poisoned")
+            .insert(flat, value);
+        Ok(())
+    }
+
+    fn delete_service(&self, key: &ServiceKey) -> anyhow::Result<()> {
+        debug!(
+            ip = key.ip,
+            port = key.port,
+            "mock: delete service"
+        );
+        let flat: ServiceKeyFlat = key.into();
+        self.services
+            .write()
+            .expect("services lock poisoned")
+            .remove(&flat);
+        Ok(())
+    }
+
+    fn service_count(&self) -> usize {
+        self.services.read().expect("services lock poisoned").len()
+    }
+
+    fn upsert_backend(&self, index: u32, value: BackendValue) -> anyhow::Result<()> {
+        debug!(
+            index = index,
+            ip = value.ip,
+            port = value.port,
+            "mock: upsert backend"
+        );
+        self.backends
+            .write()
+            .expect("backends lock poisoned")
+            .insert(index, value);
+        Ok(())
+    }
+
+    fn upsert_maglev_entry(&self, index: u32, value: u32) -> anyhow::Result<()> {
+        debug!(index = index, value = value, "mock: upsert maglev entry");
+        self.maglev
+            .write()
+            .expect("maglev lock poisoned")
+            .insert(index, value);
+        Ok(())
+    }
+
+    fn clear_services(&self) {
+        self.services
+            .write()
+            .expect("services lock poisoned")
+            .clear();
+    }
+
+    fn clear_backends(&self) {
+        self.backends
+            .write()
+            .expect("backends lock poisoned")
+            .clear();
     }
 
     fn attached_programs(&self) -> Vec<AttachedProgramInfo> {
@@ -1117,6 +1272,9 @@ pub struct RealMaps {
     tunnels: RwLock<aya::maps::HashMap<aya::maps::MapData, TunnelKey, TunnelValue>>,
     config: RwLock<aya::maps::HashMap<aya::maps::MapData, u32, u64>>,
     egress: RwLock<aya::maps::HashMap<aya::maps::MapData, EgressKey, EgressValue>>,
+    services: RwLock<aya::maps::HashMap<aya::maps::MapData, ServiceKey, ServiceValue>>,
+    backends: RwLock<aya::maps::Array<aya::maps::MapData, BackendValue>>,
+    maglev: RwLock<aya::maps::Array<aya::maps::MapData, u32>>,
     drop_counters: RwLock<aya::maps::PerCpuArray<aya::maps::MapData, u64>>,
     attached: RwLock<Vec<AttachedProgramInfo>>,
     /// Holds TC program links so they stay attached (aya auto-detaches on drop).
@@ -1135,6 +1293,9 @@ impl RealMaps {
         tunnels: aya::maps::HashMap<aya::maps::MapData, TunnelKey, TunnelValue>,
         config: aya::maps::HashMap<aya::maps::MapData, u32, u64>,
         egress: aya::maps::HashMap<aya::maps::MapData, EgressKey, EgressValue>,
+        services: aya::maps::HashMap<aya::maps::MapData, ServiceKey, ServiceValue>,
+        backends: aya::maps::Array<aya::maps::MapData, BackendValue>,
+        maglev: aya::maps::Array<aya::maps::MapData, u32>,
         drop_counters: aya::maps::PerCpuArray<aya::maps::MapData, u64>,
         ebpf: aya::Ebpf,
     ) -> Self {
@@ -1144,6 +1305,9 @@ impl RealMaps {
             tunnels: RwLock::new(tunnels),
             config: RwLock::new(config),
             egress: RwLock::new(egress),
+            services: RwLock::new(services),
+            backends: RwLock::new(backends),
+            maglev: RwLock::new(maglev),
             drop_counters: RwLock::new(drop_counters),
             attached: RwLock::new(Vec::new()),
             _tc_links: std::sync::Mutex::new(Vec::new()),
@@ -1330,6 +1494,70 @@ impl RealMaps {
         let mut map = self.egress.write().expect("egress lock poisoned");
         map.remove(key)?;
         Ok(())
+    }
+
+    fn upsert_service(&self, key: ServiceKey, value: ServiceValue) -> anyhow::Result<()> {
+        debug!(
+            ip = key.ip,
+            port = key.port,
+            protocol = key.protocol,
+            scope = key.scope,
+            "upsert service"
+        );
+        let mut map = self.services.write().expect("services lock poisoned");
+        map.insert(key, value, 0)?;
+        Ok(())
+    }
+
+    fn delete_service(&self, key: &ServiceKey) -> anyhow::Result<()> {
+        debug!(ip = key.ip, port = key.port, "delete service");
+        let mut map = self.services.write().expect("services lock poisoned");
+        map.remove(key)?;
+        Ok(())
+    }
+
+    fn service_count(&self) -> usize {
+        let map = self.services.read().expect("services lock poisoned");
+        map.iter().count()
+    }
+
+    fn upsert_backend(&self, index: u32, value: BackendValue) -> anyhow::Result<()> {
+        debug!(
+            index = index,
+            ip = value.ip,
+            port = value.port,
+            "upsert backend"
+        );
+        let mut map = self.backends.write().expect("backends lock poisoned");
+        map.set(index, value, 0)?;
+        Ok(())
+    }
+
+    fn upsert_maglev_entry(&self, index: u32, value: u32) -> anyhow::Result<()> {
+        debug!(index = index, value = value, "upsert maglev entry");
+        let mut map = self.maglev.write().expect("maglev lock poisoned");
+        map.set(index, value, 0)?;
+        Ok(())
+    }
+
+    fn clear_services(&self) {
+        let mut map = self.services.write().expect("services lock poisoned");
+        // Collect keys first, then remove them.
+        let keys: Vec<ServiceKey> = map
+            .iter()
+            .filter_map(|res| res.ok())
+            .map(|(k, _)| k)
+            .collect();
+        for key in keys {
+            let _ = map.remove(&key);
+        }
+    }
+
+    fn clear_backends(&self) {
+        // Array maps cannot be "cleared" — we zero out entries by writing default values.
+        // This is a best-effort operation; the actual cleanup happens when services
+        // are re-synced and backend offsets are reassigned.
+        debug!("clear backends (no-op for array map, entries will be overwritten)");
     }
 
     fn get_drop_counters(&self) -> StdHashMap<u32, u64> {

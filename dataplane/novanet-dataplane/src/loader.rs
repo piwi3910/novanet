@@ -8,7 +8,7 @@ use crate::maps::{MapManager, RealMaps};
 #[cfg(target_os = "linux")]
 use anyhow::{Context, Result};
 #[cfg(target_os = "linux")]
-use aya::maps::{HashMap, MapData, PerCpuArray, RingBuf};
+use aya::maps::{Array, HashMap, MapData, PerCpuArray, RingBuf};
 #[cfg(target_os = "linux")]
 use aya::programs::SchedClassifier;
 #[cfg(target_os = "linux")]
@@ -84,6 +84,24 @@ pub fn load_ebpf(bpf_object_path: &Path) -> Result<(MapManager, Option<RingBuf<M
         .try_into()
         .context("Failed to convert EGRESS_POLICIES map")?;
 
+    let services: HashMap<MapData, ServiceKey, ServiceValue> = ebpf
+        .take_map("SERVICES")
+        .ok_or_else(|| anyhow::anyhow!("Map 'SERVICES' not found"))?
+        .try_into()
+        .context("Failed to convert SERVICES map")?;
+
+    let backends: Array<MapData, BackendValue> = ebpf
+        .take_map("BACKENDS")
+        .ok_or_else(|| anyhow::anyhow!("Map 'BACKENDS' not found"))?
+        .try_into()
+        .context("Failed to convert BACKENDS map")?;
+
+    let maglev: Array<MapData, u32> = ebpf
+        .take_map("MAGLEV")
+        .ok_or_else(|| anyhow::anyhow!("Map 'MAGLEV' not found"))?
+        .try_into()
+        .context("Failed to convert MAGLEV map")?;
+
     let drop_counters: PerCpuArray<MapData, u64> = ebpf
         .take_map("DROP_COUNTERS")
         .ok_or_else(|| anyhow::anyhow!("Map 'DROP_COUNTERS' not found"))?
@@ -102,6 +120,9 @@ pub fn load_ebpf(bpf_object_path: &Path) -> Result<(MapManager, Option<RingBuf<M
         tunnels,
         config,
         egress,
+        services,
+        backends,
+        maglev,
         drop_counters,
         ebpf,
     );
