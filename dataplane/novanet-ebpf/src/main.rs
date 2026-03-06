@@ -872,6 +872,22 @@ fn try_tc_tunnel_ingress(ctx: &mut TcContext) -> Result<i32, ()> {
 
     let (src_port, dst_port, tcp_flags) = parse_l4_ports(ctx, l4_offset, protocol);
 
+    // Rewrite the inner Ethernet dst MAC to match the destination pod's
+    // interface MAC. The CNI assigns MACs as 02:fe:IP[0]:IP[1]:IP[2]:IP[3].
+    // Without this rewrite, the pod's kernel drops the frame because the
+    // dst MAC (from the source node) doesn't match the pod's eth0 MAC.
+    let dst_ip_bytes = dst_ip.to_be_bytes();
+    let pod_mac: [u8; 6] = [
+        0x02,
+        0xfe,
+        dst_ip_bytes[0],
+        dst_ip_bytes[1],
+        dst_ip_bytes[2],
+        dst_ip_bytes[3],
+    ];
+    // Overwrite dst MAC at offset 0 in the Ethernet header.
+    let _ = ctx.store(0, &pod_mac, 0);
+
     // Resolve source identity from endpoint map. Remote pods won't be
     // found (they're on another node), so src_identity may be 0.
     let src_identity = lookup_identity(src_ip).map(|(id, _)| id).unwrap_or(0);
