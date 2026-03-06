@@ -132,6 +132,104 @@ pub struct EgressValue {
 }
 
 // ---------------------------------------------------------------------------
+// Service map: Service VIP → backend selection info
+// ---------------------------------------------------------------------------
+
+/// Key for the service map.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ServiceKey {
+    /// Service virtual IP in network byte order (0 for NodePort scope).
+    pub ip: u32,
+    /// Service port in host byte order.
+    pub port: u16,
+    /// IP protocol (6=TCP, 17=UDP, 132=SCTP).
+    pub protocol: u8,
+    /// Service scope: 0=ClusterIP, 1=NodePort, 2=ExternalIP, 3=LoadBalancer.
+    pub scope: u8,
+}
+
+/// Value stored for each service.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ServiceValue {
+    /// Number of backends for this service.
+    pub backend_count: u16,
+    /// Starting index in the BACKENDS array.
+    pub backend_offset: u16,
+    /// Backend selection algorithm: 0=random, 1=round-robin, 2=maglev.
+    pub algorithm: u8,
+    /// Flags: bit 0 = session affinity, bit 1 = externalTrafficPolicy=Local.
+    pub flags: u8,
+    /// Session affinity timeout in seconds (0 = disabled).
+    pub affinity_timeout: u16,
+    /// Offset into MAGLEV lookup table (only when algorithm=2).
+    pub maglev_offset: u32,
+}
+
+// ---------------------------------------------------------------------------
+// Backend map: flat array of backend endpoints
+// ---------------------------------------------------------------------------
+
+/// Backend endpoint entry (stored in a flat array, indexed by offset + selection).
+#[repr(C)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct BackendValue {
+    /// Backend pod IPv4 address in network byte order.
+    pub ip: u32,
+    /// Backend target port in host byte order.
+    pub port: u16,
+    /// Padding for alignment.
+    pub _pad: [u8; 2],
+    /// Node IP hosting this backend (for externalTrafficPolicy: Local).
+    pub node_ip: u32,
+}
+
+// ---------------------------------------------------------------------------
+// Conntrack map: connection tracking for NAT state
+// ---------------------------------------------------------------------------
+
+/// Key for the conntrack LRU map.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct CtKey {
+    /// Source IPv4 address in network byte order.
+    pub src_ip: u32,
+    /// Destination IPv4 address in network byte order (the original VIP).
+    pub dst_ip: u32,
+    /// Source port in host byte order.
+    pub src_port: u16,
+    /// Destination port in host byte order.
+    pub dst_port: u16,
+    /// IP protocol (6=TCP, 17=UDP).
+    pub protocol: u8,
+    /// Padding for alignment.
+    pub _pad: [u8; 3],
+}
+
+/// Value stored in the conntrack map.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct CtValue {
+    /// Timestamp (bpf_ktime_get_ns, for session affinity).
+    pub timestamp: u64,
+    /// DNAT'd backend IP in network byte order.
+    pub backend_ip: u32,
+    /// Original service VIP in network byte order (for reverse SNAT).
+    pub origin_ip: u32,
+    /// DNAT'd backend port in host byte order.
+    pub backend_port: u16,
+    /// Original service port in host byte order (for reverse SNAT).
+    pub origin_port: u16,
+    /// TCP state flags for connection tracking.
+    pub flags: u8,
+    /// Padding.
+    pub _pad: u8,
+    /// Padding for alignment.
+    pub _pad2: [u8; 2],
+}
+
+// ---------------------------------------------------------------------------
 // Flow event: emitted to ring buffer for observability
 // ---------------------------------------------------------------------------
 
@@ -197,6 +295,8 @@ pub const CONFIG_KEY_SNAT_IP: u32 = 7;
 pub const CONFIG_KEY_POD_CIDR_IP: u32 = 8;
 /// Pod CIDR prefix length (e.g. 24 for /24).
 pub const CONFIG_KEY_POD_CIDR_PREFIX_LEN: u32 = 9;
+/// L4 LB enabled: 0 = off, 1 = on.
+pub const CONFIG_KEY_L4LB_ENABLED: u32 = 10;
 
 // ---------------------------------------------------------------------------
 // Action constants
@@ -217,6 +317,39 @@ pub const EGRESS_DENY: u8 = 0;
 pub const EGRESS_ALLOW: u8 = 1;
 /// Allow egress traffic with source NAT.
 pub const EGRESS_SNAT: u8 = 2;
+
+// ---------------------------------------------------------------------------
+// Service scope constants
+// ---------------------------------------------------------------------------
+
+/// ClusterIP service scope.
+pub const SVC_SCOPE_CLUSTER_IP: u8 = 0;
+/// NodePort service scope.
+pub const SVC_SCOPE_NODE_PORT: u8 = 1;
+/// ExternalIP service scope.
+pub const SVC_SCOPE_EXTERNAL_IP: u8 = 2;
+/// LoadBalancer service scope.
+pub const SVC_SCOPE_LOAD_BALANCER: u8 = 3;
+
+// ---------------------------------------------------------------------------
+// Backend selection algorithm constants
+// ---------------------------------------------------------------------------
+
+/// Random backend selection (hash of 5-tuple).
+pub const LB_ALG_RANDOM: u8 = 0;
+/// Round-robin backend selection.
+pub const LB_ALG_ROUND_ROBIN: u8 = 1;
+/// Maglev consistent hashing.
+pub const LB_ALG_MAGLEV: u8 = 2;
+
+// ---------------------------------------------------------------------------
+// Service flags
+// ---------------------------------------------------------------------------
+
+/// Session affinity enabled.
+pub const SVC_FLAG_AFFINITY: u8 = 0x01;
+/// externalTrafficPolicy: Local.
+pub const SVC_FLAG_EXT_LOCAL: u8 = 0x02;
 
 // ---------------------------------------------------------------------------
 // Routing mode constants
@@ -314,6 +447,16 @@ pub const MAX_EGRESS_POLICIES: u32 = 16384;
 pub const MAX_CONFIG_ENTRIES: u32 = 32;
 /// Size of the flow events ring buffer in bytes (8 MiB).
 pub const FLOW_RING_BUF_SIZE: u32 = 8 * 1024 * 1024;
+/// Maximum entries in the service map.
+pub const MAX_SERVICES: u32 = 16384;
+/// Maximum entries in the backend array.
+pub const MAX_BACKENDS: u32 = 65536;
+/// Maximum entries in the conntrack LRU map.
+pub const MAX_CONNTRACK: u32 = 524288;
+/// Maximum entries in the Maglev lookup table.
+pub const MAX_MAGLEV: u32 = 1048576;
+/// Maglev lookup table size per service.
+pub const MAGLEV_TABLE_SIZE: u32 = 65537;
 
 // ---------------------------------------------------------------------------
 // aya::Pod implementations for userspace map access
@@ -329,6 +472,11 @@ impl_pod!(
     TunnelValue,
     EgressKey,
     EgressValue,
+    ServiceKey,
+    ServiceValue,
+    BackendValue,
+    CtKey,
+    CtValue,
 );
 
 // ---------------------------------------------------------------------------
@@ -389,6 +537,32 @@ mod tests {
     }
 
     #[test]
+    fn service_key_size() {
+        assert_eq!(mem::size_of::<ServiceKey>(), 8);
+    }
+
+    #[test]
+    fn service_value_size() {
+        assert_eq!(mem::size_of::<ServiceValue>(), 12);
+    }
+
+    #[test]
+    fn backend_value_size() {
+        assert_eq!(mem::size_of::<BackendValue>(), 12);
+    }
+
+    #[test]
+    fn ct_key_size() {
+        assert_eq!(mem::size_of::<CtKey>(), 16);
+    }
+
+    #[test]
+    fn ct_value_size() {
+        // timestamp(8) + backend_ip(4) + origin_ip(4) + backend_port(2) + origin_port(2) + flags(1) + pad(1) + pad2(2) = 24
+        assert_eq!(mem::size_of::<CtValue>(), 24);
+    }
+
+    #[test]
     fn flow_event_size() {
         // Contains u64 fields so struct is aligned to 8 bytes.
         // 4+4+4+4 + 1+1+2+2+2 + 1+1+2 + (4 pad for u64 alignment) + 8+8+8 = 56
@@ -417,6 +591,31 @@ mod tests {
     fn flow_event_alignment() {
         // Contains u64 fields, so alignment should be 8.
         assert_eq!(mem::align_of::<FlowEvent>(), 8);
+    }
+
+    #[test]
+    fn service_key_alignment() {
+        assert_eq!(mem::align_of::<ServiceKey>(), 4);
+    }
+
+    #[test]
+    fn service_value_alignment() {
+        assert_eq!(mem::align_of::<ServiceValue>(), 4);
+    }
+
+    #[test]
+    fn backend_value_alignment() {
+        assert_eq!(mem::align_of::<BackendValue>(), 4);
+    }
+
+    #[test]
+    fn ct_key_alignment() {
+        assert_eq!(mem::align_of::<CtKey>(), 4);
+    }
+
+    #[test]
+    fn ct_value_alignment() {
+        assert_eq!(mem::align_of::<CtValue>(), 8);
     }
 
     // -- Type construction and field access --
@@ -510,6 +709,34 @@ mod tests {
     }
 
     #[test]
+    fn service_key_construction() {
+        let key = ServiceKey {
+            ip: 0x0A2B6449, // 10.43.100.73
+            port: 8080,
+            protocol: 6, // TCP
+            scope: SVC_SCOPE_CLUSTER_IP,
+        };
+        assert_eq!(key.ip, 0x0A2B6449);
+        assert_eq!(key.port, 8080);
+        assert_eq!(key.protocol, 6);
+        assert_eq!(key.scope, SVC_SCOPE_CLUSTER_IP);
+    }
+
+    #[test]
+    fn ct_key_construction() {
+        let key = CtKey {
+            src_ip: 0x0A2A0401,
+            dst_ip: 0x0A2B6449,
+            src_port: 45678,
+            dst_port: 8080,
+            protocol: 6,
+            _pad: [0; 3],
+        };
+        assert_eq!(key.src_ip, 0x0A2A0401);
+        assert_eq!(key.dst_port, 8080);
+    }
+
+    #[test]
     fn flow_event_construction() {
         let event = FlowEvent {
             src_ip: 0x0A2A0501,
@@ -549,12 +776,13 @@ mod tests {
         assert_eq!(CONFIG_KEY_SNAT_IP, 7);
         assert_eq!(CONFIG_KEY_POD_CIDR_IP, 8);
         assert_eq!(CONFIG_KEY_POD_CIDR_PREFIX_LEN, 9);
+        assert_eq!(CONFIG_KEY_L4LB_ENABLED, 10);
     }
 
     #[test]
     fn config_keys_fit_in_map() {
         // All config keys must be < MAX_CONFIG_ENTRIES.
-        assert!(CONFIG_KEY_POD_CIDR_PREFIX_LEN < MAX_CONFIG_ENTRIES);
+        assert!(CONFIG_KEY_L4LB_ENABLED < MAX_CONFIG_ENTRIES);
     }
 
     #[test]
