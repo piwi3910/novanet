@@ -1,10 +1,11 @@
 //! NovaNet eBPF programs for TC-based packet processing.
 //!
-//! This binary contains four TC classifier programs:
+//! This binary contains five TC classifier programs:
 //!   - `tc_ingress`: pod veth — traffic arriving at pod (K8s ingress)
 //!   - `tc_egress`: pod veth — traffic leaving pod (K8s egress)
 //!   - `tc_tunnel_ingress`: tunnel interface ingress (decap + policy)
 //!   - `tc_tunnel_egress`: tunnel interface egress (encap identity)
+//!   - `tc_host_ingress`: host interface ingress (NodePort/ExternalIP L4 LB)
 //!
 //! Compiled with `--target bpfel-unknown-none -Z build-std=core` on Linux only.
 
@@ -17,7 +18,7 @@ use aya_ebpf::{
     bindings::{bpf_tunnel_key, BPF_F_ZERO_CSUM_TX},
     helpers::{bpf_redirect, bpf_skb_set_tunnel_key},
     macros::{classifier, map},
-    maps::{HashMap, PerCpuArray, RingBuf},
+    maps::{Array, HashMap, LruHashMap, PerCpuArray, RingBuf},
     programs::TcContext,
 };
 use network_types::{
@@ -53,6 +54,21 @@ static FLOW_EVENTS: RingBuf = RingBuf::with_byte_size(FLOW_RING_BUF_SIZE, 0);
 
 #[map]
 static DROP_COUNTERS: PerCpuArray<u64> = PerCpuArray::with_max_entries(DROP_REASON_MAX, 0);
+
+#[map]
+static SERVICES: HashMap<ServiceKey, ServiceValue> = HashMap::with_max_entries(MAX_SERVICES, 0);
+
+#[map]
+static BACKENDS: Array<BackendValue> = Array::with_max_entries(MAX_BACKENDS, 0);
+
+#[map]
+static CONNTRACK: LruHashMap<CtKey, CtValue> = LruHashMap::with_max_entries(MAX_CONNTRACK, 0);
+
+#[map]
+static MAGLEV: Array<u32> = Array::with_max_entries(MAX_MAGLEV, 0);
+
+#[map]
+static RR_COUNTERS: PerCpuArray<u32> = PerCpuArray::with_max_entries(MAX_SERVICES, 0);
 
 // ---------------------------------------------------------------------------
 // Helper: read config value
@@ -249,6 +265,251 @@ fn is_cluster_ip(ip: u32) -> bool {
 }
 
 // ---------------------------------------------------------------------------
+// Helper: FNV-1a hash of 5-tuple for backend selection
+// ---------------------------------------------------------------------------
+
+#[inline(always)]
+fn hash_5tuple(src_ip: u32, dst_ip: u32, src_port: u16, dst_port: u16, proto: u8) -> u32 {
+    let mut h: u32 = 2166136261;
+    h ^= src_ip;
+    h = h.wrapping_mul(16777619);
+    h ^= dst_ip;
+    h = h.wrapping_mul(16777619);
+    h ^= src_port as u32;
+    h = h.wrapping_mul(16777619);
+    h ^= dst_port as u32;
+    h = h.wrapping_mul(16777619);
+    h ^= proto as u32;
+    h = h.wrapping_mul(16777619);
+    h
+}
+
+// ---------------------------------------------------------------------------
+// Helper: service lookup + backend selection
+// Returns (backend_ip, backend_port, origin_vip, origin_port) if found.
+// ---------------------------------------------------------------------------
+
+#[inline(always)]
+fn service_lookup(
+    dst_ip: u32,
+    dst_port: u16,
+    protocol: u8,
+    src_ip: u32,
+    src_port: u16,
+    scope: u8,
+) -> Option<(u32, u16, u32, u16)> {
+    if get_config(CONFIG_KEY_L4LB_ENABLED) == 0 {
+        return None;
+    }
+
+    // Check conntrack for existing connection.
+    let ct_key = CtKey {
+        src_ip,
+        dst_ip,
+        src_port,
+        dst_port,
+        protocol,
+        _pad: [0; 3],
+    };
+    // SAFETY: eBPF map lookup; safety guaranteed by BPF verifier.
+    if let Some(ct) = unsafe { CONNTRACK.get(&ct_key) } {
+        let backend_ip = ct.backend_ip;
+        let backend_port = ct.backend_port;
+        let origin_ip = ct.origin_ip;
+        let origin_port = ct.origin_port;
+        return Some((backend_ip, backend_port, origin_ip, origin_port));
+    }
+
+    // Look up service.
+    let svc_key = ServiceKey {
+        ip: dst_ip,
+        port: dst_port,
+        protocol,
+        scope,
+    };
+    // SAFETY: eBPF map lookup; safety guaranteed by BPF verifier.
+    let svc = unsafe { SERVICES.get(&svc_key) }?;
+
+    let count = svc.backend_count;
+    if count == 0 {
+        return None;
+    }
+    let offset = svc.backend_offset;
+    let algorithm = svc.algorithm;
+
+    // Select backend index.
+    let idx = match algorithm {
+        LB_ALG_ROUND_ROBIN => {
+            // SAFETY: eBPF per-CPU array access; BPF verifier ensures bounds.
+            if let Some(c) = unsafe { RR_COUNTERS.get_ptr_mut(offset as u32) } {
+                let val = unsafe { *c };
+                unsafe { *c = val.wrapping_add(1) };
+                val % (count as u32)
+            } else {
+                0
+            }
+        }
+        LB_ALG_MAGLEV => {
+            let hash = hash_5tuple(src_ip, dst_ip, src_port, dst_port, protocol);
+            let maglev_offset = svc.maglev_offset;
+            let maglev_idx = maglev_offset + (hash % MAGLEV_TABLE_SIZE);
+            // SAFETY: eBPF array lookup; safety guaranteed by BPF verifier.
+            if let Some(backend_idx) = unsafe { MAGLEV.get(maglev_idx) } {
+                *backend_idx
+            } else {
+                0
+            }
+        }
+        _ => {
+            // Random (default): hash-based selection.
+            let hash = hash_5tuple(src_ip, dst_ip, src_port, dst_port, protocol);
+            hash % (count as u32)
+        }
+    };
+
+    let backend_array_idx = (offset as u32) + idx;
+    // SAFETY: eBPF array lookup; safety guaranteed by BPF verifier.
+    let backend = unsafe { BACKENDS.get(backend_array_idx) }?;
+    let backend_ip = backend.ip;
+    let backend_port = backend.port;
+
+    // Create forward conntrack entry.
+    let ct_val = CtValue {
+        timestamp: 0,
+        backend_ip,
+        origin_ip: dst_ip,
+        backend_port,
+        origin_port: dst_port,
+        flags: 0,
+        _pad: 0,
+        _pad2: [0; 2],
+    };
+    // SAFETY: eBPF map insert; safety guaranteed by BPF verifier.
+    let _ = unsafe { CONNTRACK.insert(&ct_key, &ct_val, 0) };
+
+    // Create reverse conntrack entry for return traffic SNAT.
+    let rev_ct_key = CtKey {
+        src_ip: backend_ip,
+        dst_ip: src_ip,
+        src_port: backend_port,
+        dst_port: src_port,
+        protocol,
+        _pad: [0; 3],
+    };
+    let rev_ct_val = CtValue {
+        timestamp: 0,
+        backend_ip: 0,
+        origin_ip: dst_ip,
+        backend_port: 0,
+        origin_port: dst_port,
+        flags: 0,
+        _pad: 0,
+        _pad2: [0; 2],
+    };
+    // SAFETY: eBPF map insert; safety guaranteed by BPF verifier.
+    let _ = unsafe { CONNTRACK.insert(&rev_ct_key, &rev_ct_val, 0) };
+
+    Some((backend_ip, backend_port, dst_ip, dst_port))
+}
+
+// ---------------------------------------------------------------------------
+// Helper: perform DNAT — rewrite destination IP and port with incremental
+// checksum updates.
+// ---------------------------------------------------------------------------
+
+#[inline(always)]
+fn perform_dnat(
+    ctx: &mut TcContext,
+    l4_offset: usize,
+    protocol: u8,
+    old_ip: u32,
+    new_ip: u32,
+    old_port: u16,
+    new_port: u16,
+) -> Result<(), ()> {
+    let old_ip_be = old_ip.to_be();
+    let new_ip_be = new_ip.to_be();
+
+    // Update IP header checksum for dst IP change.
+    ctx.l3_csum_replace(ETH_HLEN + 10, old_ip_be as u64, new_ip_be as u64, 4)
+        .map_err(|_| ())?;
+
+    // Write new destination IP (offset ETH_HLEN + 16).
+    ctx.store(ETH_HLEN + 16, &new_ip_be, 0).map_err(|_| ())?;
+
+    if protocol == 6 || protocol == 17 {
+        let l4_csum_offset = if protocol == 6 {
+            l4_offset + 16
+        } else {
+            l4_offset + 6
+        };
+
+        // Update L4 checksum for IP change (BPF_F_PSEUDO_HDR = 0x10).
+        ctx.l4_csum_replace(l4_csum_offset, old_ip_be as u64, new_ip_be as u64, 0x14)
+            .map_err(|_| ())?;
+
+        // Rewrite destination port (l4_offset + 2).
+        let old_port_be = old_port.to_be();
+        let new_port_be = new_port.to_be();
+
+        ctx.l4_csum_replace(l4_csum_offset, old_port_be as u64, new_port_be as u64, 2)
+            .map_err(|_| ())?;
+
+        ctx.store(l4_offset + 2, &new_port_be, 0).map_err(|_| ())?;
+    }
+
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Helper: perform reverse SNAT — rewrite source IP and port back to VIP
+// ---------------------------------------------------------------------------
+
+#[inline(always)]
+fn perform_snat(
+    ctx: &mut TcContext,
+    l4_offset: usize,
+    protocol: u8,
+    old_ip: u32,
+    new_ip: u32,
+    old_port: u16,
+    new_port: u16,
+) -> Result<(), ()> {
+    let old_ip_be = old_ip.to_be();
+    let new_ip_be = new_ip.to_be();
+
+    // Update IP header checksum for src IP change.
+    ctx.l3_csum_replace(ETH_HLEN + 10, old_ip_be as u64, new_ip_be as u64, 4)
+        .map_err(|_| ())?;
+
+    // Write new source IP (offset ETH_HLEN + 12).
+    ctx.store(ETH_HLEN + 12, &new_ip_be, 0).map_err(|_| ())?;
+
+    if protocol == 6 || protocol == 17 {
+        let l4_csum_offset = if protocol == 6 {
+            l4_offset + 16
+        } else {
+            l4_offset + 6
+        };
+
+        // Update L4 checksum for IP change (BPF_F_PSEUDO_HDR = 0x10).
+        ctx.l4_csum_replace(l4_csum_offset, old_ip_be as u64, new_ip_be as u64, 0x14)
+            .map_err(|_| ())?;
+
+        // Rewrite source port (l4_offset + 0).
+        let old_port_be = old_port.to_be();
+        let new_port_be = new_port.to_be();
+
+        ctx.l4_csum_replace(l4_csum_offset, old_port_be as u64, new_port_be as u64, 2)
+            .map_err(|_| ())?;
+
+        ctx.store(l4_offset, &new_port_be, 0).map_err(|_| ())?;
+    }
+
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
 // Helper: lookup endpoint and get identity
 // ---------------------------------------------------------------------------
 
@@ -314,8 +575,8 @@ fn check_egress_policy(src_identity: u32, dst_ip: u32) -> (bool, u32) {
 // ===========================================================================
 
 #[classifier]
-pub fn tc_ingress(ctx: TcContext) -> i32 {
-    match try_tc_ingress(&ctx) {
+pub fn tc_ingress(mut ctx: TcContext) -> i32 {
+    match try_tc_ingress(&mut ctx) {
         Ok(action) => action,
         Err(_) => BPF_TC_ACT_OK as i32,
     }
@@ -365,7 +626,7 @@ fn set_tunnel_key(ctx: &mut TcContext, remote_ip: u32, vni: u32) -> i64 {
 }
 
 #[inline(always)]
-fn try_tc_ingress(ctx: &TcContext) -> Result<i32, ()> {
+fn try_tc_ingress(ctx: &mut TcContext) -> Result<i32, ()> {
     // Parse Ethernet header.
     let eth: EthHdr = ctx.load(0).map_err(|_| ())?;
     let ether_type = eth.ether_type;
@@ -388,6 +649,26 @@ fn try_tc_ingress(ctx: &TcContext) -> Result<i32, ()> {
     let total_len = u16::from_be(tot_len) as u64;
 
     let (src_port, dst_port, tcp_flags) = parse_l4_ports(ctx, l4_offset, protocol);
+
+    // --- L4 LB: Reverse SNAT on return traffic ---
+    if get_config(CONFIG_KEY_L4LB_ENABLED) != 0 {
+        let rev_key = CtKey {
+            src_ip,
+            dst_ip,
+            src_port,
+            dst_port,
+            protocol,
+            _pad: [0; 3],
+        };
+        // SAFETY: eBPF map lookup; safety guaranteed by BPF verifier.
+        if let Some(ct) = unsafe { CONNTRACK.get(&rev_key) } {
+            let origin_ip = ct.origin_ip;
+            let origin_port = ct.origin_port;
+            if origin_ip != 0 {
+                let _ = perform_snat(ctx, l4_offset, protocol, src_ip, origin_ip, src_port, origin_port);
+            }
+        }
+    }
 
     let mode = get_config(CONFIG_KEY_MODE);
 
@@ -519,14 +800,29 @@ fn try_tc_egress(ctx: &mut TcContext) -> Result<i32, ()> {
     // Parse IPv4 header.
     let ipv4: Ipv4Hdr = ctx.load(ETH_HLEN).map_err(|_| ())?;
     let src_ip = u32::to_be(ipv4.src_addr);
-    let dst_ip = u32::to_be(ipv4.dst_addr);
+    let mut dst_ip = u32::to_be(ipv4.dst_addr);
     let protocol = ipv4.proto as u8;
     let ihl = (ipv4.ihl() as usize) * 4;
     let l4_offset = ETH_HLEN + ihl;
     let tot_len = ipv4.tot_len;
     let total_len = u16::from_be(tot_len) as u64;
 
-    let (src_port, dst_port, tcp_flags) = parse_l4_ports(ctx, l4_offset, protocol);
+    let (src_port, mut dst_port, tcp_flags) = parse_l4_ports(ctx, l4_offset, protocol);
+
+    // --- L4 LB: Service DNAT ---
+    if let Some((backend_ip, backend_port, _origin_ip, _origin_port)) =
+        service_lookup(dst_ip, dst_port, protocol, src_ip, src_port, SVC_SCOPE_CLUSTER_IP)
+    {
+        if perform_dnat(ctx, l4_offset, protocol, dst_ip, backend_ip, dst_port, backend_port)
+            .is_err()
+        {
+            inc_drop_counter(DROP_REASON_NO_ROUTE);
+            return Ok(BPF_TC_ACT_SHOT as i32);
+        }
+        // Update locals so subsequent endpoint lookup uses real backend IP.
+        dst_ip = backend_ip;
+        dst_port = backend_port;
+    }
 
     // Resolve source identity (the pod sending traffic).
     let src_identity = lookup_identity(src_ip).map(|(id, _)| id).unwrap_or(0);
@@ -888,6 +1184,26 @@ fn try_tc_tunnel_ingress(ctx: &mut TcContext) -> Result<i32, ()> {
     // Overwrite dst MAC at offset 0 in the Ethernet header.
     let _ = ctx.store(0, &pod_mac, 0);
 
+    // --- L4 LB: Reverse SNAT on return traffic ---
+    if get_config(CONFIG_KEY_L4LB_ENABLED) != 0 {
+        let rev_key = CtKey {
+            src_ip,
+            dst_ip,
+            src_port,
+            dst_port,
+            protocol,
+            _pad: [0; 3],
+        };
+        // SAFETY: eBPF map lookup; safety guaranteed by BPF verifier.
+        if let Some(ct) = unsafe { CONNTRACK.get(&rev_key) } {
+            let origin_ip = ct.origin_ip;
+            let origin_port = ct.origin_port;
+            if origin_ip != 0 {
+                let _ = perform_snat(ctx, l4_offset, protocol, src_ip, origin_ip, src_port, origin_port);
+            }
+        }
+    }
+
     // Resolve source identity from endpoint map. Remote pods won't be
     // found (they're on another node), so src_identity may be 0.
     let src_identity = lookup_identity(src_ip).map(|(id, _)| id).unwrap_or(0);
@@ -1052,6 +1368,81 @@ pub fn tc_tunnel_egress(ctx: TcContext) -> i32 {
 fn try_tc_tunnel_egress(_ctx: &TcContext) -> Result<i32, ()> {
     // Pass through — kernel handles encapsulation.
     // See tc_tunnel_ingress for the receiving side.
+    Ok(BPF_TC_ACT_OK as i32)
+}
+
+// ===========================================================================
+// TC PROGRAM: tc_host_ingress
+// Attached to the host physical interface (e.g., eth0) ingress direction.
+// Handles NodePort and ExternalIP service traffic arriving from outside the
+// cluster. Performs service lookup + DNAT for matching packets, and reverse
+// SNAT on return traffic via conntrack.
+// ===========================================================================
+
+#[classifier]
+pub fn tc_host_ingress(mut ctx: TcContext) -> i32 {
+    match try_tc_host_ingress(&mut ctx) {
+        Ok(action) => action,
+        Err(_) => BPF_TC_ACT_OK as i32,
+    }
+}
+
+#[inline(always)]
+fn try_tc_host_ingress(ctx: &mut TcContext) -> Result<i32, ()> {
+    if get_config(CONFIG_KEY_L4LB_ENABLED) == 0 {
+        return Ok(BPF_TC_ACT_OK as i32);
+    }
+
+    let eth: EthHdr = ctx.load(0).map_err(|_| ())?;
+    let ether_type = eth.ether_type;
+    if ether_type != EtherType::Ipv4 {
+        return Ok(BPF_TC_ACT_OK as i32);
+    }
+
+    let ipv4: Ipv4Hdr = ctx.load(ETH_HLEN).map_err(|_| ())?;
+    let src_ip = u32::to_be(ipv4.src_addr);
+    let dst_ip = u32::to_be(ipv4.dst_addr);
+    let protocol = ipv4.proto as u8;
+    let ihl = (ipv4.ihl() as usize) * 4;
+    let l4_offset = ETH_HLEN + ihl;
+
+    let (src_port, dst_port, _tcp_flags) = parse_l4_ports(ctx, l4_offset, protocol);
+
+    // Check conntrack first (return traffic).
+    let ct_key = CtKey {
+        src_ip,
+        dst_ip,
+        src_port,
+        dst_port,
+        protocol,
+        _pad: [0; 3],
+    };
+    // SAFETY: eBPF map lookup; safety guaranteed by BPF verifier.
+    if let Some(ct) = unsafe { CONNTRACK.get(&ct_key) } {
+        let origin_ip = ct.origin_ip;
+        let origin_port = ct.origin_port;
+        if origin_ip != 0 {
+            let _ = perform_snat(ctx, l4_offset, protocol, src_ip, origin_ip, src_port, origin_port);
+        }
+        return Ok(BPF_TC_ACT_OK as i32);
+    }
+
+    // Check NodePort (ip=0 matches any node IP).
+    if let Some((backend_ip, backend_port, _, _)) =
+        service_lookup(0, dst_port, protocol, src_ip, src_port, SVC_SCOPE_NODE_PORT)
+    {
+        let _ = perform_dnat(ctx, l4_offset, protocol, dst_ip, backend_ip, dst_port, backend_port);
+        return Ok(BPF_TC_ACT_OK as i32);
+    }
+
+    // Check ExternalIP.
+    if let Some((backend_ip, backend_port, _, _)) =
+        service_lookup(dst_ip, dst_port, protocol, src_ip, src_port, SVC_SCOPE_EXTERNAL_IP)
+    {
+        let _ = perform_dnat(ctx, l4_offset, protocol, dst_ip, backend_ip, dst_port, backend_port);
+        return Ok(BPF_TC_ACT_OK as i32);
+    }
+
     Ok(BPF_TC_ACT_OK as i32)
 }
 
