@@ -344,9 +344,9 @@ extract_duration() {
 }
 
 # extract_errors JSON
-# Returns total non-200 responses.
+# Returns total non-success responses (excludes HTTP "200" and TCP "OK").
 extract_errors() {
-    echo "$1" | jq -r '(.RetCodes | to_entries | map(select(.key != "200")) | map(.value) | add) // 0' 2>/dev/null || echo "0"
+    echo "$1" | jq -r '(.RetCodes | to_entries | map(select(.key != "200" and .key != "OK")) | map(.value) | add) // 0' 2>/dev/null || echo "0"
 }
 
 # extract_total_requests JSON
