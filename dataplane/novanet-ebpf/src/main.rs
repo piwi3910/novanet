@@ -841,50 +841,6 @@ pub fn tc_tunnel_ingress(mut ctx: TcContext) -> i32 {
     }
 }
 
-/// Geneve header layout (8 bytes base):
-///   bits 0-1:   version (2 bits)
-///   bits 2-7:   opt_len (6 bits, in 4-byte units)
-///   bit 8:      O (OAM)
-///   bit 9:      C (critical)
-///   bits 10-15: reserved (6 bits)
-///   bits 16-31: protocol type (EtherType of inner frame)
-///   bits 32-55: VNI (24 bits)
-///   bits 56-63: reserved (8 bits)
-#[repr(C)]
-#[derive(Clone, Copy)]
-struct GeneveHdr {
-    /// First two bytes: version(2) + opt_len(6) + flags(8)
-    ver_opt_len_flags: u16,
-    /// Protocol type of encapsulated frame (EtherType).
-    proto_type: u16,
-    /// VNI (24 bits) + reserved (8 bits), network byte order.
-    vni_reserved: u32,
-}
-
-/// Geneve TLV option header (4 bytes).
-#[repr(C)]
-#[derive(Clone, Copy)]
-struct GeneveTlvHdr {
-    /// Option class.
-    opt_class: u16,
-    /// Type.
-    opt_type: u8,
-    /// Flags (3 bits) + length (5 bits, in 4-byte units).
-    flags_len: u8,
-}
-
-/// VXLAN header layout (8 bytes):
-///   bits 0-7:   flags (bit 3 = I flag, must be 1)
-///   bits 8-31:  reserved
-///   bits 32-55: VNI (24 bits)
-///   bits 56-63: reserved
-#[repr(C)]
-#[derive(Clone, Copy)]
-struct VxlanHdr {
-    flags_reserved: u32,
-    vni_reserved: u32,
-}
-
 #[inline(always)]
 fn try_tc_tunnel_ingress(ctx: &mut TcContext) -> Result<i32, ()> {
     // Mark ALL traffic arriving on tunnel interfaces so iptables KUBE-FORWARD
@@ -893,164 +849,44 @@ fn try_tc_tunnel_ingress(ctx: &mut TcContext) -> Result<i32, ()> {
     // KUBE-FORWARD "mark match 0x4000/0x4000 → ACCEPT" rule.
     ctx.set_mark(0x4000);
 
-    // The tunnel interface receives the outer packet. The kernel has already
-    // stripped the outer Ethernet + IP + UDP headers for us on a GENEVE/VXLAN
-    // tunnel device. What we see starts at the tunnel-specific header.
+    // On FlowBased (collect-metadata) tunnel devices, the kernel has already
+    // stripped the outer headers (Ethernet + IP + UDP + Geneve/VXLAN).
+    // What we receive at offset 0 is the inner Ethernet frame.
     //
-    // However, on some setups the outer headers may still be present. We need
-    // to handle the case where we see the full outer packet.
-    //
-    // Parse outer Ethernet.
+    // We parse the inner frame, resolve identities, enforce policy,
+    // and redirect to the destination pod's veth interface.
     let eth: EthHdr = ctx.load(0).map_err(|_| ())?;
-    let ether_type = eth.ether_type;
-    if ether_type != EtherType::Ipv4 {
-        // Not IPv4 outer — might be inner frame directly. Pass through.
+    if eth.ether_type != EtherType::Ipv4 {
         return Ok(BPF_TC_ACT_OK as i32);
     }
 
-    // Parse outer IPv4.
-    let outer_ipv4: Ipv4Hdr = ctx.load(ETH_HLEN).map_err(|_| ())?;
-    let _outer_src_ip = outer_ipv4.src_addr;
-    let outer_protocol = outer_ipv4.proto as u8;
+    let ipv4: Ipv4Hdr = ctx.load(ETH_HLEN).map_err(|_| ())?;
+    let src_ip = u32::to_be(ipv4.src_addr);
+    let dst_ip = u32::to_be(ipv4.dst_addr);
+    let protocol = ipv4.proto as u8;
+    let ihl = (ipv4.ihl() as usize) * 4;
+    let l4_offset = ETH_HLEN + ihl;
+    let total_len = u16::from_be(ipv4.tot_len) as u64;
 
-    // Must be UDP for tunnel traffic.
-    if outer_protocol != 17 {
-        return Ok(BPF_TC_ACT_OK as i32);
-    }
+    let (src_port, dst_port, tcp_flags) = parse_l4_ports(ctx, l4_offset, protocol);
 
-    let outer_ihl = (outer_ipv4.ihl() as usize) * 4;
-    let udp_offset = ETH_HLEN + outer_ihl;
+    // Resolve source identity from endpoint map. Remote pods won't be
+    // found (they're on another node), so src_identity may be 0.
+    let src_identity = lookup_identity(src_ip).map(|(id, _)| id).unwrap_or(0);
+    let dst_identity = lookup_identity(dst_ip).map(|(id, _)| id).unwrap_or(0);
 
-    // Parse outer UDP.
-    let outer_udp: UdpHdr = ctx.load(udp_offset).map_err(|_| ())?;
-    let udp_dest = outer_udp.dest;
-    let dst_port = u16::from_be(udp_dest);
-
-    let tunnel_type = get_config(CONFIG_KEY_TUNNEL_TYPE);
-    let tunnel_hdr_offset = udp_offset + UDP_HLEN;
-
-    let mut resolved_identity: u32 = 0;
-
-    if dst_port == GENEVE_PORT && tunnel_type == TUNNEL_GENEVE {
-        // Parse Geneve header.
-        let geneve: GeneveHdr = ctx.load(tunnel_hdr_offset).map_err(|_| ())?;
-        let ver_opt = u16::from_be(geneve.ver_opt_len_flags);
-        let opt_len_words = ((ver_opt >> 8) & 0x3F) as usize; // 6-bit field, in 4-byte units
-        let opt_len_bytes = opt_len_words * 4;
-
-        // Scan Geneve TLV options for NovaNet identity.
-        let opts_start = tunnel_hdr_offset + GENEVE_HLEN;
-        let opts_end = opts_start + opt_len_bytes;
-        let mut offset = opts_start;
-
-        // Bounded loop for eBPF verifier — max 8 options.
-        let mut i = 0u32;
-        while i < 8 && offset + 4 <= opts_end {
-            let tlv: GeneveTlvHdr = ctx.load(offset).map_err(|_| ())?;
-            let opt_class = u16::from_be(tlv.opt_class);
-            let opt_type = tlv.opt_type;
-            let opt_data_len = ((tlv.flags_len & 0x1F) as usize) * 4;
-
-            if opt_class == GENEVE_OPT_CLASS_NOVANET && opt_type == GENEVE_OPT_TYPE_IDENTITY {
-                // Found identity TLV. Read the 4-byte identity value.
-                if offset + 4 + 4 <= opts_end {
-                    let identity_ne: u32 = ctx.load(offset + 4).map_err(|_| ())?;
-                    resolved_identity = u32::from_be(identity_ne);
-                }
-                break;
-            }
-
-            offset += 4 + opt_data_len;
-            i += 1;
-        }
-
-        // Inner frame starts after Geneve header + options.
-        // Parse inner Ethernet + IPv4 to get flow info.
-        let inner_eth_offset = opts_end;
-        let inner_eth: EthHdr = ctx.load(inner_eth_offset).map_err(|_| ())?;
-        let inner_ether_type = inner_eth.ether_type;
-        if inner_ether_type != EtherType::Ipv4 {
-            return Ok(BPF_TC_ACT_OK as i32);
-        }
-
-        let inner_ip_offset = inner_eth_offset + ETH_HLEN;
-        let inner_ipv4: Ipv4Hdr = ctx.load(inner_ip_offset).map_err(|_| ())?;
-        let inner_src_ip = u32::to_be(inner_ipv4.src_addr);
-        let inner_dst_ip = u32::to_be(inner_ipv4.dst_addr);
-        let inner_proto = inner_ipv4.proto as u8;
-        let inner_ihl = (inner_ipv4.ihl() as usize) * 4;
-        let inner_l4_offset = inner_ip_offset + inner_ihl;
-        let inner_tot_len = inner_ipv4.tot_len;
-        let inner_total_len = u16::from_be(inner_tot_len) as u64;
-
-        let (inner_src_port, inner_dst_port, inner_tcp_flags) =
-            parse_l4_ports(ctx, inner_l4_offset, inner_proto);
-
-        // If we didn't find identity in TLV, fall back to endpoint lookup.
-        if resolved_identity == 0 {
-            resolved_identity = lookup_identity(inner_src_ip).map(|(id, _)| id).unwrap_or(0);
-        }
-
-        // Resolve destination identity.
-        let dst_identity = lookup_identity(inner_dst_ip).map(|(id, _)| id).unwrap_or(0);
-
-        // Enforce policy.
-        return enforce_tunnel_policy(
-            ctx,
-            inner_src_ip,
-            inner_dst_ip,
-            resolved_identity,
-            dst_identity,
-            inner_proto,
-            inner_src_port,
-            inner_dst_port,
-            inner_tcp_flags,
-            inner_total_len,
-        );
-    } else if dst_port == VXLAN_PORT && tunnel_type == TUNNEL_VXLAN {
-        // Parse VXLAN header.
-        let _vxlan: VxlanHdr = ctx.load(tunnel_hdr_offset).map_err(|_| ())?;
-
-        let inner_eth_offset = tunnel_hdr_offset + VXLAN_HLEN;
-        let inner_eth: EthHdr = ctx.load(inner_eth_offset).map_err(|_| ())?;
-        let inner_ether_type = inner_eth.ether_type;
-        if inner_ether_type != EtherType::Ipv4 {
-            return Ok(BPF_TC_ACT_OK as i32);
-        }
-
-        let inner_ip_offset = inner_eth_offset + ETH_HLEN;
-        let inner_ipv4: Ipv4Hdr = ctx.load(inner_ip_offset).map_err(|_| ())?;
-        let inner_src_ip = u32::to_be(inner_ipv4.src_addr);
-        let inner_dst_ip = u32::to_be(inner_ipv4.dst_addr);
-        let inner_proto = inner_ipv4.proto as u8;
-        let inner_ihl = (inner_ipv4.ihl() as usize) * 4;
-        let inner_l4_offset = inner_ip_offset + inner_ihl;
-        let inner_tot_len = inner_ipv4.tot_len;
-        let inner_total_len = u16::from_be(inner_tot_len) as u64;
-
-        let (inner_src_port, inner_dst_port, inner_tcp_flags) =
-            parse_l4_ports(ctx, inner_l4_offset, inner_proto);
-
-        // VXLAN has no identity TLV — look up source IP in endpoint map.
-        resolved_identity = lookup_identity(inner_src_ip).map(|(id, _)| id).unwrap_or(0);
-        let dst_identity = lookup_identity(inner_dst_ip).map(|(id, _)| id).unwrap_or(0);
-
-        return enforce_tunnel_policy(
-            ctx,
-            inner_src_ip,
-            inner_dst_ip,
-            resolved_identity,
-            dst_identity,
-            inner_proto,
-            inner_src_port,
-            inner_dst_port,
-            inner_tcp_flags,
-            inner_total_len,
-        );
-    }
-
-    // Not a recognized tunnel port — pass through.
-    Ok(BPF_TC_ACT_OK as i32)
+    enforce_tunnel_policy(
+        ctx,
+        src_ip,
+        dst_ip,
+        src_identity,
+        dst_identity,
+        protocol,
+        src_port,
+        dst_port,
+        tcp_flags,
+        total_len,
+    )
 }
 
 /// Shared policy enforcement for tunnel ingress (both Geneve and VXLAN paths).
@@ -1085,6 +921,12 @@ fn enforce_tunnel_policy(
                 total_len,
             );
             return Ok(BPF_TC_ACT_SHOT as i32);
+        }
+        // Default allow — redirect to destination pod's veth.
+        if let Some((_, dst_ep)) = lookup_identity(dst_ip) {
+            unsafe {
+                return Ok(bpf_redirect(dst_ep.ifindex, 0) as i32);
+            }
         }
         return Ok(BPF_TC_ACT_OK as i32);
     }
