@@ -61,6 +61,9 @@ type Config struct {
 	// Policy holds policy enforcement settings.
 	Policy PolicyConfig `json:"policy"`
 
+	// L4LB holds L4 load balancer settings.
+	L4LB L4LBConfig `json:"l4lb"`
+
 	// LogLevel sets the logging verbosity (debug, info, warn, error).
 	LogLevel string `json:"log_level"`
 
@@ -115,6 +118,17 @@ type PolicyConfig struct {
 	DefaultDeny bool `json:"default_deny"`
 }
 
+// L4LBConfig holds L4 load balancer settings.
+type L4LBConfig struct {
+	// Enabled controls whether eBPF-based L4 load balancing is active.
+	// When enabled, NovaNet replaces kube-proxy for Service DNAT.
+	Enabled bool `json:"enabled"`
+
+	// DefaultAlgorithm is the default backend selection algorithm.
+	// Valid values: "random", "round-robin", "maglev". Default: "random".
+	DefaultAlgorithm string `json:"default_algorithm"`
+}
+
 // DefaultConfig returns a Config populated with sensible defaults.
 func DefaultConfig() *Config {
 	return &Config{
@@ -134,6 +148,10 @@ func DefaultConfig() *Config {
 		},
 		Policy: PolicyConfig{
 			DefaultDeny: false,
+		},
+		L4LB: L4LBConfig{
+			Enabled:          false,
+			DefaultAlgorithm: "random",
 		},
 		LogLevel:       "info",
 		MetricsAddress: ":9103",
@@ -247,5 +265,8 @@ func ExpandEnvVars(cfg *Config) {
 	}
 	if v := os.Getenv("NOVANET_TUNNEL_PROTOCOL"); v != "" {
 		cfg.TunnelProtocol = v
+	}
+	if v := os.Getenv("NOVANET_L4LB_ENABLED"); v == "true" || v == "1" {
+		cfg.L4LB.Enabled = true
 	}
 }
