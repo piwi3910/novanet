@@ -230,6 +230,25 @@ pub struct CtValue {
 }
 
 // ---------------------------------------------------------------------------
+// Socket-LB origin map: socket cookie → original service destination
+// ---------------------------------------------------------------------------
+
+/// Stores the original ClusterIP destination before socket-LB rewrites it.
+/// Used by recvmsg4/getpeername4 to reverse-translate back to the VIP.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SockLbOrigin {
+    /// Original service ClusterIP in network byte order.
+    pub original_ip: u32,
+    /// Original service port in host byte order.
+    pub original_port: u16,
+    /// IP protocol (6=TCP, 17=UDP).
+    pub protocol: u8,
+    /// Padding for alignment.
+    pub _pad: u8,
+}
+
+// ---------------------------------------------------------------------------
 // Flow event: emitted to ring buffer for observability
 // ---------------------------------------------------------------------------
 
@@ -457,6 +476,8 @@ pub const MAX_CONNTRACK: u32 = 524288;
 pub const MAX_MAGLEV: u32 = 1048576;
 /// Maglev lookup table size per service.
 pub const MAGLEV_TABLE_SIZE: u32 = 65537;
+/// Maximum entries in the socket-LB origin tracking map.
+pub const MAX_SOCK_LB_ORIGINS: u32 = 131072;
 
 // ---------------------------------------------------------------------------
 // aya::Pod implementations for userspace map access
@@ -477,6 +498,7 @@ impl_pod!(
     BackendValue,
     CtKey,
     CtValue,
+    SockLbOrigin,
 );
 
 // ---------------------------------------------------------------------------
@@ -890,6 +912,17 @@ mod tests {
             _pad: [0; 3],
         };
         assert_eq!(val.action, ACTION_DENY);
+    }
+
+    #[test]
+    fn sock_lb_origin_size() {
+        // original_ip(4) + original_port(2) + protocol(1) + pad(1) = 8
+        assert_eq!(mem::size_of::<SockLbOrigin>(), 8);
+    }
+
+    #[test]
+    fn sock_lb_origin_alignment() {
+        assert_eq!(mem::align_of::<SockLbOrigin>(), 4);
     }
 
     #[test]
