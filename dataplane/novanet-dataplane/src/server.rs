@@ -331,11 +331,7 @@ impl proto::dataplane_control_server::DataplaneControl for DataplaneService {
             .delete_service(&key)
             .map_err(|e| Status::internal(format!("Failed to delete service: {}", e)))?;
 
-        debug!(
-            ip = req.ip,
-            port = req.port,
-            "Deleted service"
-        );
+        debug!(ip = req.ip, port = req.port, "Deleted service");
 
         Ok(Response::new(proto::DeleteServiceResponse {}))
     }
@@ -354,14 +350,12 @@ impl proto::dataplane_control_server::DataplaneControl for DataplaneService {
                 node_ip: entry.node_ip,
             };
 
-            self.maps
-                .upsert_backend(entry.index, value)
-                .map_err(|e| {
-                    Status::internal(format!(
-                        "Failed to upsert backend at index {}: {}",
-                        entry.index, e
-                    ))
-                })?;
+            self.maps.upsert_backend(entry.index, value).map_err(|e| {
+                Status::internal(format!(
+                    "Failed to upsert backend at index {}: {}",
+                    entry.index, e
+                ))
+            })?;
         }
 
         debug!(count = req.backends.len(), "Upserted backends");
@@ -411,14 +405,12 @@ impl proto::dataplane_control_server::DataplaneControl for DataplaneService {
                 node_ip: entry.node_ip,
             };
 
-            self.maps
-                .upsert_backend(entry.index, value)
-                .map_err(|e| {
-                    Status::internal(format!(
-                        "Failed to upsert backend at index {}: {}",
-                        entry.index, e
-                    ))
-                })?;
+            self.maps.upsert_backend(entry.index, value).map_err(|e| {
+                Status::internal(format!(
+                    "Failed to upsert backend at index {}: {}",
+                    entry.index, e
+                ))
+            })?;
         }
 
         let services_synced = req.services.len() as u32;
@@ -426,8 +418,7 @@ impl proto::dataplane_control_server::DataplaneControl for DataplaneService {
 
         info!(
             services_synced,
-            backends_synced,
-            "Synced services and backends"
+            backends_synced, "Synced services and backends"
         );
 
         Ok(Response::new(proto::SyncServicesResponse {

@@ -429,11 +429,7 @@ fn service_lookup(
 // ---------------------------------------------------------------------------
 
 #[inline(always)]
-fn sock_service_lookup(
-    dst_ip: u32,
-    dst_port: u16,
-    protocol: u8,
-) -> Option<(u32, u16)> {
+fn sock_service_lookup(dst_ip: u32, dst_port: u16, protocol: u8) -> Option<(u32, u16)> {
     if get_config(CONFIG_KEY_L4LB_ENABLED) == 0 {
         return None;
     }
@@ -1258,7 +1254,15 @@ fn try_tc_tunnel_ingress(ctx: &mut TcContext) -> Result<i32, ()> {
             let origin_ip = ct.origin_ip;
             let origin_port = ct.origin_port;
             if origin_ip != 0 {
-                let _ = perform_snat(ctx, l4_offset, protocol, src_ip, origin_ip, src_port, origin_port);
+                let _ = perform_snat(
+                    ctx,
+                    l4_offset,
+                    protocol,
+                    src_ip,
+                    origin_ip,
+                    src_port,
+                    origin_port,
+                );
             }
         }
     }
@@ -1481,7 +1485,15 @@ fn try_tc_host_ingress(ctx: &mut TcContext) -> Result<i32, ()> {
         let origin_ip = ct.origin_ip;
         let origin_port = ct.origin_port;
         if origin_ip != 0 {
-            let _ = perform_snat(ctx, l4_offset, protocol, src_ip, origin_ip, src_port, origin_port);
+            let _ = perform_snat(
+                ctx,
+                l4_offset,
+                protocol,
+                src_ip,
+                origin_ip,
+                src_port,
+                origin_port,
+            );
         }
         return Ok(BPF_TC_ACT_OK as i32);
     }
@@ -1490,15 +1502,36 @@ fn try_tc_host_ingress(ctx: &mut TcContext) -> Result<i32, ()> {
     if let Some((backend_ip, backend_port, _, _)) =
         service_lookup(0, dst_port, protocol, src_ip, src_port, SVC_SCOPE_NODE_PORT)
     {
-        let _ = perform_dnat(ctx, l4_offset, protocol, dst_ip, backend_ip, dst_port, backend_port);
+        let _ = perform_dnat(
+            ctx,
+            l4_offset,
+            protocol,
+            dst_ip,
+            backend_ip,
+            dst_port,
+            backend_port,
+        );
         return Ok(BPF_TC_ACT_OK as i32);
     }
 
     // Check ExternalIP.
-    if let Some((backend_ip, backend_port, _, _)) =
-        service_lookup(dst_ip, dst_port, protocol, src_ip, src_port, SVC_SCOPE_EXTERNAL_IP)
-    {
-        let _ = perform_dnat(ctx, l4_offset, protocol, dst_ip, backend_ip, dst_port, backend_port);
+    if let Some((backend_ip, backend_port, _, _)) = service_lookup(
+        dst_ip,
+        dst_port,
+        protocol,
+        src_ip,
+        src_port,
+        SVC_SCOPE_EXTERNAL_IP,
+    ) {
+        let _ = perform_dnat(
+            ctx,
+            l4_offset,
+            protocol,
+            dst_ip,
+            backend_ip,
+            dst_port,
+            backend_port,
+        );
         return Ok(BPF_TC_ACT_OK as i32);
     }
 

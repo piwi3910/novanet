@@ -654,11 +654,7 @@ impl MockMaps {
     }
 
     fn delete_service(&self, key: &ServiceKey) -> anyhow::Result<()> {
-        debug!(
-            ip = key.ip,
-            port = key.port,
-            "mock: delete service"
-        );
+        debug!(ip = key.ip, port = key.port, "mock: delete service");
         let flat: ServiceKeyFlat = key.into();
         self.services
             .write()
@@ -1732,7 +1728,10 @@ impl RealMaps {
             .context("Failed to open root cgroup for socket-LB")?;
 
         let mut ebpf = self._ebpf.lock().expect("ebpf lock poisoned");
-        let mut links = self._cgroup_links.lock().expect("cgroup_links lock poisoned");
+        let mut links = self
+            ._cgroup_links
+            .lock()
+            .expect("cgroup_links lock poisoned");
 
         for prog_name in &[
             "sock_connect4",
@@ -1756,7 +1755,10 @@ impl RealMaps {
     }
 
     fn detach_cgroup_programs(&self) {
-        let mut links = self._cgroup_links.lock().expect("cgroup_links lock poisoned");
+        let mut links = self
+            ._cgroup_links
+            .lock()
+            .expect("cgroup_links lock poisoned");
         let count = links.len();
         links.clear(); // Dropping links detaches programs.
         info!(count, "detached cgroup socket-LB programs");
