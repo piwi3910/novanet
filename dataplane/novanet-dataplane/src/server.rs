@@ -8,6 +8,7 @@ use crate::maps::{AttachDirection, MapManager};
 use crate::proto;
 use novanet_common::*;
 use std::collections::HashMap as StdHashMap;
+use std::net::IpAddr;
 use std::pin::Pin;
 use std::sync::{Arc, RwLock};
 use tokio_stream::{wrappers::BroadcastStream, Stream, StreamExt};
@@ -27,7 +28,7 @@ struct HostRuleInfo {
 /// The DataplaneControl gRPC service implementation.
 pub struct DataplaneService {
     maps: Arc<MapManager>,
-    /// Maps rule_id → key info needed for deletion.
+    /// Maps rule_id -> key info needed for deletion.
     host_rules: RwLock<StdHashMap<String, HostRuleInfo>>,
 }
 
@@ -41,8 +42,8 @@ impl DataplaneService {
 }
 
 /// Convert proto cidr_ip bytes (4 or 16) to IPCacheKey.
-/// IPv4 (4 bytes) → mapped to ::ffff:x.x.x.x with prefix += 96.
-/// IPv6 (16 bytes) → used directly.
+/// IPv4 (4 bytes) -> mapped to ::ffff:x.x.x.x with prefix += 96.
+/// IPv6 (16 bytes) -> used directly.
 #[allow(clippy::result_large_err)]
 fn cidr_to_ipcache_key(cidr_ip: &[u8], prefix_len: u32) -> Result<IPCacheKey, Status> {
     let mut addr = [0u8; 16];
@@ -98,6 +99,13 @@ fn build_host_policy_key(identity: u32, direction: u8, protocol: u8, port: u16) 
     }
 }
 
+/// Parse an IP string from proto and return the parsed IpAddr.
+#[allow(clippy::result_large_err)]
+fn parse_ip(s: &str) -> Result<IpAddr, Status> {
+    s.parse::<IpAddr>()
+        .map_err(|e| Status::invalid_argument(format!("invalid IP '{}': {}", s, e)))
+}
+
 #[tonic::async_trait]
 impl proto::dataplane_control_server::DataplaneControl for DataplaneService {
     // -----------------------------------------------------------------------
@@ -117,21 +125,45 @@ impl proto::dataplane_control_server::DataplaneControl for DataplaneService {
             .try_into()
             .map_err(|_| Status::invalid_argument("MAC address must be exactly 6 bytes"))?;
 
-        let key = EndpointKey { ip: req.ip };
-        let value = EndpointValue {
-            ifindex: req.ifindex,
-            mac,
-            _pad: [0; 2],
-            identity: req.identity_id,
-            node_ip: req.node_ip,
-        };
+        let ip = parse_ip(&req.ip)?;
+        let node_ip = parse_ip(&req.node_ip)?;
 
-        self.maps
-            .upsert_endpoint(key, value)
-            .map_err(|e| Status::internal(format!("Failed to upsert endpoint: {}", e)))?;
+        match (ip, node_ip) {
+            (IpAddr::V4(v4), IpAddr::V4(node_v4)) => {
+                let key = EndpointKey { ip: u32::from(v4) };
+                let value = EndpointValue {
+                    ifindex: req.ifindex,
+                    mac,
+                    _pad: [0; 2],
+                    identity: req.identity_id,
+                    node_ip: u32::from(node_v4),
+                };
+                self.maps
+                    .upsert_endpoint(key, value)
+                    .map_err(|e| Status::internal(format!("Failed to upsert endpoint: {}", e)))?;
+            }
+            (IpAddr::V6(v6), IpAddr::V6(node_v6)) => {
+                let key = EndpointKeyV6 { ip: v6.octets() };
+                let value = EndpointValueV6 {
+                    ifindex: req.ifindex,
+                    mac,
+                    _pad: [0; 2],
+                    identity: req.identity_id,
+                    node_ip: node_v6.octets(),
+                };
+                self.maps.upsert_endpoint_v6(key, value).map_err(|e| {
+                    Status::internal(format!("Failed to upsert endpoint v6: {}", e))
+                })?;
+            }
+            _ => {
+                return Err(Status::invalid_argument(
+                    "ip and node_ip must be the same address family",
+                ));
+            }
+        }
 
         debug!(
-            ip = req.ip,
+            ip = %req.ip,
             ifindex = req.ifindex,
             identity = req.identity_id,
             pod = %req.pod_name,
@@ -147,13 +179,24 @@ impl proto::dataplane_control_server::DataplaneControl for DataplaneService {
         request: Request<proto::DeleteEndpointRequest>,
     ) -> Result<Response<proto::DeleteEndpointResponse>, Status> {
         let req = request.into_inner();
-        let key = EndpointKey { ip: req.ip };
+        let ip = parse_ip(&req.ip)?;
 
-        self.maps
-            .delete_endpoint(&key)
-            .map_err(|e| Status::internal(format!("Failed to delete endpoint: {}", e)))?;
+        match ip {
+            IpAddr::V4(v4) => {
+                let key = EndpointKey { ip: u32::from(v4) };
+                self.maps
+                    .delete_endpoint(&key)
+                    .map_err(|e| Status::internal(format!("Failed to delete endpoint: {}", e)))?;
+            }
+            IpAddr::V6(v6) => {
+                let key = EndpointKeyV6 { ip: v6.octets() };
+                self.maps.delete_endpoint_v6(&key).map_err(|e| {
+                    Status::internal(format!("Failed to delete endpoint v6: {}", e))
+                })?;
+            }
+        }
 
-        debug!(ip = req.ip, "Deleted endpoint");
+        debug!(ip = %req.ip, "Deleted endpoint");
 
         Ok(Response::new(proto::DeleteEndpointResponse {}))
     }
@@ -290,26 +333,54 @@ impl proto::dataplane_control_server::DataplaneControl for DataplaneService {
             _ => EGRESS_DENY,
         };
 
-        let key = EgressKey {
-            src_identity: req.src_identity,
-            dst_ip: req.dst_cidr_ip,
-            dst_prefix_len: req.dst_cidr_prefix_len as u8,
-            _pad: [0; 3],
-        };
+        // Parse dst_cidr (may be bare IP or CIDR notation; strip prefix if present).
+        let cidr_str = req.dst_cidr.split('/').next().unwrap_or(&req.dst_cidr);
+        let dst_ip = parse_ip(cidr_str)?;
+        let snat_ip = parse_ip(&req.snat_ip)?;
 
-        let value = EgressValue {
-            action,
-            _pad: [0; 3],
-            snat_ip: req.snat_ip,
-        };
-
-        self.maps
-            .upsert_egress_policy(key, value)
-            .map_err(|e| Status::internal(format!("Failed to upsert egress policy: {}", e)))?;
+        match (dst_ip, snat_ip) {
+            (IpAddr::V4(dst_v4), IpAddr::V4(snat_v4)) => {
+                let key = EgressKey {
+                    src_identity: req.src_identity,
+                    dst_ip: u32::from(dst_v4),
+                    dst_prefix_len: req.dst_cidr_prefix_len as u8,
+                    _pad: [0; 3],
+                };
+                let value = EgressValue {
+                    action,
+                    _pad: [0; 3],
+                    snat_ip: u32::from(snat_v4),
+                };
+                self.maps.upsert_egress_policy(key, value).map_err(|e| {
+                    Status::internal(format!("Failed to upsert egress policy: {}", e))
+                })?;
+            }
+            (IpAddr::V6(dst_v6), IpAddr::V6(snat_v6)) => {
+                let key = EgressKeyV6 {
+                    src_identity: req.src_identity,
+                    dst_ip: dst_v6.octets(),
+                    dst_prefix_len: req.dst_cidr_prefix_len as u8,
+                    _pad: [0; 3],
+                };
+                let value = EgressValueV6 {
+                    action,
+                    _pad: [0; 3],
+                    snat_ip: snat_v6.octets(),
+                };
+                self.maps.upsert_egress_policy_v6(key, value).map_err(|e| {
+                    Status::internal(format!("Failed to upsert egress policy v6: {}", e))
+                })?;
+            }
+            _ => {
+                return Err(Status::invalid_argument(
+                    "dst_cidr and snat_ip must be the same address family",
+                ));
+            }
+        }
 
         debug!(
             src_identity = req.src_identity,
-            dst_cidr_ip = req.dst_cidr_ip,
+            dst_cidr = %req.dst_cidr,
             prefix_len = req.dst_cidr_prefix_len,
             action = action,
             "Upserted egress policy"
@@ -324,20 +395,37 @@ impl proto::dataplane_control_server::DataplaneControl for DataplaneService {
     ) -> Result<Response<proto::DeleteEgressPolicyResponse>, Status> {
         let req = request.into_inner();
 
-        let key = EgressKey {
-            src_identity: req.src_identity,
-            dst_ip: req.dst_cidr_ip,
-            dst_prefix_len: req.dst_cidr_prefix_len as u8,
-            _pad: [0; 3],
-        };
+        let cidr_str = req.dst_cidr.split('/').next().unwrap_or(&req.dst_cidr);
+        let dst_ip = parse_ip(cidr_str)?;
 
-        self.maps
-            .delete_egress_policy(&key)
-            .map_err(|e| Status::internal(format!("Failed to delete egress policy: {}", e)))?;
+        match dst_ip {
+            IpAddr::V4(dst_v4) => {
+                let key = EgressKey {
+                    src_identity: req.src_identity,
+                    dst_ip: u32::from(dst_v4),
+                    dst_prefix_len: req.dst_cidr_prefix_len as u8,
+                    _pad: [0; 3],
+                };
+                self.maps.delete_egress_policy(&key).map_err(|e| {
+                    Status::internal(format!("Failed to delete egress policy: {}", e))
+                })?;
+            }
+            IpAddr::V6(dst_v6) => {
+                let key = EgressKeyV6 {
+                    src_identity: req.src_identity,
+                    dst_ip: dst_v6.octets(),
+                    dst_prefix_len: req.dst_cidr_prefix_len as u8,
+                    _pad: [0; 3],
+                };
+                self.maps.delete_egress_policy_v6(&key).map_err(|e| {
+                    Status::internal(format!("Failed to delete egress policy v6: {}", e))
+                })?;
+            }
+        }
 
         debug!(
             src_identity = req.src_identity,
-            dst_cidr_ip = req.dst_cidr_ip,
+            dst_cidr = %req.dst_cidr,
             "Deleted egress policy"
         );
 
@@ -354,28 +442,51 @@ impl proto::dataplane_control_server::DataplaneControl for DataplaneService {
     ) -> Result<Response<proto::UpsertServiceResponse>, Status> {
         let req = request.into_inner();
 
-        let key = ServiceKey {
-            ip: req.ip,
-            port: req.port as u16,
-            protocol: req.protocol as u8,
-            scope: req.scope as u8,
-        };
+        let ip = parse_ip(&req.ip)?;
 
-        let value = ServiceValue {
-            backend_count: req.backend_count as u16,
-            backend_offset: req.backend_offset as u16,
-            algorithm: req.algorithm as u8,
-            flags: req.flags as u8,
-            affinity_timeout: req.affinity_timeout as u16,
-            maglev_offset: req.maglev_offset,
-        };
-
-        self.maps
-            .upsert_service(key, value)
-            .map_err(|e| Status::internal(format!("Failed to upsert service: {}", e)))?;
+        match ip {
+            IpAddr::V4(v4) => {
+                let key = ServiceKey {
+                    ip: u32::from(v4),
+                    port: req.port as u16,
+                    protocol: req.protocol as u8,
+                    scope: req.scope as u8,
+                };
+                let value = ServiceValue {
+                    backend_count: req.backend_count as u16,
+                    backend_offset: req.backend_offset as u16,
+                    algorithm: req.algorithm as u8,
+                    flags: req.flags as u8,
+                    affinity_timeout: req.affinity_timeout as u16,
+                    maglev_offset: req.maglev_offset,
+                };
+                self.maps
+                    .upsert_service(key, value)
+                    .map_err(|e| Status::internal(format!("Failed to upsert service: {}", e)))?;
+            }
+            IpAddr::V6(v6) => {
+                let key = ServiceKeyV6 {
+                    ip: v6.octets(),
+                    port: req.port as u16,
+                    protocol: req.protocol as u8,
+                    scope: req.scope as u8,
+                };
+                let value = ServiceValue {
+                    backend_count: req.backend_count as u16,
+                    backend_offset: req.backend_offset as u16,
+                    algorithm: req.algorithm as u8,
+                    flags: req.flags as u8,
+                    affinity_timeout: req.affinity_timeout as u16,
+                    maglev_offset: req.maglev_offset,
+                };
+                self.maps
+                    .upsert_service_v6(key, value)
+                    .map_err(|e| Status::internal(format!("Failed to upsert service v6: {}", e)))?;
+            }
+        }
 
         debug!(
-            ip = req.ip,
+            ip = %req.ip,
             port = req.port,
             protocol = req.protocol,
             scope = req.scope,
@@ -392,18 +503,34 @@ impl proto::dataplane_control_server::DataplaneControl for DataplaneService {
     ) -> Result<Response<proto::DeleteServiceResponse>, Status> {
         let req = request.into_inner();
 
-        let key = ServiceKey {
-            ip: req.ip,
-            port: req.port as u16,
-            protocol: req.protocol as u8,
-            scope: req.scope as u8,
-        };
+        let ip = parse_ip(&req.ip)?;
 
-        self.maps
-            .delete_service(&key)
-            .map_err(|e| Status::internal(format!("Failed to delete service: {}", e)))?;
+        match ip {
+            IpAddr::V4(v4) => {
+                let key = ServiceKey {
+                    ip: u32::from(v4),
+                    port: req.port as u16,
+                    protocol: req.protocol as u8,
+                    scope: req.scope as u8,
+                };
+                self.maps
+                    .delete_service(&key)
+                    .map_err(|e| Status::internal(format!("Failed to delete service: {}", e)))?;
+            }
+            IpAddr::V6(v6) => {
+                let key = ServiceKeyV6 {
+                    ip: v6.octets(),
+                    port: req.port as u16,
+                    protocol: req.protocol as u8,
+                    scope: req.scope as u8,
+                };
+                self.maps
+                    .delete_service_v6(&key)
+                    .map_err(|e| Status::internal(format!("Failed to delete service v6: {}", e)))?;
+            }
+        }
 
-        debug!(ip = req.ip, port = req.port, "Deleted service");
+        debug!(ip = %req.ip, port = req.port, "Deleted service");
 
         Ok(Response::new(proto::DeleteServiceResponse {}))
     }
@@ -415,19 +542,47 @@ impl proto::dataplane_control_server::DataplaneControl for DataplaneService {
         let req = request.into_inner();
 
         for entry in &req.backends {
-            let value = BackendValue {
-                ip: entry.ip,
-                port: entry.port as u16,
-                _pad: [0; 2],
-                node_ip: entry.node_ip,
-            };
+            let ip = parse_ip(&entry.ip)?;
+            let node_ip = parse_ip(&entry.node_ip)?;
 
-            self.maps.upsert_backend(entry.index, value).map_err(|e| {
-                Status::internal(format!(
-                    "Failed to upsert backend at index {}: {}",
-                    entry.index, e
-                ))
-            })?;
+            match (ip, node_ip) {
+                (IpAddr::V4(v4), IpAddr::V4(node_v4)) => {
+                    let value = BackendValue {
+                        ip: u32::from(v4),
+                        port: entry.port as u16,
+                        _pad: [0; 2],
+                        node_ip: u32::from(node_v4),
+                    };
+                    self.maps.upsert_backend(entry.index, value).map_err(|e| {
+                        Status::internal(format!(
+                            "Failed to upsert backend at index {}: {}",
+                            entry.index, e
+                        ))
+                    })?;
+                }
+                (IpAddr::V6(v6), IpAddr::V6(node_v6)) => {
+                    let value = BackendValueV6 {
+                        ip: v6.octets(),
+                        port: entry.port as u16,
+                        _pad: [0; 2],
+                        node_ip: node_v6.octets(),
+                    };
+                    self.maps
+                        .upsert_backend_v6(entry.index, value)
+                        .map_err(|e| {
+                            Status::internal(format!(
+                                "Failed to upsert backend v6 at index {}: {}",
+                                entry.index, e
+                            ))
+                        })?;
+                }
+                _ => {
+                    return Err(Status::invalid_argument(format!(
+                        "backend at index {}: ip and node_ip must be the same address family",
+                        entry.index
+                    )));
+                }
+            }
         }
 
         debug!(count = req.backends.len(), "Upserted backends");
@@ -447,42 +602,93 @@ impl proto::dataplane_control_server::DataplaneControl for DataplaneService {
 
         // Insert all services.
         for entry in &req.services {
-            let key = ServiceKey {
-                ip: entry.ip,
-                port: entry.port as u16,
-                protocol: entry.protocol as u8,
-                scope: entry.scope as u8,
-            };
+            let ip = parse_ip(&entry.ip)?;
 
-            let value = ServiceValue {
-                backend_count: entry.backend_count as u16,
-                backend_offset: entry.backend_offset as u16,
-                algorithm: entry.algorithm as u8,
-                flags: entry.flags as u8,
-                affinity_timeout: entry.affinity_timeout as u16,
-                maglev_offset: entry.maglev_offset,
-            };
-
-            self.maps
-                .upsert_service(key, value)
-                .map_err(|e| Status::internal(format!("Failed to upsert service: {}", e)))?;
+            match ip {
+                IpAddr::V4(v4) => {
+                    let key = ServiceKey {
+                        ip: u32::from(v4),
+                        port: entry.port as u16,
+                        protocol: entry.protocol as u8,
+                        scope: entry.scope as u8,
+                    };
+                    let value = ServiceValue {
+                        backend_count: entry.backend_count as u16,
+                        backend_offset: entry.backend_offset as u16,
+                        algorithm: entry.algorithm as u8,
+                        flags: entry.flags as u8,
+                        affinity_timeout: entry.affinity_timeout as u16,
+                        maglev_offset: entry.maglev_offset,
+                    };
+                    self.maps.upsert_service(key, value).map_err(|e| {
+                        Status::internal(format!("Failed to upsert service: {}", e))
+                    })?;
+                }
+                IpAddr::V6(v6) => {
+                    let key = ServiceKeyV6 {
+                        ip: v6.octets(),
+                        port: entry.port as u16,
+                        protocol: entry.protocol as u8,
+                        scope: entry.scope as u8,
+                    };
+                    let value = ServiceValue {
+                        backend_count: entry.backend_count as u16,
+                        backend_offset: entry.backend_offset as u16,
+                        algorithm: entry.algorithm as u8,
+                        flags: entry.flags as u8,
+                        affinity_timeout: entry.affinity_timeout as u16,
+                        maglev_offset: entry.maglev_offset,
+                    };
+                    self.maps.upsert_service_v6(key, value).map_err(|e| {
+                        Status::internal(format!("Failed to upsert service v6: {}", e))
+                    })?;
+                }
+            }
         }
 
         // Insert all backends.
         for entry in &req.backends {
-            let value = BackendValue {
-                ip: entry.ip,
-                port: entry.port as u16,
-                _pad: [0; 2],
-                node_ip: entry.node_ip,
-            };
+            let ip = parse_ip(&entry.ip)?;
+            let node_ip = parse_ip(&entry.node_ip)?;
 
-            self.maps.upsert_backend(entry.index, value).map_err(|e| {
-                Status::internal(format!(
-                    "Failed to upsert backend at index {}: {}",
-                    entry.index, e
-                ))
-            })?;
+            match (ip, node_ip) {
+                (IpAddr::V4(v4), IpAddr::V4(node_v4)) => {
+                    let value = BackendValue {
+                        ip: u32::from(v4),
+                        port: entry.port as u16,
+                        _pad: [0; 2],
+                        node_ip: u32::from(node_v4),
+                    };
+                    self.maps.upsert_backend(entry.index, value).map_err(|e| {
+                        Status::internal(format!(
+                            "Failed to upsert backend at index {}: {}",
+                            entry.index, e
+                        ))
+                    })?;
+                }
+                (IpAddr::V6(v6), IpAddr::V6(node_v6)) => {
+                    let value = BackendValueV6 {
+                        ip: v6.octets(),
+                        port: entry.port as u16,
+                        _pad: [0; 2],
+                        node_ip: node_v6.octets(),
+                    };
+                    self.maps
+                        .upsert_backend_v6(entry.index, value)
+                        .map_err(|e| {
+                            Status::internal(format!(
+                                "Failed to upsert backend v6 at index {}: {}",
+                                entry.index, e
+                            ))
+                        })?;
+                }
+                _ => {
+                    return Err(Status::invalid_argument(format!(
+                        "backend at index {}: ip and node_ip must be the same address family",
+                        entry.index
+                    )));
+                }
+            }
         }
 
         let services_synced = req.services.len() as u32;
@@ -536,21 +742,37 @@ impl proto::dataplane_control_server::DataplaneControl for DataplaneService {
     ) -> Result<Response<proto::UpsertTunnelResponse>, Status> {
         let req = request.into_inner();
 
-        let key = TunnelKey {
-            node_ip: req.node_ip,
-        };
-        let value = TunnelValue {
-            ifindex: req.tunnel_ifindex,
-            remote_ip: req.node_ip,
-            vni: req.vni,
-        };
+        let node_ip = parse_ip(&req.node_ip)?;
 
-        self.maps
-            .upsert_tunnel(key, value)
-            .map_err(|e| Status::internal(format!("Failed to upsert tunnel: {}", e)))?;
+        match node_ip {
+            IpAddr::V4(v4) => {
+                let ip_u32 = u32::from(v4);
+                let key = TunnelKey { node_ip: ip_u32 };
+                let value = TunnelValue {
+                    ifindex: req.tunnel_ifindex,
+                    remote_ip: ip_u32,
+                    vni: req.vni,
+                };
+                self.maps
+                    .upsert_tunnel(key, value)
+                    .map_err(|e| Status::internal(format!("Failed to upsert tunnel: {}", e)))?;
+            }
+            IpAddr::V6(v6) => {
+                let octets = v6.octets();
+                let key = TunnelKeyV6 { node_ip: octets };
+                let value = TunnelValueV6 {
+                    ifindex: req.tunnel_ifindex,
+                    remote_ip: octets,
+                    vni: req.vni,
+                };
+                self.maps
+                    .upsert_tunnel_v6(key, value)
+                    .map_err(|e| Status::internal(format!("Failed to upsert tunnel v6: {}", e)))?;
+            }
+        }
 
         debug!(
-            node_ip = req.node_ip,
+            node_ip = %req.node_ip,
             ifindex = req.tunnel_ifindex,
             vni = req.vni,
             "Upserted tunnel"
@@ -564,15 +786,29 @@ impl proto::dataplane_control_server::DataplaneControl for DataplaneService {
         request: Request<proto::DeleteTunnelRequest>,
     ) -> Result<Response<proto::DeleteTunnelResponse>, Status> {
         let req = request.into_inner();
-        let key = TunnelKey {
-            node_ip: req.node_ip,
-        };
 
-        self.maps
-            .delete_tunnel(&key)
-            .map_err(|e| Status::internal(format!("Failed to delete tunnel: {}", e)))?;
+        let node_ip = parse_ip(&req.node_ip)?;
 
-        debug!(node_ip = req.node_ip, "Deleted tunnel");
+        match node_ip {
+            IpAddr::V4(v4) => {
+                let key = TunnelKey {
+                    node_ip: u32::from(v4),
+                };
+                self.maps
+                    .delete_tunnel(&key)
+                    .map_err(|e| Status::internal(format!("Failed to delete tunnel: {}", e)))?;
+            }
+            IpAddr::V6(v6) => {
+                let key = TunnelKeyV6 {
+                    node_ip: v6.octets(),
+                };
+                self.maps
+                    .delete_tunnel_v6(&key)
+                    .map_err(|e| Status::internal(format!("Failed to delete tunnel v6: {}", e)))?;
+            }
+        }
+
+        debug!(node_ip = %req.node_ip, "Deleted tunnel");
 
         Ok(Response::new(proto::DeleteTunnelResponse {}))
     }
@@ -752,7 +988,7 @@ impl proto::dataplane_control_server::DataplaneControl for DataplaneService {
         // Derive identity for the CIDR.
         let identity = identity_for_cidr(&req.cidr_ip, req.cidr_prefix_len);
 
-        // Insert CIDR → identity into IPCache.
+        // Insert CIDR -> identity into IPCache.
         let ipcache_key = cidr_to_ipcache_key(&req.cidr_ip, req.cidr_prefix_len)?;
         self.maps
             .upsert_ipcache(ipcache_key, IPCacheValue { identity, flags: 0 })
@@ -789,7 +1025,7 @@ impl proto::dataplane_control_server::DataplaneControl for DataplaneService {
             policy_keys.push(key);
         }
 
-        // Track rule_id → key mapping for deletion.
+        // Track rule_id -> key mapping for deletion.
         {
             let mut rules = self.host_rules.write().expect("host_rules lock poisoned");
             rules.insert(
@@ -886,7 +1122,7 @@ impl proto::dataplane_control_server::DataplaneControl for DataplaneService {
 
             let identity = identity_for_cidr(&entry.cidr_ip, entry.cidr_prefix_len);
 
-            // Insert CIDR → identity into IPCache.
+            // Insert CIDR -> identity into IPCache.
             let ipcache_key = match cidr_to_ipcache_key(&entry.cidr_ip, entry.cidr_prefix_len) {
                 Ok(k) => k,
                 Err(_) => continue,

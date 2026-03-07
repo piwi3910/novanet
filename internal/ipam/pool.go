@@ -12,6 +12,10 @@ import (
 // ErrInvalidIPAddress is returned when an IP address string cannot be parsed.
 var ErrInvalidIPAddress = errors.New("invalid IP address")
 
+// maxCIDRSize caps the bitmap size for both IPv4 and IPv6 CIDRs.
+// A /108 IPv6 gives 1M addresses; a /12 IPv4 gives 1M addresses.
+const maxCIDRSize = 1 << 20
+
 // Pool manages a set of IP addresses from one or more CIDRs and/or explicit
 // addresses. It uses Bitmap-based tracking for CIDR ranges and a map for
 // discrete addresses. All operations are thread-safe.
@@ -36,10 +40,11 @@ type Pool struct {
 // cidrRange tracks a single CIDR within a pool.
 type cidrRange struct {
 	network   *net.IPNet
-	baseIP    net.IP
+	baseIP    net.IP // 4-byte for IPv4, 16-byte for IPv6
 	size      int
 	bitmap    *Bitmap
 	prefixLen int
+	ipLen     int // 4 for IPv4, 16 for IPv6
 }
 
 // NewPool creates a pool from the given configuration.
@@ -73,6 +78,8 @@ func NewPool(cfg PoolConfig) (*Pool, error) {
 }
 
 // parseCIDRRange parses a CIDR string into a cidrRange with bitmap.
+// Supports both IPv4 and IPv6 CIDRs. The maximum subnet size is capped
+// at maxCIDRSize to prevent excessive memory usage.
 func parseCIDRRange(cidr string) (cidrRange, error) {
 	_, network, err := net.ParseCIDR(cidr)
 	if err != nil {
@@ -80,18 +87,29 @@ func parseCIDRRange(cidr string) (cidrRange, error) {
 	}
 
 	ones, bits := network.Mask.Size()
-	if bits != 32 {
-		return cidrRange{}, fmt.Errorf("%w: got %d-bit mask", ErrIPv4Only, bits)
+	hostBits := bits - ones
+	if hostBits > 20 {
+		return cidrRange{}, fmt.Errorf("%w: %s has %d host bits (max 20, %d addresses)", ErrCIDRTooLarge, cidr, hostBits, maxCIDRSize)
 	}
+	size := 1 << hostBits
 
-	size := 1 << (bits - ones)
+	// Normalize base IP to the correct length.
+	var baseIP net.IP
+	ipLen := 4
+	if bits == 128 {
+		baseIP = network.IP.To16()
+		ipLen = 16
+	} else {
+		baseIP = network.IP.To4()
+	}
 
 	cr := cidrRange{
 		network:   network,
-		baseIP:    network.IP.To4(),
+		baseIP:    baseIP,
 		size:      size,
 		bitmap:    NewBitmap(size),
 		prefixLen: ones,
+		ipLen:     ipLen,
 	}
 
 	return cr, nil
@@ -122,7 +140,7 @@ func (p *Pool) Allocate(owner, resource string) (net.IP, error) {
 			continue
 		}
 		cr.bitmap.Set(idx)
-		ip := indexToIP(cr.baseIP, idx)
+		ip := indexToIP(cr.baseIP, idx, cr.ipLen)
 		p.allocations[ip.String()] = AllocationInfo{
 			IP:        ip,
 			Owner:     owner,
@@ -155,11 +173,8 @@ func (p *Pool) AllocateSpecific(ip net.IP, owner, resource string) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	ip4 := ip.To4()
-	if ip4 == nil {
-		return ErrIPv4Only
-	}
-	ipStr := ip4.String()
+	ipNorm := normalizeIP(ip)
+	ipStr := ipNorm.String()
 
 	// Check discrete addresses.
 	if allocated, ok := p.discreteAddrs[ipStr]; ok {
@@ -168,7 +183,7 @@ func (p *Pool) AllocateSpecific(ip net.IP, owner, resource string) error {
 		}
 		p.discreteAddrs[ipStr] = true
 		p.allocations[ipStr] = AllocationInfo{
-			IP:        ip4,
+			IP:        ipNorm,
 			Owner:     owner,
 			Resource:  resource,
 			Timestamp: time.Now(),
@@ -179,10 +194,10 @@ func (p *Pool) AllocateSpecific(ip net.IP, owner, resource string) error {
 	// Check CIDR ranges.
 	for i := range p.ranges {
 		cr := &p.ranges[i]
-		if !cr.network.Contains(ip4) {
+		if !cr.network.Contains(ipNorm) {
 			continue
 		}
-		idx := ipToIndex(cr.baseIP, ip4)
+		idx := ipToIndex(cr.baseIP, ipNorm, cr.ipLen)
 		if idx < 0 || idx >= cr.size {
 			return fmt.Errorf("%w: %s", ErrIPOutOfRange, ipStr)
 		}
@@ -191,7 +206,7 @@ func (p *Pool) AllocateSpecific(ip net.IP, owner, resource string) error {
 		}
 		cr.bitmap.Set(idx)
 		p.allocations[ipStr] = AllocationInfo{
-			IP:        ip4,
+			IP:        ipNorm,
 			Owner:     owner,
 			Resource:  resource,
 			Timestamp: time.Now(),
@@ -207,11 +222,8 @@ func (p *Pool) Release(ip net.IP) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	ip4 := ip.To4()
-	if ip4 == nil {
-		return ErrIPv4Only
-	}
-	ipStr := ip4.String()
+	ipNorm := normalizeIP(ip)
+	ipStr := ipNorm.String()
 
 	if _, ok := p.allocations[ipStr]; !ok {
 		return fmt.Errorf("%w: %s", ErrIPNotAllocated, ipStr)
@@ -227,10 +239,10 @@ func (p *Pool) Release(ip net.IP) error {
 	// Release from CIDR ranges.
 	for i := range p.ranges {
 		cr := &p.ranges[i]
-		if !cr.network.Contains(ip4) {
+		if !cr.network.Contains(ipNorm) {
 			continue
 		}
-		idx := ipToIndex(cr.baseIP, ip4)
+		idx := ipToIndex(cr.baseIP, ipNorm, cr.ipLen)
 		if idx >= 0 && idx < cr.size {
 			cr.bitmap.Clear(idx)
 			delete(p.allocations, ipStr)
@@ -248,11 +260,8 @@ func (p *Pool) IsAvailable(ip net.IP) bool {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	ip4 := ip.To4()
-	if ip4 == nil {
-		return false
-	}
-	ipStr := ip4.String()
+	ipNorm := normalizeIP(ip)
+	ipStr := ipNorm.String()
 
 	// Check discrete addresses.
 	if allocated, ok := p.discreteAddrs[ipStr]; ok {
@@ -262,10 +271,10 @@ func (p *Pool) IsAvailable(ip net.IP) bool {
 	// Check CIDR ranges.
 	for i := range p.ranges {
 		cr := &p.ranges[i]
-		if !cr.network.Contains(ip4) {
+		if !cr.network.Contains(ipNorm) {
 			continue
 		}
-		idx := ipToIndex(cr.baseIP, ip4)
+		idx := ipToIndex(cr.baseIP, ipNorm, cr.ipLen)
 		if idx >= 0 && idx < cr.size {
 			return !cr.bitmap.Get(idx)
 		}
@@ -276,17 +285,14 @@ func (p *Pool) IsAvailable(ip net.IP) bool {
 
 // Contains checks if the given IP belongs to this pool (regardless of allocation state).
 func (p *Pool) Contains(ip net.IP) bool {
-	ip4 := ip.To4()
-	if ip4 == nil {
-		return false
-	}
-	ipStr := ip4.String()
+	ipNorm := normalizeIP(ip)
+	ipStr := ipNorm.String()
 
 	if _, ok := p.discreteAddrs[ipStr]; ok {
 		return true
 	}
 	for i := range p.ranges {
-		if p.ranges[i].network.Contains(ip4) {
+		if p.ranges[i].network.Contains(ipNorm) {
 			return true
 		}
 	}
@@ -319,22 +325,45 @@ func (p *Pool) Status() PoolStatus {
 	}
 }
 
+// normalizeIP returns ip.To4() if it's an IPv4 address, otherwise ip.To16().
+func normalizeIP(ip net.IP) net.IP {
+	if ip4 := ip.To4(); ip4 != nil {
+		return ip4
+	}
+	return ip.To16()
+}
+
 // indexToIP converts a bitmap index to an IP address relative to a base IP.
-func indexToIP(baseIP net.IP, idx int) net.IP {
-	base := big.NewInt(0).SetBytes(baseIP.To4())
+// ipLen must be 4 (IPv4) or 16 (IPv6).
+func indexToIP(baseIP net.IP, idx int, ipLen int) net.IP {
+	base := new(big.Int).SetBytes(baseIP)
 	offset := big.NewInt(int64(idx))
-	result := big.NewInt(0).Add(base, offset)
+	result := new(big.Int).Add(base, offset)
 
 	b := result.Bytes()
-	ip := make(net.IP, 4)
-	copy(ip[4-len(b):], b)
+	ip := make(net.IP, ipLen)
+	// Right-align the bytes in the IP slice.
+	copy(ip[ipLen-len(b):], b)
 	return ip
 }
 
 // ipToIndex converts an IP address to a bitmap index relative to a base IP.
-func ipToIndex(baseIP, ip net.IP) int {
-	base := big.NewInt(0).SetBytes(baseIP.To4())
-	addr := big.NewInt(0).SetBytes(ip.To4())
-	offset := big.NewInt(0).Sub(addr, base)
+// ipLen must be 4 (IPv4) or 16 (IPv6).
+func ipToIndex(baseIP, ip net.IP, ipLen int) int {
+	// Normalize both to the correct length.
+	var baseBytes, ipBytes []byte
+	if ipLen == 4 {
+		baseBytes = baseIP.To4()
+		ipBytes = ip.To4()
+	} else {
+		baseBytes = baseIP.To16()
+		ipBytes = ip.To16()
+	}
+	if baseBytes == nil || ipBytes == nil {
+		return -1
+	}
+	base := new(big.Int).SetBytes(baseBytes)
+	addr := new(big.Int).SetBytes(ipBytes)
+	offset := new(big.Int).Sub(addr, base)
 	return int(offset.Int64())
 }

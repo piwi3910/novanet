@@ -2,10 +2,8 @@ package service
 
 import (
 	"context"
-	"encoding/binary"
 	"errors"
 	"fmt"
-	"net"
 	"strings"
 	"sync"
 
@@ -53,6 +51,7 @@ type serviceState struct {
 	algorithm     uint32
 	maglevOffset  uint32 // only if algorithm == maglev
 	scopes        []uint32
+	clusterIPs    []string // all ClusterIPs (dual-stack: one IPv4 + one IPv6)
 }
 
 // Watcher watches Kubernetes Services and EndpointSlices, translating
@@ -208,6 +207,26 @@ func (w *Watcher) onEndpointSliceChange(obj any) {
 	w.reconcileService(svc)
 }
 
+// serviceClusterIPs returns the list of ClusterIPs for a service,
+// supporting dual-stack. Falls back to the singular ClusterIP field
+// if ClusterIPs is not populated.
+func serviceClusterIPs(svc *corev1.Service) []string {
+	if len(svc.Spec.ClusterIPs) > 0 {
+		// Filter out empty strings and "None".
+		var ips []string
+		for _, ip := range svc.Spec.ClusterIPs {
+			if ip != "" && ip != "None" {
+				ips = append(ips, ip)
+			}
+		}
+		return ips
+	}
+	if svc.Spec.ClusterIP != "" && svc.Spec.ClusterIP != "None" {
+		return []string{svc.Spec.ClusterIP}
+	}
+	return nil
+}
+
 // freeOldState releases dataplane resources for a previously-reconciled service.
 func (w *Watcher) freeOldState(ctx context.Context, svc *corev1.Service, old *serviceState) {
 	if old.backendCount > 0 {
@@ -216,20 +235,19 @@ func (w *Watcher) freeOldState(ctx context.Context, svc *corev1.Service, old *se
 	if old.algorithm == algMaglev && old.maglevOffset > 0 {
 		w.maglevAllocator.Free(old.maglevOffset, MaglevTableSize)
 	}
-	// Delete old service map entries.
+	// Delete old service map entries for every tracked ClusterIP.
 	for _, scope := range old.scopes {
 		for _, port := range svc.Spec.Ports {
 			proto := protocolToNumber(port.Protocol)
-			ip := uint32(0)
-			if scope == scopeClusterIP || scope == scopeExternalIP || scope == scopeLoadBalancer {
-				ip = ipToU32(svc.Spec.ClusterIP)
+			for _, clusterIP := range old.clusterIPs {
+				ip := w.serviceIPForScope(clusterIP, scope, "")
+				_, _ = w.dpClient.DeleteService(ctx, &pb.DeleteServiceRequest{
+					Ip:       ip,
+					Port:     w.servicePortForScope(port, scope),
+					Protocol: proto,
+					Scope:    scope,
+				})
 			}
-			_, _ = w.dpClient.DeleteService(ctx, &pb.DeleteServiceRequest{
-				Ip:       ip,
-				Port:     portToU32(port.Port),
-				Protocol: proto,
-				Scope:    scope,
-			})
 		}
 	}
 }
@@ -243,9 +261,9 @@ func (w *Watcher) pushBackends(ctx context.Context, key string, offset uint32, b
 			idx := offset + intToU32(portIdx*len(backends)+i)
 			pbBackends = append(pbBackends, &pb.BackendEntry{
 				Index:  idx,
-				Ip:     ipToU32(be.ip),
+				Ip:     be.ip,
 				Port:   targetPort,
-				NodeIp: ipToU32(be.nodeIP),
+				NodeIp: be.nodeIP,
 			})
 		}
 	}
@@ -260,41 +278,45 @@ func (w *Watcher) pushBackends(ctx context.Context, key string, offset uint32, b
 	}
 }
 
-// upsertServiceEntries creates or updates dataplane service map entries for all scopes and ports.
-func (w *Watcher) upsertServiceEntries(ctx context.Context, key string, svc *corev1.Service, offset uint32, backends []backendInfo, alg, maglevOff uint32, scopes []uint32) {
+// upsertServiceEntries creates or updates dataplane service map entries for all scopes, ports, and ClusterIPs.
+func (w *Watcher) upsertServiceEntries(ctx context.Context, key string, svc *corev1.Service, clusterIPs []string, offset uint32, backends []backendInfo, alg, maglevOff uint32, scopes []uint32) {
 	for portIdx, port := range svc.Spec.Ports {
 		proto := protocolToNumber(port.Protocol)
 		portBackendOffset := offset + intToU32(portIdx*len(backends))
 		portBackendCount := intToU32(len(backends))
 
 		for _, scope := range scopes {
-			ip := w.serviceIPForScope(svc, scope, "")
-			req := &pb.UpsertServiceRequest{
-				Ip:              ip,
-				Port:            w.servicePortForScope(port, scope),
-				Protocol:        proto,
-				Scope:           scope,
-				BackendCount:    portBackendCount,
-				BackendOffset:   portBackendOffset,
-				Algorithm:       alg,
-				Flags:           w.computeFlags(svc),
-				AffinityTimeout: w.computeAffinityTimeout(svc),
-				MaglevOffset:    maglevOff,
-			}
-			_, err := w.dpClient.UpsertService(ctx, req)
-			if err != nil {
-				w.logger.Error("failed to upsert service",
-					zap.String("service", key),
-					zap.Uint32("scope", scope),
-					zap.Error(err),
-				)
+			// For ClusterIP scope, create one entry per ClusterIP (dual-stack).
+			for _, clusterIP := range clusterIPs {
+				ip := w.serviceIPForScope(clusterIP, scope, "")
+				req := &pb.UpsertServiceRequest{
+					Ip:              ip,
+					Port:            w.servicePortForScope(port, scope),
+					Protocol:        proto,
+					Scope:           scope,
+					BackendCount:    portBackendCount,
+					BackendOffset:   portBackendOffset,
+					Algorithm:       alg,
+					Flags:           w.computeFlags(svc),
+					AffinityTimeout: w.computeAffinityTimeout(svc),
+					MaglevOffset:    maglevOff,
+				}
+				_, err := w.dpClient.UpsertService(ctx, req)
+				if err != nil {
+					w.logger.Error("failed to upsert service",
+						zap.String("service", key),
+						zap.String("clusterIP", clusterIP),
+						zap.Uint32("scope", scope),
+						zap.Error(err),
+					)
+				}
 			}
 		}
 
 		// For ExternalIP scope, create one entry per external IP.
 		for _, extIP := range svc.Spec.ExternalIPs {
 			req := &pb.UpsertServiceRequest{
-				Ip:              ipToU32(extIP),
+				Ip:              extIP,
 				Port:            portToU32(port.Port),
 				Protocol:        proto,
 				Scope:           scopeExternalIP,
@@ -322,7 +344,7 @@ func (w *Watcher) upsertServiceEntries(ctx context.Context, key string, svc *cor
 					continue
 				}
 				req := &pb.UpsertServiceRequest{
-					Ip:              ipToU32(ingress.IP),
+					Ip:              ingress.IP,
 					Port:            portToU32(port.Port),
 					Protocol:        proto,
 					Scope:           scopeLoadBalancer,
@@ -353,8 +375,11 @@ func (w *Watcher) reconcileService(svc *corev1.Service) {
 	key := svc.Namespace + "/" + svc.Name
 	ctx := context.Background()
 
-	// Skip headless services (ClusterIP == "None").
-	if svc.Spec.ClusterIP == "" || svc.Spec.ClusterIP == "None" {
+	// Get all ClusterIPs (dual-stack aware).
+	clusterIPs := serviceClusterIPs(svc)
+
+	// Skip headless services (no ClusterIPs).
+	if len(clusterIPs) == 0 {
 		// If we had state, clean it up.
 		if _, exists := w.services[key]; exists {
 			w.deleteServiceLocked(svc)
@@ -369,6 +394,7 @@ func (w *Watcher) reconcileService(svc *corev1.Service) {
 		zap.String("service", key),
 		zap.Int("backends", len(backends)),
 		zap.Int("ports", len(svc.Spec.Ports)),
+		zap.Strings("clusterIPs", clusterIPs),
 	)
 
 	// Determine algorithm.
@@ -430,8 +456,8 @@ func (w *Watcher) reconcileService(svc *corev1.Service) {
 	// Determine which scopes to create.
 	scopes := w.computeScopes(svc)
 
-	// Upsert service map entries.
-	w.upsertServiceEntries(ctx, key, svc, offset, backends, alg, maglevOff, scopes)
+	// Upsert service map entries for all ClusterIPs (dual-stack).
+	w.upsertServiceEntries(ctx, key, svc, clusterIPs, offset, backends, alg, maglevOff, scopes)
 
 	// Save state.
 	w.services[key] = &serviceState{
@@ -440,12 +466,14 @@ func (w *Watcher) reconcileService(svc *corev1.Service) {
 		algorithm:     alg,
 		maglevOffset:  maglevOff,
 		scopes:        scopes,
+		clusterIPs:    clusterIPs,
 	}
 
 	w.logger.Info("reconciled service",
 		zap.String("service", key),
 		zap.Int("backends", len(backends)),
 		zap.Uint32("offset", offset),
+		zap.Strings("clusterIPs", clusterIPs),
 	)
 }
 
@@ -464,17 +492,19 @@ func (w *Watcher) deleteServiceLocked(svc *corev1.Service) {
 		return
 	}
 
-	// Delete all service map entries.
+	// Delete all service map entries for every tracked ClusterIP.
 	for _, scope := range state.scopes {
 		for _, port := range svc.Spec.Ports {
 			proto := protocolToNumber(port.Protocol)
-			ip := w.serviceIPForScope(svc, scope, "")
-			_, _ = w.dpClient.DeleteService(ctx, &pb.DeleteServiceRequest{
-				Ip:       ip,
-				Port:     w.servicePortForScope(port, scope),
-				Protocol: proto,
-				Scope:    scope,
-			})
+			for _, clusterIP := range state.clusterIPs {
+				ip := w.serviceIPForScope(clusterIP, scope, "")
+				_, _ = w.dpClient.DeleteService(ctx, &pb.DeleteServiceRequest{
+					Ip:       ip,
+					Port:     w.servicePortForScope(port, scope),
+					Protocol: proto,
+					Scope:    scope,
+				})
+			}
 		}
 
 		// Delete ExternalIP entries.
@@ -482,7 +512,7 @@ func (w *Watcher) deleteServiceLocked(svc *corev1.Service) {
 			for _, extIP := range svc.Spec.ExternalIPs {
 				for _, port := range svc.Spec.Ports {
 					_, _ = w.dpClient.DeleteService(ctx, &pb.DeleteServiceRequest{
-						Ip:       ipToU32(extIP),
+						Ip:       extIP,
 						Port:     portToU32(port.Port),
 						Protocol: protocolToNumber(port.Protocol),
 						Scope:    scopeExternalIP,
@@ -499,7 +529,7 @@ func (w *Watcher) deleteServiceLocked(svc *corev1.Service) {
 				}
 				for _, port := range svc.Spec.Ports {
 					_, _ = w.dpClient.DeleteService(ctx, &pb.DeleteServiceRequest{
-						Ip:       ipToU32(ingress.IP),
+						Ip:       ingress.IP,
 						Port:     portToU32(port.Port),
 						Protocol: protocolToNumber(port.Protocol),
 						Scope:    scopeLoadBalancer,
@@ -531,6 +561,7 @@ type backendInfo struct {
 }
 
 // collectBackends gathers all ready backend endpoints for a service from EndpointSlices.
+// EndpointSlice addresses already include both IPv4 and IPv6 addresses for dual-stack pods.
 func (w *Watcher) collectBackends(svc *corev1.Service) []backendInfo {
 	if w.epsStore == nil {
 		return nil
@@ -558,6 +589,10 @@ func (w *Watcher) collectBackends(svc *corev1.Service) []backendInfo {
 			for _, addr := range ep.Addresses {
 				be := backendInfo{
 					ip: addr,
+				}
+				// Capture node IP if available.
+				if ep.NodeName != nil {
+					be.nodeIP = *ep.NodeName
 				}
 				// Capture port info from the EndpointSlice ports.
 				if len(eps.Ports) > 0 && eps.Ports[0].Port != nil {
@@ -606,24 +641,28 @@ func (w *Watcher) computeScopes(svc *corev1.Service) []uint32 {
 	return scopes
 }
 
-func (w *Watcher) serviceIPForScope(svc *corev1.Service, scope uint32, specificIP string) uint32 {
+// serviceIPForScope returns the IP string to use in the dataplane service map
+// for a given scope and ClusterIP. For NodePort scope, an empty string is
+// returned (wildcard). For scopes that use a specific IP (ExternalIP,
+// LoadBalancer), specificIP overrides if non-empty.
+func (w *Watcher) serviceIPForScope(clusterIP string, scope uint32, specificIP string) string {
 	switch scope {
 	case scopeClusterIP:
-		return ipToU32(svc.Spec.ClusterIP)
+		return clusterIP
 	case scopeNodePort:
-		return 0 // wildcard for NodePort
+		return "" // wildcard for NodePort
 	case scopeExternalIP:
 		if specificIP != "" {
-			return ipToU32(specificIP)
+			return specificIP
 		}
-		return ipToU32(svc.Spec.ClusterIP)
+		return clusterIP
 	case scopeLoadBalancer:
 		if specificIP != "" {
-			return ipToU32(specificIP)
+			return specificIP
 		}
-		return ipToU32(svc.Spec.ClusterIP)
+		return clusterIP
 	default:
-		return ipToU32(svc.Spec.ClusterIP)
+		return clusterIP
 	}
 }
 
@@ -684,18 +723,6 @@ func intToU32(n int) uint32 {
 		return 0
 	}
 	return uint32(n) //nolint:gosec // bounds-checked above
-}
-
-func ipToU32(ipStr string) uint32 {
-	ip := net.ParseIP(ipStr)
-	if ip == nil {
-		return 0
-	}
-	ip4 := ip.To4()
-	if ip4 == nil {
-		return 0
-	}
-	return binary.BigEndian.Uint32(ip4)
 }
 
 func protocolToNumber(proto corev1.Protocol) uint32 {
@@ -784,19 +811,22 @@ func (w *Watcher) ListTrackedServices() []*pb.ServiceInfo {
 			backendStrs[i] = fmt.Sprintf("%s:%d", be.ip, be.port)
 		}
 
-		for _, port := range svc.Spec.Ports {
-			for _, scope := range state.scopes {
-				info := &pb.ServiceInfo{
-					ClusterIp:    svc.Spec.ClusterIP,
-					Port:         portToU32(port.Port),
-					Protocol:     string(port.Protocol),
-					Scope:        scopeName(scope),
-					BackendCount: intToU32(len(backends)),
-					Algorithm:    algName(state.algorithm),
-					Backends:     backendStrs,
-					Dsr:          w.dsrEnabled,
+		// Report one ServiceInfo per ClusterIP (dual-stack) per port per scope.
+		for _, clusterIP := range state.clusterIPs {
+			for _, port := range svc.Spec.Ports {
+				for _, scope := range state.scopes {
+					info := &pb.ServiceInfo{
+						ClusterIp:    clusterIP,
+						Port:         portToU32(port.Port),
+						Protocol:     string(port.Protocol),
+						Scope:        scopeName(scope),
+						BackendCount: intToU32(len(backends)),
+						Algorithm:    algName(state.algorithm),
+						Backends:     backendStrs,
+						Dsr:          w.dsrEnabled,
+					}
+					result = append(result, info)
 				}
-				result = append(result, info)
 			}
 		}
 	}

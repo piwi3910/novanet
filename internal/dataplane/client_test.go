@@ -44,7 +44,7 @@ func TestClientNotConnected(t *testing.T) {
 		t.Fatal("expected error when not connected")
 	}
 
-	err = c.DeleteEndpoint(ctx, 0)
+	err = c.DeleteEndpoint(ctx, "")
 	if err == nil {
 		t.Fatal("expected error when not connected")
 	}
@@ -64,12 +64,12 @@ func TestClientNotConnected(t *testing.T) {
 		t.Fatal("expected error when not connected")
 	}
 
-	err = c.UpsertTunnel(ctx, 0, 0, 0)
+	err = c.UpsertTunnel(ctx, "", 0, 0)
 	if err == nil {
 		t.Fatal("expected error when not connected")
 	}
 
-	err = c.DeleteTunnel(ctx, 0)
+	err = c.DeleteTunnel(ctx, "")
 	if err == nil {
 		t.Fatal("expected error when not connected")
 	}
@@ -242,13 +242,13 @@ func TestUpsertEndpoint(t *testing.T) {
 	defer func() { _ = c.Close() }()
 
 	err := c.UpsertEndpoint(context.Background(), &Endpoint{
-		IP:         0x0AF40102,
+		IP:         "10.244.1.2",
 		Ifindex:    42,
 		MAC:        net.HardwareAddr{0x02, 0x00, 0x00, 0x01, 0x02, 0x03},
 		IdentityID: 100,
 		PodName:    "web-1",
 		Namespace:  "default",
-		NodeIP:     0x0A000001,
+		NodeIP:     "10.0.0.1",
 	})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -264,7 +264,7 @@ func TestDeleteEndpoint(t *testing.T) {
 	c := connectTestClient(t, addr)
 	defer func() { _ = c.Close() }()
 
-	err := c.DeleteEndpoint(context.Background(), 0x0AF40102)
+	err := c.DeleteEndpoint(context.Background(), "10.244.1.2")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -344,7 +344,7 @@ func TestUpsertTunnel(t *testing.T) {
 	c := connectTestClient(t, addr)
 	defer func() { _ = c.Close() }()
 
-	err := c.UpsertTunnel(context.Background(), 0x0A000002, 10, 100)
+	err := c.UpsertTunnel(context.Background(), "10.0.0.2", 10, 100)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -359,7 +359,7 @@ func TestDeleteTunnel(t *testing.T) {
 	c := connectTestClient(t, addr)
 	defer func() { _ = c.Close() }()
 
-	err := c.DeleteTunnel(context.Background(), 0x0A000002)
+	err := c.DeleteTunnel(context.Background(), "10.0.0.2")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

@@ -13,8 +13,7 @@ import (
 
 // Sentinel errors for the IPAM allocator.
 var (
-	ErrIPv4Only         = errors.New("only IPv4 is supported")
-	ErrCIDRTooSmall     = errors.New("CIDR is too small (need at least /30)")
+	ErrCIDRTooSmall     = errors.New("CIDR is too small (need at least /30 for IPv4 or /127 for IPv6)")
 	ErrNoFreeAddresses  = errors.New("no free IP addresses")
 	ErrIPOutsideCIDR    = errors.New("IP is not within CIDR")
 	ErrIPOutOfRange     = errors.New("IP is out of range")
@@ -23,18 +22,21 @@ var (
 	ErrReleaseNetwork   = errors.New("cannot release network address")
 	ErrReleaseGateway   = errors.New("cannot release gateway address")
 	ErrReleaseBroadcast = errors.New("cannot release broadcast address")
+	ErrCIDRTooLarge     = errors.New("CIDR too large")
 )
 
 // Allocator manages a pool of IP addresses within a single CIDR.
 // It uses a Bitmap for efficient allocation tracking.
 // When stateDir is set, allocations are persisted as files so that the
 // bitmap can be rebuilt after an agent restart.
+// Supports both IPv4 and IPv6 CIDRs. The maximum subnet size is capped
+// at maxCIDRSize to prevent excessive memory usage.
 type Allocator struct {
 	mu sync.Mutex
 
 	// network is the parsed CIDR network.
 	network *net.IPNet
-	// baseIP is the network address as a 4-byte IP.
+	// baseIP is the network address (4-byte for IPv4, 16-byte for IPv6).
 	baseIP net.IP
 	// size is the total number of IPs in the CIDR.
 	size int
@@ -44,13 +46,19 @@ type Allocator struct {
 	used int
 	// prefixLen is the CIDR prefix length.
 	prefixLen int
+	// ipLen is 4 for IPv4 or 16 for IPv6.
+	ipLen int
+	// isIPv4 is true for IPv4 CIDRs, false for IPv6.
+	isIPv4 bool
 	// stateDir is the directory for persisting IP allocations.
 	// Empty string means in-memory only.
 	stateDir string
 }
 
 // NewAllocator creates a new IPAM allocator for the given PodCIDR.
-// The network address (.0) and gateway address (.1) are automatically reserved.
+// For IPv4, the network address (.0), gateway address (.1), and broadcast
+// address are automatically reserved.
+// For IPv6, only the network address (::0) is reserved.
 func NewAllocator(podCIDR string) (*Allocator, error) {
 	return NewAllocatorWithStateDir(podCIDR, "")
 }
@@ -58,46 +66,65 @@ func NewAllocator(podCIDR string) (*Allocator, error) {
 // NewAllocatorWithStateDir creates an IPAM allocator that persists allocations
 // to the given directory. If stateDir is empty, the allocator is in-memory only.
 // On startup, existing files in stateDir are loaded to rebuild the bitmap.
+// Supports both IPv4 and IPv6 CIDRs with a maximum of 20 host bits
+// (up to 1M addresses).
 func NewAllocatorWithStateDir(podCIDR, stateDir string) (*Allocator, error) {
-	ip, network, err := net.ParseCIDR(podCIDR)
+	_, network, err := net.ParseCIDR(podCIDR)
 	if err != nil {
 		return nil, fmt.Errorf("parsing podCIDR %q: %w", podCIDR, err)
 	}
 
-	// Only support IPv4 for now.
-	ip4 := ip.To4()
-	if ip4 == nil {
-		return nil, fmt.Errorf("%w: got %q", ErrIPv4Only, podCIDR)
-	}
-
 	ones, bits := network.Mask.Size()
-	if bits != 32 {
-		return nil, fmt.Errorf("%w: got %d-bit mask", ErrIPv4Only, bits)
+	hostBits := bits - ones
+	if hostBits > 20 {
+		return nil, fmt.Errorf("%w: %s has %d host bits (max 20, %d addresses)", ErrCIDRTooLarge, podCIDR, hostBits, maxCIDRSize)
 	}
 
-	size := 1 << (bits - ones)
-	if size < 4 {
+	size := 1 << hostBits
+	isIPv4 := bits == 32
+
+	if isIPv4 && size < 4 {
 		return nil, fmt.Errorf("%w: %q", ErrCIDRTooSmall, podCIDR)
+	}
+	if !isIPv4 && size < 2 {
+		return nil, fmt.Errorf("%w: %q", ErrCIDRTooSmall, podCIDR)
+	}
+
+	var baseIP net.IP
+	ipLen := 4
+	if !isIPv4 {
+		baseIP = network.IP.To16()
+		ipLen = 16
+	} else {
+		baseIP = network.IP.To4()
 	}
 
 	a := &Allocator{
 		network:   network,
-		baseIP:    network.IP.To4(),
+		baseIP:    baseIP,
 		size:      size,
 		bitmap:    NewBitmap(size),
 		prefixLen: ones,
+		ipLen:     ipLen,
+		isIPv4:    isIPv4,
 		stateDir:  stateDir,
 	}
 
-	// Reserve .0 (network address) and .1 (gateway).
-	a.bitmap.Set(0)
-	a.bitmap.Set(1)
-	a.used = 2
+	if isIPv4 {
+		// Reserve .0 (network address) and .1 (gateway).
+		a.bitmap.Set(0)
+		a.bitmap.Set(1)
+		a.used = 2
 
-	// Reserve broadcast address for /24 and larger.
-	if size > 2 {
-		a.bitmap.Set(size - 1)
-		a.used = 3
+		// Reserve broadcast address for /24 and larger.
+		if size > 2 {
+			a.bitmap.Set(size - 1)
+			a.used = 3
+		}
+	} else {
+		// For IPv6, reserve ::0 (subnet-router anycast address).
+		a.bitmap.Set(0)
+		a.used = 1
 	}
 
 	// Restore allocations from disk.
@@ -145,16 +172,13 @@ func (a *Allocator) AllocateSpecific(ip net.IP) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
-	ip4 := ip.To4()
-	if ip4 == nil {
-		return ErrIPv4Only
-	}
+	ipNorm := normalizeIP(ip)
 
-	if !a.network.Contains(ip4) {
+	if !a.network.Contains(ipNorm) {
 		return fmt.Errorf("%w: %s in %s", ErrIPOutsideCIDR, ip.String(), a.network.String())
 	}
 
-	idx := a.allocatorIPToIndex(ip4)
+	idx := a.allocatorIPToIndex(ipNorm)
 	if idx < 0 || idx >= a.size {
 		return fmt.Errorf("%w: %s", ErrIPOutOfRange, ip.String())
 	}
@@ -167,7 +191,7 @@ func (a *Allocator) AllocateSpecific(ip net.IP) error {
 	a.used++
 
 	if a.stateDir != "" {
-		if err := a.saveIP(ip4); err != nil {
+		if err := a.saveIP(ipNorm); err != nil {
 			a.bitmap.Clear(idx)
 			a.used--
 			return fmt.Errorf("persisting IP %s: %w", ip, err)
@@ -182,29 +206,29 @@ func (a *Allocator) Release(ip net.IP) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
-	ip4 := ip.To4()
-	if ip4 == nil {
-		return ErrIPv4Only
-	}
+	ipNorm := normalizeIP(ip)
 
-	if !a.network.Contains(ip4) {
+	if !a.network.Contains(ipNorm) {
 		return fmt.Errorf("%w: %s in %s", ErrIPOutsideCIDR, ip.String(), a.network.String())
 	}
 
-	idx := a.allocatorIPToIndex(ip4)
+	idx := a.allocatorIPToIndex(ipNorm)
 	if idx < 0 || idx >= a.size {
 		return fmt.Errorf("%w: %s", ErrIPOutOfRange, ip.String())
 	}
 
 	// Prevent releasing reserved addresses.
+	// Both IPv4 and IPv6 reserve index 0 (network/anycast address).
 	if idx == 0 {
 		return fmt.Errorf("%w: %s", ErrReleaseNetwork, ip.String())
 	}
-	if idx == 1 {
-		return fmt.Errorf("%w: %s", ErrReleaseGateway, ip.String())
-	}
-	if idx == a.size-1 {
-		return fmt.Errorf("%w: %s", ErrReleaseBroadcast, ip.String())
+	if a.isIPv4 {
+		if idx == 1 {
+			return fmt.Errorf("%w: %s", ErrReleaseGateway, ip.String())
+		}
+		if idx == a.size-1 {
+			return fmt.Errorf("%w: %s", ErrReleaseBroadcast, ip.String())
+		}
 	}
 
 	if !a.bitmap.Get(idx) {
@@ -215,7 +239,7 @@ func (a *Allocator) Release(ip net.IP) error {
 	a.used--
 
 	if a.stateDir != "" {
-		a.removeIP(ip4)
+		a.removeIP(ipNorm)
 	}
 
 	return nil
@@ -229,14 +253,14 @@ func (a *Allocator) Used() int {
 }
 
 // Available returns the number of IPs available for allocation.
-// This excludes the reserved .0, .1, and broadcast addresses.
+// This excludes reserved addresses.
 func (a *Allocator) Available() int {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	return a.size - a.used
 }
 
-// Gateway returns the gateway IP (.1 of the CIDR).
+// Gateway returns the gateway IP (.1 of the CIDR for IPv4, ::1 for IPv6).
 func (a *Allocator) Gateway() net.IP {
 	return a.allocatorIndexToIP(1)
 }
@@ -266,11 +290,11 @@ func (a *Allocator) loadState() error {
 		if ip == nil {
 			continue // Skip non-IP filenames.
 		}
-		ip4 := ip.To4()
-		if ip4 == nil || !a.network.Contains(ip4) {
+		ipNorm := normalizeIP(ip)
+		if !a.network.Contains(ipNorm) {
 			continue // Skip IPs outside our CIDR.
 		}
-		idx := a.allocatorIPToIndex(ip4)
+		idx := a.allocatorIPToIndex(ipNorm)
 		if idx < 0 || idx >= a.size {
 			continue
 		}
@@ -302,10 +326,10 @@ func (a *Allocator) removeIP(ip net.IP) {
 
 // allocatorIPToIndex converts an IP address to a bitmap index for this allocator.
 func (a *Allocator) allocatorIPToIndex(ip net.IP) int {
-	return ipToIndex(a.baseIP, ip.To4())
+	return ipToIndex(a.baseIP, ip, a.ipLen)
 }
 
 // allocatorIndexToIP converts a bitmap index to an IP address for this allocator.
 func (a *Allocator) allocatorIndexToIP(idx int) net.IP {
-	return indexToIP(a.baseIP, idx)
+	return indexToIP(a.baseIP, idx, a.ipLen)
 }

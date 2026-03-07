@@ -5,6 +5,8 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/binary"
 	"errors"
 	"flag"
 	"fmt"
@@ -218,7 +220,7 @@ type agentServer struct {
 // egressMapKey identifies an entry in the eBPF EGRESS_POLICIES map.
 type egressMapKey struct {
 	srcIdentity  uint32
-	dstCidrIP    uint32
+	dstCidr      string // CIDR string, e.g. "10.0.0.0/24" or "fd00::/64"
 	dstPrefixLen uint32
 }
 
@@ -308,13 +310,13 @@ func (s *agentServer) AddPod(ctx context.Context, req *pb.AddPodRequest) (*pb.Ad
 	// Push endpoint to dataplane eBPF maps.
 	if s.dpClient != nil && s.dpConnected.Load() {
 		dpReq := &pb.UpsertEndpointRequest{
-			Ip:         ipToUint32(podIP),
+			Ip:         podIP.String(),
 			Ifindex:    uint32(ifindex), //nolint:gosec // ifindex from kernel, always small positive
 			Mac:        mac,
 			IdentityId: identityID,
 			PodName:    req.PodName,
 			Namespace:  req.PodNamespace,
-			NodeIp:     ipToUint32(s.nodeIP),
+			NodeIp:     s.nodeIP.String(),
 		}
 		if _, err := s.dpClient.UpsertEndpoint(ctx, dpReq); err != nil {
 			s.logger.Warn("failed to push endpoint to dataplane",
@@ -414,7 +416,7 @@ func (s *agentServer) DelPod(ctx context.Context, req *pb.DelPodRequest) (*pb.De
 	// Remove endpoint from dataplane.
 	if s.dpClient != nil && s.dpConnected.Load() {
 		dpReq := &pb.DeleteEndpointRequest{
-			Ip: ipToUint32(ep.IP),
+			Ip: ep.IP.String(),
 		}
 		if _, err := s.dpClient.DeleteEndpoint(ctx, dpReq); err != nil {
 			s.logger.Warn("failed to remove endpoint from dataplane",
@@ -684,12 +686,8 @@ func (s *agentServer) syncEgressRules(rules []*policy.CompiledRule) {
 			continue
 		}
 
-		cidrIP := cidrNet.IP.To4()
-		if cidrIP == nil {
-			continue // skip IPv6
-		}
 		ones, _ := cidrNet.Mask.Size()
-		cidrIPu32 := ipToUint32(cidrIP)
+		cidrStr := cidrNet.String() // canonical CIDR string
 
 		action := pb.EgressAction_EGRESS_ACTION_DENY
 		if r.Action == policy.ActionAllow {
@@ -698,7 +696,7 @@ func (s *agentServer) syncEgressRules(rules []*policy.CompiledRule) {
 
 		key := egressMapKey{
 			srcIdentity:  r.SrcIdentity,
-			dstCidrIP:    cidrIPu32,
+			dstCidr:      cidrStr,
 			dstPrefixLen: uint32(ones), //nolint:gosec // CIDR prefix 0-128
 		}
 		newKeys[key] = true
@@ -721,19 +719,19 @@ func (s *agentServer) syncEgressRules(rules []*policy.CompiledRule) {
 
 		// Push to eBPF dataplane.
 		// Include the node IP as SNAT target so eBPF can perform masquerade.
-		var snatIP uint32
+		var snatIPStr string
 		if s.egressMgr != nil && s.egressMgr.IsMasqueradeEnabled() {
-			snatIP = ipToUint32(s.nodeIP.To4())
+			snatIPStr = s.nodeIP.String()
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		_, err = s.dpClient.UpsertEgressPolicy(ctx, &pb.UpsertEgressPolicyRequest{
 			SrcIdentity:      r.SrcIdentity,
-			DstCidrIp:        cidrIPu32,
+			DstCidr:          cidrStr,
 			DstCidrPrefixLen: uint32(ones), //nolint:gosec // CIDR prefix 0-128
 			Protocol:         uint32(r.Protocol),
 			DstPort:          uint32(r.DstPort),
 			Action:           action,
-			SnatIp:           snatIP,
+			SnatIp:           snatIPStr,
 		})
 		cancel()
 		if err != nil {
@@ -750,14 +748,14 @@ func (s *agentServer) syncEgressRules(rules []*policy.CompiledRule) {
 				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 				_, err := s.dpClient.DeleteEgressPolicy(ctx, &pb.DeleteEgressPolicyRequest{
 					SrcIdentity:      oldKey.srcIdentity,
-					DstCidrIp:        oldKey.dstCidrIP,
+					DstCidr:          oldKey.dstCidr,
 					DstCidrPrefixLen: oldKey.dstPrefixLen,
 				})
 				cancel()
 				if err != nil {
 					s.logger.Warn("failed to delete stale egress policy from dataplane",
 						zap.Uint32("src_identity", oldKey.srcIdentity),
-						zap.Uint32("dst_ip", oldKey.dstCidrIP),
+						zap.String("dst_cidr", oldKey.dstCidr),
 						zap.Error(err))
 				}
 			}
@@ -767,14 +765,10 @@ func (s *agentServer) syncEgressRules(rules []*policy.CompiledRule) {
 
 	// Clean egress manager rules that no longer exist.
 	for _, existing := range s.egressMgr.GetRules() {
-		cidrIP := existing.DstCIDR.IP.To4()
-		if cidrIP == nil {
-			continue
-		}
 		ones, _ := existing.DstCIDR.Mask.Size()
 		key := egressMapKey{
 			srcIdentity:  existing.SrcIdentity,
-			dstCidrIP:    ipToUint32(cidrIP),
+			dstCidr:      existing.DstCIDR.String(),
 			dstPrefixLen: uint32(ones), //nolint:gosec // CIDR prefix 0-128
 		}
 		if !newKeys[key] {
@@ -866,16 +860,8 @@ func upsertRemoteEndpoint(ctx context.Context, logger *zap.Logger,
 	if podIP == nil {
 		return false
 	}
-	podIP = podIP.To4()
-	if podIP == nil {
-		return false // skip IPv6
-	}
 
 	hostIP := net.ParseIP(pod.Status.HostIP)
-	if hostIP == nil {
-		return false
-	}
-	hostIP = hostIP.To4()
 	if hostIP == nil {
 		return false
 	}
@@ -891,13 +877,13 @@ func upsertRemoteEndpoint(ctx context.Context, logger *zap.Logger,
 	identityID := identity.HashLabels(labels)
 
 	req := &pb.UpsertEndpointRequest{
-		Ip:         ipToUint32(podIP),
+		Ip:         podIP.String(),
 		Ifindex:    0,                        // Remote pod — no local interface.
 		Mac:        []byte{0, 0, 0, 0, 0, 0}, // Remote pod — zero MAC (not used for policy).
 		IdentityId: identityID,
 		PodName:    pod.Name,
 		Namespace:  pod.Namespace,
-		NodeIp:     ipToUint32(hostIP),
+		NodeIp:     hostIP.String(),
 	}
 
 	callCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
@@ -928,16 +914,12 @@ func deleteRemoteEndpoint(ctx context.Context, logger *zap.Logger,
 	if podIP == nil {
 		return false
 	}
-	podIP = podIP.To4()
-	if podIP == nil {
-		return false
-	}
 
 	callCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
 	if _, err := dpClient.DeleteEndpoint(callCtx, &pb.DeleteEndpointRequest{
-		Ip: ipToUint32(podIP),
+		Ip: podIP.String(),
 	}); err != nil {
 		logger.Debug("failed to remove remote endpoint",
 			zap.String("pod", pod.Namespace+"/"+pod.Name),
@@ -1257,15 +1239,11 @@ func resolveNodeParams(logger *zap.Logger, k8sClient *kubernetes.Clientset, para
 	}
 }
 
-// parseNodeIP parses and validates the node IP string as an IPv4 address.
+// parseNodeIP parses and validates the node IP string (IPv4 or IPv6).
 func parseNodeIP(logger *zap.Logger, nodeIPStr string) net.IP {
 	nodeIP := net.ParseIP(nodeIPStr)
 	if nodeIP == nil {
 		logger.Fatal("invalid --node-ip", zap.String("value", nodeIPStr))
-	}
-	nodeIP = nodeIP.To4()
-	if nodeIP == nil {
-		logger.Fatal("--node-ip must be an IPv4 address", zap.String("value", nodeIPStr))
 	}
 	return nodeIP
 }
@@ -1679,9 +1657,11 @@ func initNativeMode(ctx context.Context, logger *zap.Logger, cfg *config.Config,
 	// Start the reconciliation loop.
 	routingMgr.Start(ctx)
 
-	// Compute per-node eBGP AS: 65000 + last octet of node IP.
-	lastOctet := uint32(nodeIP.To4()[3])
-	localAS := uint32(65000) + lastOctet
+	// Compute per-node eBGP AS: 65000 + last byte of node IP.
+	// For IPv4, this is the last octet. For IPv6, the last byte of the 16-byte form.
+	ipBytes := nodeIP.To16()
+	lastByte := uint32(ipBytes[len(ipBytes)-1])
+	localAS := uint32(65000) + lastByte
 	routerID := nodeIP.String()
 
 	routingMgr.ConfigureBGP(localAS, routerID)
@@ -1937,13 +1917,19 @@ func pushDataplaneConfig(ctx context.Context, logger *zap.Logger, client pb.Data
 		entries[configKeyTunnelType] = tunnelVXL
 	}
 
-	// Node IP.
-	entries[configKeyNodeIP] = uint64(ipToUint32(nodeIP))
+	// Node IP — the eBPF config map stores IPv4 as a uint32 in a uint64 slot.
+	// For IPv6, the Rust dataplane uses separate CONFIG_KEY_NODE_IPV6_HI/LO keys
+	// which are pushed by the dataplane itself; we only push IPv4 here.
+	if ip4 := nodeIP.To4(); ip4 != nil {
+		entries[configKeyNodeIP] = uint64(binary.BigEndian.Uint32(ip4))
+	}
 
 	// Cluster CIDR.
 	clusterIP, clusterNet, err := net.ParseCIDR(cfg.ClusterCIDR)
 	if err == nil {
-		entries[configKeyClusterCIDRIP] = uint64(ipToUint32(clusterIP.To4()))
+		if cip4 := clusterIP.To4(); cip4 != nil {
+			entries[configKeyClusterCIDRIP] = uint64(binary.BigEndian.Uint32(cip4))
+		}
 		ones, _ := clusterNet.Mask.Size()
 		entries[configKeyClusterCIDRPL] = uint64(ones) //nolint:gosec // CIDR prefix 0-128
 	}
@@ -1951,7 +1937,9 @@ func pushDataplaneConfig(ctx context.Context, logger *zap.Logger, client pb.Data
 	// Pod CIDR.
 	podIP, podNet, err := net.ParseCIDR(podCIDR)
 	if err == nil {
-		entries[configKeyPodCIDRIP] = uint64(ipToUint32(podIP.To4()))
+		if pip4 := podIP.To4(); pip4 != nil {
+			entries[configKeyPodCIDRIP] = uint64(binary.BigEndian.Uint32(pip4))
+		}
 		ones, _ := podNet.Mask.Size()
 		entries[configKeyPodCIDRPL] = uint64(ones) //nolint:gosec // CIDR prefix 0-128
 	}
@@ -2032,7 +2020,9 @@ func watchNodesNative(ctx context.Context, logger *zap.Logger, k8sClient *kubern
 				continue
 			}
 
-			// Compute remote node's eBGP AS: 65000 + last octet.
+			// Compute remote node's eBGP AS: 65000 + last byte of IP.
+			// For IPv4, this is the last octet. For IPv6, the last byte of
+			// the 16-byte representation.
 			parsedIP := net.ParseIP(remoteIP)
 			if parsedIP == nil {
 				logger.Warn("invalid remote node IP, skipping",
@@ -2040,11 +2030,8 @@ func watchNodesNative(ctx context.Context, logger *zap.Logger, k8sClient *kubern
 					zap.String("remote_ip", remoteIP))
 				continue
 			}
-			ip := parsedIP.To4()
-			if ip == nil {
-				continue // IPv6 node, skip eBGP peering.
-			}
-			remoteAS := uint32(65000) + uint32(ip[3])
+			ipBytes := parsedIP.To16()
+			remoteAS := uint32(65000) + uint32(ipBytes[len(ipBytes)-1])
 
 			if err := routingMgr.ApplyPeer(remoteIP, remoteAS, bfdOpts); err != nil {
 				logger.Error("failed to apply BGP peer",
@@ -2203,7 +2190,7 @@ func (nw *nodeWatcherState) ensureTunnel(nodeName, nodeIP, podCIDR string, parse
 	// Register with dataplane.
 	if nw.dpClient != nil {
 		_, err := nw.dpClient.UpsertTunnel(nw.ctx, &pb.UpsertTunnelRequest{
-			NodeIp:        ipToUint32(parsedNodeIP),
+			NodeIp:        parsedNodeIP.String(),
 			TunnelIfindex: uint32(tunnelInfo.Ifindex), //nolint:gosec // ifindex from kernel
 			Vni:           1,
 		})
@@ -2259,9 +2246,9 @@ func (nw *nodeWatcherState) cleanupStaleTunnels(seen map[string]bool) {
 		}
 
 		// Remove dataplane entry.
-		if nw.dpClient != nil && net.ParseIP(t.NodeIP) != nil {
+		if nw.dpClient != nil && t.NodeIP != "" {
 			if _, err := nw.dpClient.DeleteTunnel(nw.ctx, &pb.DeleteTunnelRequest{
-				NodeIp: ipToUint32(net.ParseIP(t.NodeIP)),
+				NodeIp: t.NodeIP,
 			}); err != nil {
 				nw.logger.Warn("failed to delete tunnel from dataplane",
 					zap.Error(err), zap.String("node", t.NodeName))
@@ -2306,7 +2293,7 @@ const (
 
 // flowTuple identifies a TCP connection direction.
 type flowTuple struct {
-	srcIP, dstIP     uint32
+	srcIP, dstIP     string
 	srcPort, dstPort uint32
 }
 
@@ -2419,24 +2406,34 @@ func updateTCPMetrics(flow *pb.FlowEvent, pending map[flowTuple]time.Time) {
 	}
 }
 
-// ipToUint32 delegates to tunnel.IPToUint32 for IPv4→uint32 conversion.
-func ipToUint32(ip net.IP) uint32 {
-	return tunnel.IPToUint32(ip)
-}
-
 // generateMAC creates a deterministic locally-administered MAC address from
-// an IPv4 address. The first byte has the locally-administered bit set.
+// an IP address. For IPv4, the 4 address bytes are used directly. For IPv6,
+// a SHA-256 hash is computed and the last 4 bytes are used.
+// The first byte always has the locally-administered bit set.
 func generateMAC(ip net.IP) net.HardwareAddr {
 	ip4 := ip.To4()
-	if ip4 == nil {
+	if ip4 != nil {
+		return net.HardwareAddr{
+			0x02, // locally administered, unicast
+			0xfe,
+			ip4[0],
+			ip4[1],
+			ip4[2],
+			ip4[3],
+		}
+	}
+	// IPv6: hash the full address and use 4 bytes from the hash.
+	ip16 := ip.To16()
+	if ip16 == nil {
 		return net.HardwareAddr{0x02, 0x00, 0x00, 0x00, 0x00, 0x00}
 	}
+	h := sha256.Sum256(ip16)
 	return net.HardwareAddr{
 		0x02, // locally administered, unicast
 		0xfe,
-		ip4[0],
-		ip4[1],
-		ip4[2],
-		ip4[3],
+		h[28],
+		h[29],
+		h[30],
+		h[31],
 	}
 }

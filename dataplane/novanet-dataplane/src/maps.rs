@@ -70,6 +70,28 @@ impl MapManager {
         }
     }
 
+    // -- Endpoint V6 operations --
+
+    pub fn upsert_endpoint_v6(
+        &self,
+        key: EndpointKeyV6,
+        value: EndpointValueV6,
+    ) -> anyhow::Result<()> {
+        match &self.inner {
+            MapManagerInner::Mock(m) => m.upsert_endpoint_v6(key, value),
+            #[cfg(target_os = "linux")]
+            MapManagerInner::Real(m) => m.upsert_endpoint_v6(key, value),
+        }
+    }
+
+    pub fn delete_endpoint_v6(&self, key: &EndpointKeyV6) -> anyhow::Result<()> {
+        match &self.inner {
+            MapManagerInner::Mock(m) => m.delete_endpoint_v6(key),
+            #[cfg(target_os = "linux")]
+            MapManagerInner::Real(m) => m.delete_endpoint_v6(key),
+        }
+    }
+
     // -- Policy operations --
 
     pub fn upsert_policy(&self, key: PolicyKey, value: PolicyValue) -> anyhow::Result<()> {
@@ -145,6 +167,24 @@ impl MapManager {
         }
     }
 
+    // -- Tunnel V6 operations --
+
+    pub fn upsert_tunnel_v6(&self, key: TunnelKeyV6, value: TunnelValueV6) -> anyhow::Result<()> {
+        match &self.inner {
+            MapManagerInner::Mock(m) => m.upsert_tunnel_v6(key, value),
+            #[cfg(target_os = "linux")]
+            MapManagerInner::Real(m) => m.upsert_tunnel_v6(key, value),
+        }
+    }
+
+    pub fn delete_tunnel_v6(&self, key: &TunnelKeyV6) -> anyhow::Result<()> {
+        match &self.inner {
+            MapManagerInner::Mock(m) => m.delete_tunnel_v6(key),
+            #[cfg(target_os = "linux")]
+            MapManagerInner::Real(m) => m.delete_tunnel_v6(key),
+        }
+    }
+
     // -- Config operations --
 
     pub fn update_config(&self, entries: StdHashMap<u32, u64>) -> anyhow::Result<()> {
@@ -181,6 +221,28 @@ impl MapManager {
         }
     }
 
+    // -- Egress V6 operations --
+
+    pub fn upsert_egress_policy_v6(
+        &self,
+        key: EgressKeyV6,
+        value: EgressValueV6,
+    ) -> anyhow::Result<()> {
+        match &self.inner {
+            MapManagerInner::Mock(m) => m.upsert_egress_policy_v6(key, value),
+            #[cfg(target_os = "linux")]
+            MapManagerInner::Real(m) => m.upsert_egress_policy_v6(key, value),
+        }
+    }
+
+    pub fn delete_egress_policy_v6(&self, key: &EgressKeyV6) -> anyhow::Result<()> {
+        match &self.inner {
+            MapManagerInner::Mock(m) => m.delete_egress_policy_v6(key),
+            #[cfg(target_os = "linux")]
+            MapManagerInner::Real(m) => m.delete_egress_policy_v6(key),
+        }
+    }
+
     // -- Service operations --
 
     pub fn upsert_service(&self, key: ServiceKey, value: ServiceValue) -> anyhow::Result<()> {
@@ -212,6 +274,34 @@ impl MapManager {
             MapManagerInner::Mock(m) => m.upsert_backend(index, value),
             #[cfg(target_os = "linux")]
             MapManagerInner::Real(m) => m.upsert_backend(index, value),
+        }
+    }
+
+    // -- Service V6 operations --
+
+    pub fn upsert_service_v6(&self, key: ServiceKeyV6, value: ServiceValue) -> anyhow::Result<()> {
+        match &self.inner {
+            MapManagerInner::Mock(m) => m.upsert_service_v6(key, value),
+            #[cfg(target_os = "linux")]
+            MapManagerInner::Real(m) => m.upsert_service_v6(key, value),
+        }
+    }
+
+    pub fn delete_service_v6(&self, key: &ServiceKeyV6) -> anyhow::Result<()> {
+        match &self.inner {
+            MapManagerInner::Mock(m) => m.delete_service_v6(key),
+            #[cfg(target_os = "linux")]
+            MapManagerInner::Real(m) => m.delete_service_v6(key),
+        }
+    }
+
+    // -- Backend V6 operations --
+
+    pub fn upsert_backend_v6(&self, index: u32, value: BackendValueV6) -> anyhow::Result<()> {
+        match &self.inner {
+            MapManagerInner::Mock(m) => m.upsert_backend_v6(index, value),
+            #[cfg(target_os = "linux")]
+            MapManagerInner::Real(m) => m.upsert_backend_v6(index, value),
         }
     }
 
@@ -423,12 +513,17 @@ pub enum AttachDirection {
 
 struct MockMaps {
     endpoints: RwLock<StdHashMap<u32, EndpointValue>>,
+    endpoints_v6: RwLock<StdHashMap<[u8; 16], EndpointValueV6>>,
     policies: RwLock<StdHashMap<PolicyKeyFlat, PolicyValue>>,
     tunnels: RwLock<StdHashMap<u32, TunnelValue>>,
+    tunnels_v6: RwLock<StdHashMap<[u8; 16], TunnelValueV6>>,
     config: RwLock<StdHashMap<u32, u64>>,
     egress: RwLock<StdHashMap<EgressKeyFlat, EgressValue>>,
+    egress_v6: RwLock<StdHashMap<EgressKeyV6Flat, EgressValueV6>>,
     services: RwLock<StdHashMap<ServiceKeyFlat, ServiceValue>>,
+    services_v6: RwLock<StdHashMap<ServiceKeyV6Flat, ServiceValue>>,
     backends: RwLock<StdHashMap<u32, BackendValue>>,
+    backends_v6: RwLock<StdHashMap<u32, BackendValueV6>>,
     maglev: RwLock<StdHashMap<u32, u32>>,
     attached: RwLock<Vec<AttachedProgramInfo>>,
     next_prog_id: RwLock<u32>,
@@ -485,6 +580,24 @@ impl From<&EgressKey> for EgressKeyFlat {
     }
 }
 
+/// Flattened IPv6 egress key for use as HashMap key (needs Hash + Eq).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+struct EgressKeyV6Flat {
+    src_identity: u32,
+    dst_ip: [u8; 16],
+    dst_prefix_len: u8,
+}
+
+impl From<&EgressKeyV6> for EgressKeyV6Flat {
+    fn from(k: &EgressKeyV6) -> Self {
+        Self {
+            src_identity: k.src_identity,
+            dst_ip: k.dst_ip,
+            dst_prefix_len: k.dst_prefix_len,
+        }
+    }
+}
+
 /// Flattened service key for use as HashMap key (needs Hash + Eq).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 struct ServiceKeyFlat {
@@ -496,6 +609,26 @@ struct ServiceKeyFlat {
 
 impl From<&ServiceKey> for ServiceKeyFlat {
     fn from(k: &ServiceKey) -> Self {
+        Self {
+            ip: k.ip,
+            port: k.port,
+            protocol: k.protocol,
+            scope: k.scope,
+        }
+    }
+}
+
+/// Flattened IPv6 service key for use as HashMap key (needs Hash + Eq).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+struct ServiceKeyV6Flat {
+    ip: [u8; 16],
+    port: u16,
+    protocol: u8,
+    scope: u8,
+}
+
+impl From<&ServiceKeyV6> for ServiceKeyV6Flat {
+    fn from(k: &ServiceKeyV6) -> Self {
         Self {
             ip: k.ip,
             port: k.port,
@@ -531,12 +664,17 @@ impl MockMaps {
     fn new() -> Self {
         Self {
             endpoints: RwLock::new(StdHashMap::new()),
+            endpoints_v6: RwLock::new(StdHashMap::new()),
             policies: RwLock::new(StdHashMap::new()),
             tunnels: RwLock::new(StdHashMap::new()),
+            tunnels_v6: RwLock::new(StdHashMap::new()),
             config: RwLock::new(StdHashMap::new()),
             egress: RwLock::new(StdHashMap::new()),
+            egress_v6: RwLock::new(StdHashMap::new()),
             services: RwLock::new(StdHashMap::new()),
+            services_v6: RwLock::new(StdHashMap::new()),
             backends: RwLock::new(StdHashMap::new()),
+            backends_v6: RwLock::new(StdHashMap::new()),
             maglev: RwLock::new(StdHashMap::new()),
             attached: RwLock::new(Vec::new()),
             next_prog_id: RwLock::new(1),
@@ -572,6 +710,24 @@ impl MockMaps {
             .read()
             .expect("endpoints lock poisoned")
             .len()
+    }
+
+    fn upsert_endpoint_v6(&self, key: EndpointKeyV6, value: EndpointValueV6) -> anyhow::Result<()> {
+        debug!(identity = value.identity, "mock: upsert endpoint v6");
+        self.endpoints_v6
+            .write()
+            .expect("endpoints_v6 lock poisoned")
+            .insert(key.ip, value);
+        Ok(())
+    }
+
+    fn delete_endpoint_v6(&self, key: &EndpointKeyV6) -> anyhow::Result<()> {
+        debug!("mock: delete endpoint v6");
+        self.endpoints_v6
+            .write()
+            .expect("endpoints_v6 lock poisoned")
+            .remove(&key.ip);
+        Ok(())
     }
 
     fn upsert_policy(&self, key: PolicyKey, value: PolicyValue) -> anyhow::Result<()> {
@@ -686,6 +842,24 @@ impl MockMaps {
         self.tunnels.read().expect("tunnels lock poisoned").len()
     }
 
+    fn upsert_tunnel_v6(&self, key: TunnelKeyV6, value: TunnelValueV6) -> anyhow::Result<()> {
+        debug!(vni = value.vni, "mock: upsert tunnel v6");
+        self.tunnels_v6
+            .write()
+            .expect("tunnels_v6 lock poisoned")
+            .insert(key.node_ip, value);
+        Ok(())
+    }
+
+    fn delete_tunnel_v6(&self, key: &TunnelKeyV6) -> anyhow::Result<()> {
+        debug!("mock: delete tunnel v6");
+        self.tunnels_v6
+            .write()
+            .expect("tunnels_v6 lock poisoned")
+            .remove(&key.node_ip);
+        Ok(())
+    }
+
     fn update_config(&self, entries: StdHashMap<u32, u64>) -> anyhow::Result<()> {
         let mut config = self.config.write().expect("config lock poisoned");
         for (k, v) in entries {
@@ -734,6 +908,38 @@ impl MockMaps {
         Ok(())
     }
 
+    fn upsert_egress_policy_v6(
+        &self,
+        key: EgressKeyV6,
+        value: EgressValueV6,
+    ) -> anyhow::Result<()> {
+        debug!(
+            src_identity = key.src_identity,
+            prefix_len = key.dst_prefix_len,
+            action = value.action,
+            "mock: upsert egress policy v6"
+        );
+        let flat: EgressKeyV6Flat = (&key).into();
+        self.egress_v6
+            .write()
+            .expect("egress_v6 lock poisoned")
+            .insert(flat, value);
+        Ok(())
+    }
+
+    fn delete_egress_policy_v6(&self, key: &EgressKeyV6) -> anyhow::Result<()> {
+        debug!(
+            src_identity = key.src_identity,
+            "mock: delete egress policy v6"
+        );
+        let flat: EgressKeyV6Flat = key.into();
+        self.egress_v6
+            .write()
+            .expect("egress_v6 lock poisoned")
+            .remove(&flat);
+        Ok(())
+    }
+
     fn upsert_service(&self, key: ServiceKey, value: ServiceValue) -> anyhow::Result<()> {
         debug!(
             ip = key.ip,
@@ -774,6 +980,40 @@ impl MockMaps {
         self.backends
             .write()
             .expect("backends lock poisoned")
+            .insert(index, value);
+        Ok(())
+    }
+
+    fn upsert_service_v6(&self, key: ServiceKeyV6, value: ServiceValue) -> anyhow::Result<()> {
+        debug!(
+            port = key.port,
+            protocol = key.protocol,
+            scope = key.scope,
+            "mock: upsert service v6"
+        );
+        let flat: ServiceKeyV6Flat = (&key).into();
+        self.services_v6
+            .write()
+            .expect("services_v6 lock poisoned")
+            .insert(flat, value);
+        Ok(())
+    }
+
+    fn delete_service_v6(&self, key: &ServiceKeyV6) -> anyhow::Result<()> {
+        debug!(port = key.port, "mock: delete service v6");
+        let flat: ServiceKeyV6Flat = key.into();
+        self.services_v6
+            .write()
+            .expect("services_v6 lock poisoned")
+            .remove(&flat);
+        Ok(())
+    }
+
+    fn upsert_backend_v6(&self, index: u32, value: BackendValueV6) -> anyhow::Result<()> {
+        debug!(index = index, port = value.port, "mock: upsert backend v6");
+        self.backends_v6
+            .write()
+            .expect("backends_v6 lock poisoned")
             .insert(index, value);
         Ok(())
     }
@@ -1514,12 +1754,18 @@ mod tests {
 #[cfg(target_os = "linux")]
 pub struct RealMaps {
     endpoints: RwLock<aya::maps::HashMap<aya::maps::MapData, EndpointKey, EndpointValue>>,
+    endpoints_v6:
+        Option<RwLock<aya::maps::HashMap<aya::maps::MapData, EndpointKeyV6, EndpointValueV6>>>,
     policies: RwLock<aya::maps::HashMap<aya::maps::MapData, PolicyKey, PolicyValue>>,
     tunnels: RwLock<aya::maps::HashMap<aya::maps::MapData, TunnelKey, TunnelValue>>,
+    tunnels_v6: Option<RwLock<aya::maps::HashMap<aya::maps::MapData, TunnelKeyV6, TunnelValueV6>>>,
     config: RwLock<aya::maps::HashMap<aya::maps::MapData, u32, u64>>,
     egress: RwLock<aya::maps::HashMap<aya::maps::MapData, EgressKey, EgressValue>>,
+    egress_v6: Option<RwLock<aya::maps::HashMap<aya::maps::MapData, EgressKeyV6, EgressValueV6>>>,
     services: RwLock<aya::maps::HashMap<aya::maps::MapData, ServiceKey, ServiceValue>>,
+    services_v6: Option<RwLock<aya::maps::HashMap<aya::maps::MapData, ServiceKeyV6, ServiceValue>>>,
     backends: RwLock<aya::maps::Array<aya::maps::MapData, BackendValue>>,
+    backends_v6: Option<RwLock<aya::maps::Array<aya::maps::MapData, BackendValueV6>>>,
     maglev: RwLock<aya::maps::Array<aya::maps::MapData, u32>>,
     drop_counters: RwLock<aya::maps::PerCpuArray<aya::maps::MapData, u64>>,
     ipcache:
@@ -1545,12 +1791,19 @@ impl RealMaps {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         endpoints: aya::maps::HashMap<aya::maps::MapData, EndpointKey, EndpointValue>,
+        endpoints_v6: Option<
+            aya::maps::HashMap<aya::maps::MapData, EndpointKeyV6, EndpointValueV6>,
+        >,
         policies: aya::maps::HashMap<aya::maps::MapData, PolicyKey, PolicyValue>,
         tunnels: aya::maps::HashMap<aya::maps::MapData, TunnelKey, TunnelValue>,
+        tunnels_v6: Option<aya::maps::HashMap<aya::maps::MapData, TunnelKeyV6, TunnelValueV6>>,
         config: aya::maps::HashMap<aya::maps::MapData, u32, u64>,
         egress: aya::maps::HashMap<aya::maps::MapData, EgressKey, EgressValue>,
+        egress_v6: Option<aya::maps::HashMap<aya::maps::MapData, EgressKeyV6, EgressValueV6>>,
         services: aya::maps::HashMap<aya::maps::MapData, ServiceKey, ServiceValue>,
+        services_v6: Option<aya::maps::HashMap<aya::maps::MapData, ServiceKeyV6, ServiceValue>>,
         backends: aya::maps::Array<aya::maps::MapData, BackendValue>,
+        backends_v6: Option<aya::maps::Array<aya::maps::MapData, BackendValueV6>>,
         maglev: aya::maps::Array<aya::maps::MapData, u32>,
         drop_counters: aya::maps::PerCpuArray<aya::maps::MapData, u64>,
         ipcache: Option<aya::maps::lpm_trie::LpmTrie<aya::maps::MapData, IPCacheKey, IPCacheValue>>,
@@ -1561,12 +1814,17 @@ impl RealMaps {
     ) -> Self {
         Self {
             endpoints: RwLock::new(endpoints),
+            endpoints_v6: endpoints_v6.map(RwLock::new),
             policies: RwLock::new(policies),
             tunnels: RwLock::new(tunnels),
+            tunnels_v6: tunnels_v6.map(RwLock::new),
             config: RwLock::new(config),
             egress: RwLock::new(egress),
+            egress_v6: egress_v6.map(RwLock::new),
             services: RwLock::new(services),
+            services_v6: services_v6.map(RwLock::new),
             backends: RwLock::new(backends),
+            backends_v6: backends_v6.map(RwLock::new),
             maglev: RwLock::new(maglev),
             drop_counters: RwLock::new(drop_counters),
             ipcache: ipcache.map(RwLock::new),
@@ -1596,6 +1854,28 @@ impl RealMaps {
     fn endpoint_count(&self) -> usize {
         let map = self.endpoints.read().expect("endpoints lock poisoned");
         map.iter().count()
+    }
+
+    fn upsert_endpoint_v6(&self, key: EndpointKeyV6, value: EndpointValueV6) -> anyhow::Result<()> {
+        debug!(identity = value.identity, "upsert endpoint v6");
+        let map_lock = self
+            .endpoints_v6
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("ENDPOINTS_V6 map not loaded"))?;
+        let mut map = map_lock.write().expect("endpoints_v6 lock poisoned");
+        map.insert(key, value, 0)?;
+        Ok(())
+    }
+
+    fn delete_endpoint_v6(&self, key: &EndpointKeyV6) -> anyhow::Result<()> {
+        debug!("delete endpoint v6");
+        let map_lock = self
+            .endpoints_v6
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("ENDPOINTS_V6 map not loaded"))?;
+        let mut map = map_lock.write().expect("endpoints_v6 lock poisoned");
+        map.remove(key)?;
+        Ok(())
     }
 
     fn upsert_policy(&self, key: PolicyKey, value: PolicyValue) -> anyhow::Result<()> {
@@ -1723,6 +2003,28 @@ impl RealMaps {
         map.iter().count()
     }
 
+    fn upsert_tunnel_v6(&self, key: TunnelKeyV6, value: TunnelValueV6) -> anyhow::Result<()> {
+        debug!(vni = value.vni, "upsert tunnel v6");
+        let map_lock = self
+            .tunnels_v6
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("TUNNELS_V6 map not loaded"))?;
+        let mut map = map_lock.write().expect("tunnels_v6 lock poisoned");
+        map.insert(key, value, 0)?;
+        Ok(())
+    }
+
+    fn delete_tunnel_v6(&self, key: &TunnelKeyV6) -> anyhow::Result<()> {
+        debug!("delete tunnel v6");
+        let map_lock = self
+            .tunnels_v6
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("TUNNELS_V6 map not loaded"))?;
+        let mut map = map_lock.write().expect("tunnels_v6 lock poisoned");
+        map.remove(key)?;
+        Ok(())
+    }
+
     fn update_config(&self, entries: StdHashMap<u32, u64>) -> anyhow::Result<()> {
         let mut map = self.config.write().expect("config lock poisoned");
         for (k, v) in entries {
@@ -1760,6 +2062,37 @@ impl RealMaps {
         Ok(())
     }
 
+    fn upsert_egress_policy_v6(
+        &self,
+        key: EgressKeyV6,
+        value: EgressValueV6,
+    ) -> anyhow::Result<()> {
+        debug!(
+            src_identity = key.src_identity,
+            prefix_len = key.dst_prefix_len,
+            action = value.action,
+            "upsert egress policy v6"
+        );
+        let map_lock = self
+            .egress_v6
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("EGRESS_POLICIES_V6 map not loaded"))?;
+        let mut map = map_lock.write().expect("egress_v6 lock poisoned");
+        map.insert(key, value, 0)?;
+        Ok(())
+    }
+
+    fn delete_egress_policy_v6(&self, key: &EgressKeyV6) -> anyhow::Result<()> {
+        debug!(src_identity = key.src_identity, "delete egress policy v6");
+        let map_lock = self
+            .egress_v6
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("EGRESS_POLICIES_V6 map not loaded"))?;
+        let mut map = map_lock.write().expect("egress_v6 lock poisoned");
+        map.remove(key)?;
+        Ok(())
+    }
+
     fn upsert_service(&self, key: ServiceKey, value: ServiceValue) -> anyhow::Result<()> {
         debug!(
             ip = key.ip,
@@ -1785,6 +2118,33 @@ impl RealMaps {
         map.iter().count()
     }
 
+    fn upsert_service_v6(&self, key: ServiceKeyV6, value: ServiceValue) -> anyhow::Result<()> {
+        debug!(
+            port = key.port,
+            protocol = key.protocol,
+            scope = key.scope,
+            "upsert service v6"
+        );
+        let map_lock = self
+            .services_v6
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("SERVICES_V6 map not loaded"))?;
+        let mut map = map_lock.write().expect("services_v6 lock poisoned");
+        map.insert(key, value, 0)?;
+        Ok(())
+    }
+
+    fn delete_service_v6(&self, key: &ServiceKeyV6) -> anyhow::Result<()> {
+        debug!(port = key.port, "delete service v6");
+        let map_lock = self
+            .services_v6
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("SERVICES_V6 map not loaded"))?;
+        let mut map = map_lock.write().expect("services_v6 lock poisoned");
+        map.remove(key)?;
+        Ok(())
+    }
+
     fn upsert_backend(&self, index: u32, value: BackendValue) -> anyhow::Result<()> {
         debug!(
             index = index,
@@ -1793,6 +2153,17 @@ impl RealMaps {
             "upsert backend"
         );
         let mut map = self.backends.write().expect("backends lock poisoned");
+        map.set(index, value, 0)?;
+        Ok(())
+    }
+
+    fn upsert_backend_v6(&self, index: u32, value: BackendValueV6) -> anyhow::Result<()> {
+        debug!(index = index, port = value.port, "upsert backend v6");
+        let map_lock = self
+            .backends_v6
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("BACKENDS_V6 map not loaded"))?;
+        let mut map = map_lock.write().expect("backends_v6 lock poisoned");
         map.set(index, value, 0)?;
         Ok(())
     }

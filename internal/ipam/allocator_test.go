@@ -17,7 +17,10 @@ func TestNewAllocator(t *testing.T) {
 		{name: "valid /30", cidr: "10.244.1.0/30", wantErr: false},
 		{name: "too small /31", cidr: "10.244.1.0/31", wantErr: true},
 		{name: "invalid CIDR", cidr: "not-a-cidr", wantErr: true},
-		{name: "IPv6", cidr: "fd00::/64", wantErr: true},
+		{name: "IPv6 too large", cidr: "fd00::/64", wantErr: true},
+		{name: "valid IPv6 /120", cidr: "fd00::/120", wantErr: false},
+		{name: "valid IPv6 /112", cidr: "fd00::/112", wantErr: false},
+		{name: "IPv6 too small /128", cidr: "fd00::/128", wantErr: true},
 	}
 
 	for _, tt := range tests {
@@ -400,6 +403,157 @@ func TestStateDirRelease(t *testing.T) {
 	err = a2.AllocateSpecific(ip)
 	if err != nil {
 		t.Fatalf("released IP should be available after restart: %v", err)
+	}
+}
+
+func TestIPv6AllocatorReservations(t *testing.T) {
+	// /120 = 256 addresses. Only ::0 is reserved for IPv6 (no gateway/broadcast).
+	a, err := NewAllocator("fd00::/120")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Only ::0 (subnet-router anycast) is reserved.
+	if a.Used() != 1 {
+		t.Fatalf("expected 1 reserved IP for IPv6, got %d", a.Used())
+	}
+
+	// 256 - 1 = 255 available.
+	if a.Available() != 255 {
+		t.Fatalf("expected 255 available IPs, got %d", a.Available())
+	}
+}
+
+func TestIPv6AllocateSequential(t *testing.T) {
+	a, err := NewAllocator("fd00::/120")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// First allocation should be ::1 (since ::0 is reserved).
+	ip1, err := a.Allocate()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	expected := net.ParseIP("fd00::1")
+	if !ip1.Equal(expected) {
+		t.Fatalf("expected %s, got %s", expected, ip1)
+	}
+
+	// Second allocation should be ::2.
+	ip2, err := a.Allocate()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	expected2 := net.ParseIP("fd00::2")
+	if !ip2.Equal(expected2) {
+		t.Fatalf("expected %s, got %s", expected2, ip2)
+	}
+}
+
+func TestIPv6AllocateSpecific(t *testing.T) {
+	a, err := NewAllocator("fd00::/120")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	ip := net.ParseIP("fd00::50")
+	err = a.AllocateSpecific(ip)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Double allocate should fail.
+	err = a.AllocateSpecific(ip)
+	if err == nil {
+		t.Fatal("expected error on double allocation")
+	}
+
+	// Outside CIDR should fail.
+	err = a.AllocateSpecific(net.ParseIP("fd01::1"))
+	if err == nil {
+		t.Fatal("expected error for IP outside CIDR")
+	}
+}
+
+func TestIPv6Release(t *testing.T) {
+	a, err := NewAllocator("fd00::/120")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	ip, err := a.Allocate()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	usedBefore := a.Used()
+	err = a.Release(ip)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if a.Used() != usedBefore-1 {
+		t.Fatalf("expected %d used after release, got %d", usedBefore-1, a.Used())
+	}
+
+	// Cannot release ::0 (reserved subnet-router anycast).
+	err = a.Release(net.ParseIP("fd00::"))
+	if err == nil {
+		t.Fatal("expected error releasing network address")
+	}
+}
+
+func TestIPv6Gateway(t *testing.T) {
+	a, err := NewAllocator("fd00::/120")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	gw := a.Gateway()
+	expected := net.ParseIP("fd00::1")
+	if !gw.Equal(expected) {
+		t.Fatalf("expected gateway %s, got %s", expected, gw)
+	}
+}
+
+func TestIPv6StateDirPersistence(t *testing.T) {
+	stateDir := t.TempDir()
+
+	a, err := NewAllocatorWithStateDir("fd00::/120", stateDir)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	ip1, err := a.Allocate()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	ip2, err := a.Allocate()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	usedAfterAlloc := a.Used()
+
+	// Recreate allocator — should restore allocations.
+	a2, err := NewAllocatorWithStateDir("fd00::/120", stateDir)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if a2.Used() != usedAfterAlloc {
+		t.Fatalf("expected %d used after restore, got %d", usedAfterAlloc, a2.Used())
+	}
+
+	// Restored IPs should be allocated.
+	err = a2.AllocateSpecific(ip1)
+	if err == nil {
+		t.Fatal("expected error: restored IP1 should already be allocated")
+	}
+	err = a2.AllocateSpecific(ip2)
+	if err == nil {
+		t.Fatal("expected error: restored IP2 should already be allocated")
 	}
 }
 

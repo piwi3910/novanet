@@ -180,6 +180,111 @@ pub fn load_ebpf(bpf_object_path: &Path) -> Result<(MapManager, Option<RingBuf<M
         }
     };
 
+    // Optional IPv6 maps — these won't exist until eBPF programs support IPv6.
+    let endpoints_v6: Option<HashMap<MapData, EndpointKeyV6, EndpointValueV6>> =
+        match ebpf.take_map("ENDPOINTS_V6") {
+            Some(map) => match map.try_into() {
+                Ok(m) => {
+                    info!("Loaded ENDPOINTS_V6 map");
+                    Some(m)
+                }
+                Err(e) => {
+                    warn!(
+                        "Failed to convert ENDPOINTS_V6: {} — IPv6 endpoints disabled",
+                        e
+                    );
+                    None
+                }
+            },
+            None => {
+                warn!("ENDPOINTS_V6 not found — IPv6 endpoints disabled");
+                None
+            }
+        };
+
+    let tunnels_v6: Option<HashMap<MapData, TunnelKeyV6, TunnelValueV6>> =
+        match ebpf.take_map("TUNNELS_V6") {
+            Some(map) => match map.try_into() {
+                Ok(m) => {
+                    info!("Loaded TUNNELS_V6 map");
+                    Some(m)
+                }
+                Err(e) => {
+                    warn!(
+                        "Failed to convert TUNNELS_V6: {} — IPv6 tunnels disabled",
+                        e
+                    );
+                    None
+                }
+            },
+            None => {
+                warn!("TUNNELS_V6 not found — IPv6 tunnels disabled");
+                None
+            }
+        };
+
+    let egress_v6: Option<HashMap<MapData, EgressKeyV6, EgressValueV6>> =
+        match ebpf.take_map("EGRESS_POLICIES_V6") {
+            Some(map) => match map.try_into() {
+                Ok(m) => {
+                    info!("Loaded EGRESS_POLICIES_V6 map");
+                    Some(m)
+                }
+                Err(e) => {
+                    warn!(
+                        "Failed to convert EGRESS_POLICIES_V6: {} — IPv6 egress disabled",
+                        e
+                    );
+                    None
+                }
+            },
+            None => {
+                warn!("EGRESS_POLICIES_V6 not found — IPv6 egress disabled");
+                None
+            }
+        };
+
+    let services_v6: Option<HashMap<MapData, ServiceKeyV6, ServiceValue>> =
+        match ebpf.take_map("SERVICES_V6") {
+            Some(map) => match map.try_into() {
+                Ok(m) => {
+                    info!("Loaded SERVICES_V6 map");
+                    Some(m)
+                }
+                Err(e) => {
+                    warn!(
+                        "Failed to convert SERVICES_V6: {} — IPv6 services disabled",
+                        e
+                    );
+                    None
+                }
+            },
+            None => {
+                warn!("SERVICES_V6 not found — IPv6 services disabled");
+                None
+            }
+        };
+
+    let backends_v6: Option<Array<MapData, BackendValueV6>> = match ebpf.take_map("BACKENDS_V6") {
+        Some(map) => match map.try_into() {
+            Ok(m) => {
+                info!("Loaded BACKENDS_V6 map");
+                Some(m)
+            }
+            Err(e) => {
+                warn!(
+                    "Failed to convert BACKENDS_V6: {} — IPv6 backends disabled",
+                    e
+                );
+                None
+            }
+        },
+        None => {
+            warn!("BACKENDS_V6 not found — IPv6 backends disabled");
+            None
+        }
+    };
+
     // Optional XDP program — load but don't attach (attachment is via gRPC).
     if let Some(prog) = ebpf.program_mut("xdp_pass") {
         match <&mut aya::programs::Xdp>::try_from(prog) {
@@ -201,12 +306,17 @@ pub fn load_ebpf(bpf_object_path: &Path) -> Result<(MapManager, Option<RingBuf<M
 
     let real_maps = RealMaps::new(
         endpoints,
+        endpoints_v6,
         policies,
         tunnels,
+        tunnels_v6,
         config,
         egress,
+        egress_v6,
         services,
+        services_v6,
         backends,
+        backends_v6,
         maglev,
         drop_counters,
         ipcache,

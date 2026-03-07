@@ -132,33 +132,6 @@ func TestConnectDataplane_InvalidSocket(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// uint32ToIP
-// ---------------------------------------------------------------------------
-
-func TestUint32ToIP(t *testing.T) {
-	tests := []struct {
-		name  string
-		input uint32
-		want  string
-	}{
-		{name: "loopback", input: 0x7F000001, want: "127.0.0.1"},
-		{name: "all zeros", input: 0x00000000, want: "0.0.0.0"},
-		{name: "all ones", input: 0xFFFFFFFF, want: "255.255.255.255"},
-		{name: "192.168.1.1", input: 0xC0A80101, want: "192.168.1.1"},
-		{name: "10.244.1.5", input: 0x0AF40105, want: "10.244.1.5"},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := uint32ToIP(tt.input)
-			if got != tt.want {
-				t.Errorf("uint32ToIP(0x%08X) = %s, want %s", tt.input, got, tt.want)
-			}
-		})
-	}
-}
-
-// ---------------------------------------------------------------------------
 // protocolName
 // ---------------------------------------------------------------------------
 

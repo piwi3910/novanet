@@ -9,7 +9,6 @@ package cpvip
 import (
 	"context"
 	"crypto/tls"
-	"encoding/binary"
 	"fmt"
 	"net"
 	"net/http"
@@ -229,9 +228,9 @@ func (m *Manager) updateDataplane(ctx context.Context, healthyIPs []string) erro
 	for i, ip := range healthyIPs {
 		entries = append(entries, &pb.BackendEntry{
 			Index:  backendBaseOffset + uint32(i),
-			Ip:     ipToU32(ip),
+			Ip:     ip,
 			Port:   apiServerPort,
-			NodeIp: ipToU32(ip), // backend is on the node itself
+			NodeIp: ip, // backend is on the node itself
 		})
 	}
 
@@ -245,7 +244,7 @@ func (m *Manager) updateDataplane(ctx context.Context, healthyIPs []string) erro
 
 	// Upsert the service entry pointing to our reserved backend slots.
 	if _, err := m.dpClient.UpsertService(ctx, &pb.UpsertServiceRequest{
-		Ip:            ipToU32(m.cfg.VIP),
+		Ip:            m.cfg.VIP,
 		Port:          apiServerPort,
 		Protocol:      protocolTCP,
 		Scope:         scopeClusterIP,
@@ -346,18 +345,6 @@ func (m *Manager) localIP(cpNodeIPs []string) string {
 		}
 	}
 	return ""
-}
-
-func ipToU32(ipStr string) uint32 {
-	ip := net.ParseIP(ipStr)
-	if ip == nil {
-		return 0
-	}
-	ip4 := ip.To4()
-	if ip4 == nil {
-		return 0
-	}
-	return binary.BigEndian.Uint32(ip4)
 }
 
 func mapsEqual(a, b map[string]bool) bool {

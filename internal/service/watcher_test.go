@@ -12,6 +12,8 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 )
 
+const testClusterIPv4 = "10.43.0.1"
+
 // mockDPClient implements DataplaneServiceClient for testing.
 type mockDPClient struct {
 	mu       sync.Mutex
@@ -49,22 +51,39 @@ func (m *mockDPClient) UpsertMaglevTable(_ context.Context, req *pb.UpsertMaglev
 	return &pb.UpsertMaglevTableResponse{}, nil
 }
 
-func TestIPToU32(t *testing.T) {
-	tests := []struct {
-		ip   string
-		want uint32
-	}{
-		{"10.43.0.1", 0x0A2B0001},
-		{"192.168.1.1", 0xC0A80101},
-		{"0.0.0.0", 0},
-		{"invalid", 0},
-		{"", 0},
+func TestServiceClusterIPs(t *testing.T) {
+	// Single-stack service with only ClusterIP set.
+	svc := &corev1.Service{
+		Spec: corev1.ServiceSpec{
+			ClusterIP: testClusterIPv4,
+		},
 	}
-	for _, tt := range tests {
-		got := ipToU32(tt.ip)
-		if got != tt.want {
-			t.Errorf("ipToU32(%q) = 0x%X, want 0x%X", tt.ip, got, tt.want)
-		}
+	ips := serviceClusterIPs(svc)
+	if len(ips) != 1 || ips[0] != testClusterIPv4 {
+		t.Errorf("single-stack ClusterIP: got %v, want [10.43.0.1]", ips)
+	}
+
+	// Dual-stack service with ClusterIPs set.
+	svc.Spec.ClusterIPs = []string{testClusterIPv4, "fd00::1"}
+	ips = serviceClusterIPs(svc)
+	if len(ips) != 2 || ips[0] != testClusterIPv4 || ips[1] != "fd00::1" {
+		t.Errorf("dual-stack ClusterIPs: got %v, want [10.43.0.1, fd00::1]", ips)
+	}
+
+	// Headless service.
+	svc.Spec.ClusterIP = "None"
+	svc.Spec.ClusterIPs = []string{"None"}
+	ips = serviceClusterIPs(svc)
+	if len(ips) != 0 {
+		t.Errorf("headless service: got %v, want []", ips)
+	}
+
+	// Empty ClusterIP.
+	svc.Spec.ClusterIP = ""
+	svc.Spec.ClusterIPs = nil
+	ips = serviceClusterIPs(svc)
+	if len(ips) != 0 {
+		t.Errorf("empty ClusterIP: got %v, want []", ips)
 	}
 }
 
@@ -154,8 +173,9 @@ func TestReconcileServiceDirect(t *testing.T) {
 			Namespace: "default",
 		},
 		Spec: corev1.ServiceSpec{
-			Type:      corev1.ServiceTypeClusterIP,
-			ClusterIP: "10.43.0.100",
+			Type:       corev1.ServiceTypeClusterIP,
+			ClusterIP:  "10.43.0.100",
+			ClusterIPs: []string{"10.43.0.100", "fd00::64"},
 			Ports: []corev1.ServicePort{
 				{
 					Port:       80,
@@ -197,5 +217,33 @@ func TestResolveAlgorithm(t *testing.T) {
 	w.defaultAlg = "unknown"
 	if w.resolveAlgorithm() != algRandom {
 		t.Error("expected random for unknown")
+	}
+}
+
+func TestServiceIPForScope(t *testing.T) {
+	logger := zap.NewNop()
+	w := &Watcher{logger: logger}
+
+	clusterIP := testClusterIPv4
+
+	// ClusterIP scope returns the ClusterIP directly.
+	if got := w.serviceIPForScope(clusterIP, scopeClusterIP, ""); got != testClusterIPv4 {
+		t.Errorf("ClusterIP scope: got %q, want %q", got, testClusterIPv4)
+	}
+
+	// NodePort scope returns empty string (wildcard).
+	if got := w.serviceIPForScope(clusterIP, scopeNodePort, ""); got != "" {
+		t.Errorf("NodePort scope: got %q, want empty", got)
+	}
+
+	// ExternalIP scope with specificIP uses that.
+	if got := w.serviceIPForScope(clusterIP, scopeExternalIP, "1.2.3.4"); got != "1.2.3.4" {
+		t.Errorf("ExternalIP scope with specific: got %q, want %q", got, "1.2.3.4")
+	}
+
+	// IPv6 ClusterIP.
+	clusterIPv6 := "fd00::1"
+	if got := w.serviceIPForScope(clusterIPv6, scopeClusterIP, ""); got != "fd00::1" {
+		t.Errorf("IPv6 ClusterIP scope: got %q, want %q", got, "fd00::1")
 	}
 }

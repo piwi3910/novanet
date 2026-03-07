@@ -74,24 +74,28 @@ service AgentControl {
   rpc ListServices(ListServicesRequest) returns (ListServicesResponse);
 }
 
+// IPVersion identifies the address family.
+enum IPVersion {
+  IP_VERSION_UNSPECIFIED = 0;
+  IPv4 = 1;
+  IPv6 = 2;
+}
+
 // --- Endpoints ---
 
 message UpsertEndpointRequest {
-  uint32 ip = 1;
+  string ip = 1;               // "10.0.0.1" or "fd00::1" — Cilium-style string IP.
   uint32 ifindex = 2;
   bytes mac = 3;
   uint32 identity_id = 4;
-  string pod_name = 5;      // Logging only — not stored in eBPF maps.
-  string namespace = 6;     // Logging only — not stored in eBPF maps.
-  uint32 node_ip = 7;
-  bytes ipv6 = 8;            // 16-byte IPv6 address (dual-stack).
-  bytes node_ipv6 = 9;       // 16-byte IPv6 node address (dual-stack).
+  string pod_name = 5;         // Logging only — not stored in eBPF maps.
+  string namespace = 6;        // Logging only — not stored in eBPF maps.
+  string node_ip = 7;          // "10.0.0.1" or "fd00::1"
 }
 message UpsertEndpointResponse {}
 
 message DeleteEndpointRequest {
-  uint32 ip = 1;
-  bytes ipv6 = 2;            // 16-byte IPv6 address for dual-stack cleanup.
+  string ip = 1;               // "10.0.0.1" or "fd00::1"
 }
 message DeleteEndpointResponse {}
 
@@ -138,14 +142,14 @@ enum PolicyAction {
 // --- Tunnels ---
 
 message UpsertTunnelRequest {
-  uint32 node_ip = 1;
+  string node_ip = 1;          // "10.0.0.1" or "fd00::1"
   uint32 tunnel_ifindex = 2;
   uint32 vni = 3;
 }
 message UpsertTunnelResponse {}
 
 message DeleteTunnelRequest {
-  uint32 node_ip = 1;
+  string node_ip = 1;          // "10.0.0.1" or "fd00::1"
 }
 message DeleteTunnelResponse {}
 
@@ -153,6 +157,9 @@ message DeleteTunnelResponse {}
 
 message UpdateConfigRequest {
   map<uint32, uint64> entries = 1;
+  // IPv6 config: 128-bit addresses stored across two consecutive u64 keys.
+  // Use CONFIG_KEY_NODE_IPV6 (key 20) for upper 64 bits, key 21 for lower 64 bits.
+  // Same pattern for cluster CIDR v6 (22/23), pod CIDR v6 (24/25), SNAT v6 (26/27).
 }
 message UpdateConfigResponse {}
 
@@ -181,8 +188,8 @@ message StreamFlowsRequest {
 }
 
 message FlowEvent {
-  uint32 src_ip = 1;
-  uint32 dst_ip = 2;
+  string src_ip = 1;            // "10.0.0.1" or "fd00::1"
+  string dst_ip = 2;            // "10.0.0.1" or "fd00::1"
   uint32 src_identity = 3;
   uint32 dst_identity = 4;
   uint32 protocol = 5;
@@ -193,7 +200,8 @@ message FlowEvent {
   uint64 packets = 10;
   int64 timestamp_ns = 11;
   DropReason drop_reason = 12;
-  uint32 tcp_flags = 13;  // TCP flags (SYN=0x02, ACK=0x10, FIN=0x01, RST=0x04)
+  uint32 tcp_flags = 13;       // TCP flags (SYN=0x02, ACK=0x10, FIN=0x01, RST=0x04)
+  IPVersion ip_version = 14;   // Address family of this flow event.
 }
 
 enum DropReason {
@@ -292,18 +300,18 @@ message StreamAgentFlowsRequest {
 
 message UpsertEgressPolicyRequest {
   uint32 src_identity = 1;
-  uint32 dst_cidr_ip = 2;
+  string dst_cidr = 2;              // "10.0.0.0/24" or "fd00::/64" — CIDR string.
   uint32 dst_cidr_prefix_len = 3;
   uint32 protocol = 4;
   uint32 dst_port = 5;
   EgressAction action = 6;
-  uint32 snat_ip = 7;  // SNAT target IP (used when action == EGRESS_ACTION_SNAT)
+  string snat_ip = 7;               // "10.0.0.1" or "fd00::1" — SNAT target IP.
 }
 message UpsertEgressPolicyResponse {}
 
 message DeleteEgressPolicyRequest {
   uint32 src_identity = 1;
-  uint32 dst_cidr_ip = 2;
+  string dst_cidr = 2;              // "10.0.0.0/24" or "fd00::/64"
   uint32 dst_cidr_prefix_len = 3;
   uint32 protocol = 4;
   uint32 dst_port = 5;
@@ -327,7 +335,7 @@ enum ServiceFlag {
 }
 
 message UpsertServiceRequest {
-  uint32 ip = 1;
+  string ip = 1;                    // "10.0.0.1" or "fd00::1"
   uint32 port = 2;
   uint32 protocol = 3;
   uint32 scope = 4;
@@ -337,12 +345,11 @@ message UpsertServiceRequest {
   uint32 flags = 8;
   uint32 affinity_timeout = 9;
   uint32 maglev_offset = 10;
-  bytes ipv6 = 11;            // 16-byte IPv6 service address (dual-stack).
 }
 message UpsertServiceResponse {}
 
 message DeleteServiceRequest {
-  uint32 ip = 1;
+  string ip = 1;                    // "10.0.0.1" or "fd00::1"
   uint32 port = 2;
   uint32 protocol = 3;
   uint32 scope = 4;
@@ -354,10 +361,9 @@ message UpsertBackendsRequest {
 }
 message BackendEntry {
   uint32 index = 1;
-  uint32 ip = 2;
+  string ip = 2;                    // "10.0.0.1" or "fd00::1"
   uint32 port = 3;
-  uint32 node_ip = 4;
-  bytes ipv6 = 5;              // 16-byte IPv6 backend address (dual-stack).
+  string node_ip = 4;              // "10.0.0.1" or "fd00::1"
 }
 message UpsertBackendsResponse {}
 
@@ -366,7 +372,7 @@ message SyncServicesRequest {
   repeated BackendEntry backends = 2;
 }
 message ServiceEntry {
-  uint32 ip = 1;
+  string ip = 1;                    // "10.0.0.1" or "fd00::1"
   uint32 port = 2;
   uint32 protocol = 3;
   uint32 scope = 4;
@@ -512,21 +518,4 @@ message DetachXDPResponse {}
 enum XDPMode {
   XDP_MODE_NATIVE = 0;
   XDP_MODE_SKB = 1;       // Generic/SKB fallback.
-}
-
-// --- Tunnel IPv6 ---
-
-message UpsertTunnelV6Request {
-  bytes node_ipv6 = 1;       // 16-byte IPv6 node address.
-  uint32 tunnel_ifindex = 2;
-  uint32 vni = 3;
-}
-message UpsertTunnelV6Response {}
-
-// --- AddPod IPv6 ---
-
-message AddPodV6Response {
-  string ipv6 = 1;
-  string gateway_v6 = 2;
-  int32 prefix_length_v6 = 3;
 }

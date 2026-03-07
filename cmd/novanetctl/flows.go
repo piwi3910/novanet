@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"net"
 	"os"
 	"os/signal"
 	"syscall"
@@ -90,8 +89,8 @@ func runFlows(identityFilter uint32, dropsOnly bool) error {
 
 func printFlow(w *tabwriter.Writer, flow *pb.FlowEvent, showDropReason bool) {
 	ts := time.Unix(0, flow.TimestampNs).UTC().Format("15:04:05.000")
-	srcIP := uint32ToIP(flow.SrcIp)
-	dstIP := uint32ToIP(flow.DstIp)
+	srcIP := flow.SrcIp
+	dstIP := flow.DstIp
 	proto := protocolName(flow.Protocol)
 	verdict := verdictName(flow.Verdict)
 
@@ -104,17 +103,6 @@ func printFlow(w *tabwriter.Writer, flow *pb.FlowEvent, showDropReason bool) {
 	}
 
 	_, _ = fmt.Fprintln(w)
-}
-
-// uint32ToIP converts a uint32 in network byte order to a dotted-decimal IP string.
-func uint32ToIP(n uint32) string {
-	ip := net.IPv4(
-		byte(n>>24),  //nolint:gosec // right-shifted to 0-255 range
-		byte(n>>16),  //nolint:gosec // right-shifted to 0-255 range
-		byte(n>>8),   //nolint:gosec // right-shifted to 0-255 range
-		byte(n&0xFF), //nolint:gosec // masked to 0-255 range
-	)
-	return ip.String()
 }
 
 func verdictName(v pb.PolicyAction) string {

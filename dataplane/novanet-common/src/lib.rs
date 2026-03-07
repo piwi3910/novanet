@@ -48,6 +48,34 @@ pub struct EndpointValue {
 }
 
 // ---------------------------------------------------------------------------
+// Endpoint map (IPv6): pod IPv6 → interface + identity info (separate map)
+// ---------------------------------------------------------------------------
+
+/// Key for the IPv6 endpoint map. Keyed by pod IPv6 address.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct EndpointKeyV6 {
+    /// IPv6 address (16 bytes, network byte order).
+    pub ip: [u8; 16],
+}
+
+/// Value stored for each IPv6 endpoint.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct EndpointValueV6 {
+    /// Interface index of the pod's veth on the host side.
+    pub ifindex: u32,
+    /// MAC address of the pod interface.
+    pub mac: [u8; 6],
+    /// Padding to maintain alignment.
+    pub _pad: [u8; 2],
+    /// Security identity assigned to this endpoint.
+    pub identity: u32,
+    /// IPv6 address of the node hosting this pod.
+    pub node_ip: [u8; 16],
+}
+
+// ---------------------------------------------------------------------------
 // Policy map: (src_identity, dst_identity, proto, port) → action
 // ---------------------------------------------------------------------------
 
@@ -97,6 +125,30 @@ pub struct TunnelValue {
     pub ifindex: u32,
     /// Remote node IPv4 address in network byte order.
     pub remote_ip: u32,
+    /// Virtual Network Identifier.
+    pub vni: u32,
+}
+
+// ---------------------------------------------------------------------------
+// Tunnel map (IPv6): remote node IPv6 → tunnel info (separate map)
+// ---------------------------------------------------------------------------
+
+/// Key for the IPv6 tunnel map. Keyed by remote node IPv6 address.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct TunnelKeyV6 {
+    /// Remote node IPv6 address (16 bytes).
+    pub node_ip: [u8; 16],
+}
+
+/// IPv6 tunnel endpoint information.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct TunnelValueV6 {
+    /// Interface index of the local tunnel device.
+    pub ifindex: u32,
+    /// Remote node IPv6 address (16 bytes).
+    pub remote_ip: [u8; 16],
     /// Virtual Network Identifier.
     pub vni: u32,
 }
@@ -194,6 +246,36 @@ pub struct EgressValue {
 }
 
 // ---------------------------------------------------------------------------
+// Egress policy map (IPv6): separate map for IPv6 destinations
+// ---------------------------------------------------------------------------
+
+/// Key for IPv6 egress policy lookups.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct EgressKeyV6 {
+    /// Source security identity.
+    pub src_identity: u32,
+    /// Destination IPv6 address (network prefix).
+    pub dst_ip: [u8; 16],
+    /// Prefix length for CIDR matching.
+    pub dst_prefix_len: u8,
+    /// Padding.
+    pub _pad: [u8; 3],
+}
+
+/// IPv6 egress policy action.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct EgressValueV6 {
+    /// Action: EGRESS_DENY (0), EGRESS_ALLOW (1), EGRESS_SNAT (2).
+    pub action: u8,
+    /// Padding.
+    pub _pad: [u8; 3],
+    /// Source NAT IPv6 address (only used when action == EGRESS_SNAT).
+    pub snat_ip: [u8; 16],
+}
+
+// ---------------------------------------------------------------------------
 // Service map: Service VIP → backend selection info
 // ---------------------------------------------------------------------------
 
@@ -230,6 +312,24 @@ pub struct ServiceValue {
 }
 
 // ---------------------------------------------------------------------------
+// Service map (IPv6): IPv6 Service VIP → backend selection info (separate map)
+// ---------------------------------------------------------------------------
+
+/// Key for the IPv6 service map.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ServiceKeyV6 {
+    /// Service virtual IPv6 address.
+    pub ip: [u8; 16],
+    /// Service port in host byte order.
+    pub port: u16,
+    /// IP protocol (6=TCP, 17=UDP, 132=SCTP).
+    pub protocol: u8,
+    /// Service scope: 0=ClusterIP, 1=NodePort, 2=ExternalIP, 3=LoadBalancer.
+    pub scope: u8,
+}
+
+// ---------------------------------------------------------------------------
 // Backend map: flat array of backend endpoints
 // ---------------------------------------------------------------------------
 
@@ -245,6 +345,24 @@ pub struct BackendValue {
     pub _pad: [u8; 2],
     /// Node IP hosting this backend (for externalTrafficPolicy: Local).
     pub node_ip: u32,
+}
+
+// ---------------------------------------------------------------------------
+// Backend map (IPv6): flat array of IPv6 backend endpoints
+// ---------------------------------------------------------------------------
+
+/// IPv6 backend endpoint entry (stored in a flat array).
+#[repr(C)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct BackendValueV6 {
+    /// Backend pod IPv6 address.
+    pub ip: [u8; 16],
+    /// Backend target port in host byte order.
+    pub port: u16,
+    /// Padding for alignment.
+    pub _pad: [u8; 2],
+    /// Node IPv6 address hosting this backend.
+    pub node_ip: [u8; 16],
 }
 
 // ---------------------------------------------------------------------------
@@ -292,6 +410,50 @@ pub struct CtValue {
 }
 
 // ---------------------------------------------------------------------------
+// Conntrack map (IPv6): connection tracking for IPv6 NAT state
+// ---------------------------------------------------------------------------
+
+/// Key for the IPv6 conntrack LRU map.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct CtKeyV6 {
+    /// Source IPv6 address.
+    pub src_ip: [u8; 16],
+    /// Destination IPv6 address (the original VIP).
+    pub dst_ip: [u8; 16],
+    /// Source port in host byte order.
+    pub src_port: u16,
+    /// Destination port in host byte order.
+    pub dst_port: u16,
+    /// IP protocol (6=TCP, 17=UDP).
+    pub protocol: u8,
+    /// Padding for alignment.
+    pub _pad: [u8; 3],
+}
+
+/// Value stored in the IPv6 conntrack map.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct CtValueV6 {
+    /// Timestamp (bpf_ktime_get_ns, for session affinity).
+    pub timestamp: u64,
+    /// DNAT'd backend IPv6 address.
+    pub backend_ip: [u8; 16],
+    /// Original service VIP IPv6 address (for reverse SNAT).
+    pub origin_ip: [u8; 16],
+    /// DNAT'd backend port in host byte order.
+    pub backend_port: u16,
+    /// Original service port in host byte order (for reverse SNAT).
+    pub origin_port: u16,
+    /// TCP state flags for connection tracking.
+    pub flags: u8,
+    /// Padding.
+    pub _pad: u8,
+    /// Padding for alignment.
+    pub _pad2: [u8; 2],
+}
+
+// ---------------------------------------------------------------------------
 // Socket-LB origin map: socket cookie → original service destination
 // ---------------------------------------------------------------------------
 
@@ -311,17 +473,43 @@ pub struct SockLbOrigin {
 }
 
 // ---------------------------------------------------------------------------
+// Socket-LB origin map (IPv6): socket cookie → original IPv6 service destination
+// ---------------------------------------------------------------------------
+
+/// Stores the original ClusterIP IPv6 destination before socket-LB rewrites it.
+/// Used by recvmsg6/getpeername6 to reverse-translate back to the VIP.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SockLbOriginV6 {
+    /// Original service ClusterIP IPv6 address.
+    pub original_ip: [u8; 16],
+    /// Original service port in host byte order.
+    pub original_port: u16,
+    /// IP protocol (6=TCP, 17=UDP).
+    pub protocol: u8,
+    /// Padding for alignment.
+    pub _pad: u8,
+}
+
+// ---------------------------------------------------------------------------
 // Flow event: emitted to ring buffer for observability
 // ---------------------------------------------------------------------------
 
 /// Flow event emitted from eBPF programs to the ring buffer.
+/// Uses 128-bit addresses to support both IPv4 and IPv6 in a single ring buffer.
+/// The `family` field indicates AF_INET (2) or AF_INET6 (10).
+/// For IPv4, the address is stored in the first 4 bytes of the 16-byte field.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct FlowEvent {
-    /// Source IPv4 address in network byte order.
-    pub src_ip: u32,
-    /// Destination IPv4 address in network byte order.
-    pub dst_ip: u32,
+    /// Address family: AF_INET (2) for IPv4, AF_INET6 (10) for IPv6.
+    pub family: u8,
+    /// Policy verdict: ACTION_DENY (0), ACTION_ALLOW (1).
+    pub verdict: u8,
+    /// Drop reason (non-zero if dropped). See DROP_REASON_* constants.
+    pub drop_reason: u8,
+    /// TCP flags (SYN=0x02, ACK=0x10, FIN=0x01, RST=0x04). Zero for non-TCP.
+    pub tcp_flags: u8,
     /// Source security identity.
     pub src_identity: u32,
     /// Destination security identity.
@@ -336,14 +524,10 @@ pub struct FlowEvent {
     pub dst_port: u16,
     /// Padding.
     pub _pad2: [u8; 2],
-    /// Policy verdict: ACTION_DENY (0), ACTION_ALLOW (1).
-    pub verdict: u8,
-    /// Drop reason (non-zero if dropped). See DROP_REASON_* constants.
-    pub drop_reason: u8,
-    /// TCP flags (SYN=0x02, ACK=0x10, FIN=0x01, RST=0x04). Zero for non-TCP.
-    pub tcp_flags: u8,
-    /// Padding.
-    pub _pad3: u8,
+    /// Source IP address (4 bytes for IPv4 in first 4 bytes, or 16 bytes for IPv6).
+    pub src_ip: [u8; 16],
+    /// Destination IP address (4 bytes for IPv4 in first 4 bytes, or 16 bytes for IPv6).
+    pub dst_ip: [u8; 16],
     /// Bytes in this flow.
     pub bytes: u64,
     /// Packets in this flow.
@@ -351,6 +535,11 @@ pub struct FlowEvent {
     /// Kernel timestamp in nanoseconds.
     pub timestamp_ns: u64,
 }
+
+/// Address family constant: IPv4.
+pub const AF_INET: u8 = 2;
+/// Address family constant: IPv6.
+pub const AF_INET6: u8 = 10;
 
 // ---------------------------------------------------------------------------
 // Config map keys (CONFIG map is HashMap<u32, u64>)
@@ -378,6 +567,32 @@ pub const CONFIG_KEY_POD_CIDR_IP: u32 = 8;
 pub const CONFIG_KEY_POD_CIDR_PREFIX_LEN: u32 = 9;
 /// L4 LB enabled: 0 = off, 1 = on.
 pub const CONFIG_KEY_L4LB_ENABLED: u32 = 10;
+
+// IPv6 config keys (128-bit addresses stored across two consecutive u64 entries).
+// For each IPv6 address: key N = upper 64 bits, key N+1 = lower 64 bits.
+
+/// This node's IPv6 address, upper 64 bits.
+pub const CONFIG_KEY_NODE_IPV6_HI: u32 = 20;
+/// This node's IPv6 address, lower 64 bits.
+pub const CONFIG_KEY_NODE_IPV6_LO: u32 = 21;
+/// Cluster CIDR IPv6 base address, upper 64 bits.
+pub const CONFIG_KEY_CLUSTER_CIDR_IPV6_HI: u32 = 22;
+/// Cluster CIDR IPv6 base address, lower 64 bits.
+pub const CONFIG_KEY_CLUSTER_CIDR_IPV6_LO: u32 = 23;
+/// Cluster CIDR IPv6 prefix length (e.g. 48 for /48).
+pub const CONFIG_KEY_CLUSTER_CIDR_PREFIX_V6: u32 = 24;
+/// Pod CIDR IPv6 base address, upper 64 bits.
+pub const CONFIG_KEY_POD_CIDR_IPV6_HI: u32 = 25;
+/// Pod CIDR IPv6 base address, lower 64 bits.
+pub const CONFIG_KEY_POD_CIDR_IPV6_LO: u32 = 26;
+/// Pod CIDR IPv6 prefix length (e.g. 64 for /64).
+pub const CONFIG_KEY_POD_CIDR_PREFIX_V6: u32 = 27;
+/// SNAT IPv6 address, upper 64 bits.
+pub const CONFIG_KEY_SNAT_IPV6_HI: u32 = 28;
+/// SNAT IPv6 address, lower 64 bits.
+pub const CONFIG_KEY_SNAT_IPV6_LO: u32 = 29;
+/// IPv6 enabled: 0 = off, 1 = on.
+pub const CONFIG_KEY_IPV6_ENABLED: u32 = 30;
 
 // ---------------------------------------------------------------------------
 // Action constants
@@ -499,6 +714,8 @@ pub const GENEVE_OPT_IDENTITY_LEN: u8 = 1;
 pub const ETH_HLEN: usize = 14;
 /// IPv4 header minimum size in bytes.
 pub const IPV4_HLEN_MIN: usize = 20;
+/// IPv6 header size in bytes (fixed, no options in base header).
+pub const IPV6_HLEN: usize = 40;
 /// UDP header size in bytes.
 pub const UDP_HLEN: usize = 8;
 /// Geneve base header size in bytes (without options).
@@ -576,6 +793,42 @@ pub const IDENTITY_HOST: u32 = 1;
 pub const IDENTITY_WORLD: u32 = 2;
 
 // ---------------------------------------------------------------------------
+// IPv4/IPv6 address helpers
+// ---------------------------------------------------------------------------
+
+/// Convert a 4-byte IPv4 address to a `u32` in network byte order.
+pub fn ipv4_to_u32(bytes: &[u8; 4]) -> u32 {
+    u32::from_be_bytes(*bytes)
+}
+
+/// Convert a `u32` in network byte order to 4 IPv4 bytes.
+pub fn u32_to_ipv4(ip: u32) -> [u8; 4] {
+    ip.to_be_bytes()
+}
+
+/// Split a 16-byte IPv6 address into upper and lower `u64` halves (big-endian).
+/// Used for storing IPv6 addresses in the config map across two consecutive keys.
+pub fn ipv6_to_u64_pair(addr: &[u8; 16]) -> (u64, u64) {
+    let hi = u64::from_be_bytes([
+        addr[0], addr[1], addr[2], addr[3], addr[4], addr[5], addr[6], addr[7],
+    ]);
+    let lo = u64::from_be_bytes([
+        addr[8], addr[9], addr[10], addr[11], addr[12], addr[13], addr[14], addr[15],
+    ]);
+    (hi, lo)
+}
+
+/// Reconstruct a 16-byte IPv6 address from upper and lower `u64` halves.
+pub fn u64_pair_to_ipv6(hi: u64, lo: u64) -> [u8; 16] {
+    let h = hi.to_be_bytes();
+    let l = lo.to_be_bytes();
+    [
+        h[0], h[1], h[2], h[3], h[4], h[5], h[6], h[7], l[0], l[1], l[2], l[3], l[4], l[5], l[6],
+        l[7],
+    ]
+}
+
+// ---------------------------------------------------------------------------
 // aya::Pod implementations for userspace map access
 // ---------------------------------------------------------------------------
 
@@ -583,18 +836,29 @@ pub const IDENTITY_WORLD: u32 = 2;
 impl_pod!(
     EndpointKey,
     EndpointValue,
+    EndpointKeyV6,
+    EndpointValueV6,
     PolicyKey,
     PolicyValue,
     TunnelKey,
     TunnelValue,
+    TunnelKeyV6,
+    TunnelValueV6,
     EgressKey,
     EgressValue,
+    EgressKeyV6,
+    EgressValueV6,
     ServiceKey,
+    ServiceKeyV6,
     ServiceValue,
     BackendValue,
+    BackendValueV6,
     CtKey,
     CtValue,
+    CtKeyV6,
+    CtValueV6,
     SockLbOrigin,
+    SockLbOriginV6,
     IPCacheKey,
     IPCacheValue,
     HostPolicyKey,
@@ -686,10 +950,12 @@ mod tests {
 
     #[test]
     fn flow_event_size() {
-        // Contains u64 fields so struct is aligned to 8 bytes.
-        // 4+4+4+4 + 1+1+2+2+2 + 1+1+2 + (4 pad for u64 alignment) + 8+8+8 = 56
+        // family(1)+verdict(1)+drop_reason(1)+tcp_flags(1) + src_identity(4)+dst_identity(4)
+        // + protocol(1)+pad(1)+src_port(2)+dst_port(2)+pad(2)
+        // + src_ip(16)+dst_ip(16) + bytes(8)+packets(8)+timestamp(8) = 76
+        // But with u64 alignment, there may be padding. Let's just verify it's reasonable.
         let size = mem::size_of::<FlowEvent>();
-        assert_eq!(size, 56);
+        assert_eq!(size, 80); // 4+4+4 + 1+1+2+2+2 + 16+16 + 8+8+8 = 76, aligned to 8 → 80
     }
 
     // -- Alignment tests (repr(C) types must be naturally aligned) --
@@ -711,7 +977,7 @@ mod tests {
 
     #[test]
     fn flow_event_alignment() {
-        // Contains u64 fields, so alignment should be 8.
+        // Contains u64 fields (bytes, packets, timestamp_ns), so alignment should be 8.
         assert_eq!(mem::align_of::<FlowEvent>(), 8);
     }
 
@@ -859,10 +1125,16 @@ mod tests {
     }
 
     #[test]
-    fn flow_event_construction() {
+    fn flow_event_construction_v4() {
+        let mut src = [0u8; 16];
+        src[0..4].copy_from_slice(&[10, 42, 5, 1]);
+        let mut dst = [0u8; 16];
+        dst[0..4].copy_from_slice(&[10, 42, 5, 2]);
         let event = FlowEvent {
-            src_ip: 0x0A2A0501,
-            dst_ip: 0x0A2A0502,
+            family: AF_INET,
+            verdict: ACTION_ALLOW,
+            drop_reason: DROP_REASON_NONE,
+            tcp_flags: 0,
             src_identity: 10,
             dst_identity: 20,
             protocol: 6,
@@ -870,18 +1142,43 @@ mod tests {
             src_port: 12345,
             dst_port: 80,
             _pad2: [0; 2],
-            verdict: ACTION_ALLOW,
-            drop_reason: DROP_REASON_NONE,
-            tcp_flags: 0,
-            _pad3: 0,
+            src_ip: src,
+            dst_ip: dst,
             bytes: 1500,
             packets: 1,
             timestamp_ns: 123456789,
         };
-        assert_eq!(event.src_ip, 0x0A2A0501);
+        assert_eq!(event.family, AF_INET);
+        assert_eq!(event.src_ip[0], 10);
         assert_eq!(event.protocol, 6);
         assert_eq!(event.verdict, ACTION_ALLOW);
-        assert_eq!(event.drop_reason, DROP_REASON_NONE);
+    }
+
+    #[test]
+    fn flow_event_construction_v6() {
+        let src = [0xfd, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1];
+        let dst = [0xfd, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2];
+        let event = FlowEvent {
+            family: AF_INET6,
+            verdict: ACTION_ALLOW,
+            drop_reason: DROP_REASON_NONE,
+            tcp_flags: 0,
+            src_identity: 10,
+            dst_identity: 20,
+            protocol: 6,
+            _pad1: 0,
+            src_port: 12345,
+            dst_port: 80,
+            _pad2: [0; 2],
+            src_ip: src,
+            dst_ip: dst,
+            bytes: 1500,
+            packets: 1,
+            timestamp_ns: 123456789,
+        };
+        assert_eq!(event.family, AF_INET6);
+        assert_eq!(event.src_ip[0], 0xfd);
+        assert_eq!(event.dst_ip[15], 2);
     }
 
     // -- Constant value tests --
@@ -904,7 +1201,7 @@ mod tests {
     #[test]
     fn config_keys_fit_in_map() {
         // All config keys must be < MAX_CONFIG_ENTRIES.
-        assert!(CONFIG_KEY_L4LB_ENABLED < MAX_CONFIG_ENTRIES);
+        assert!(CONFIG_KEY_IPV6_ENABLED < MAX_CONFIG_ENTRIES);
     }
 
     #[test]
@@ -1119,5 +1416,140 @@ mod tests {
     fn reserved_identity_constants() {
         assert_eq!(IDENTITY_HOST, 1);
         assert_eq!(IDENTITY_WORLD, 2);
+    }
+
+    // -- V6 type size tests --
+
+    #[test]
+    fn endpoint_key_v6_size() {
+        assert_eq!(mem::size_of::<EndpointKeyV6>(), 16);
+    }
+
+    #[test]
+    fn endpoint_value_v6_size() {
+        // ifindex(4) + mac(6) + pad(2) + identity(4) + node_ip(16) = 32
+        assert_eq!(mem::size_of::<EndpointValueV6>(), 32);
+    }
+
+    #[test]
+    fn tunnel_key_v6_size() {
+        assert_eq!(mem::size_of::<TunnelKeyV6>(), 16);
+    }
+
+    #[test]
+    fn tunnel_value_v6_size() {
+        // ifindex(4) + remote_ip(16) + vni(4) = 24
+        assert_eq!(mem::size_of::<TunnelValueV6>(), 24);
+    }
+
+    #[test]
+    fn egress_key_v6_size() {
+        // src_identity(4) + dst_ip(16) + dst_prefix_len(1) + pad(3) = 24
+        assert_eq!(mem::size_of::<EgressKeyV6>(), 24);
+    }
+
+    #[test]
+    fn egress_value_v6_size() {
+        // action(1) + pad(3) + snat_ip(16) = 20
+        assert_eq!(mem::size_of::<EgressValueV6>(), 20);
+    }
+
+    #[test]
+    fn service_key_v6_size() {
+        // ip(16) + port(2) + protocol(1) + scope(1) = 20
+        assert_eq!(mem::size_of::<ServiceKeyV6>(), 20);
+    }
+
+    #[test]
+    fn backend_value_v6_size() {
+        // ip(16) + port(2) + pad(2) + node_ip(16) = 36
+        assert_eq!(mem::size_of::<BackendValueV6>(), 36);
+    }
+
+    #[test]
+    fn ct_key_v6_size() {
+        // src_ip(16) + dst_ip(16) + src_port(2) + dst_port(2) + protocol(1) + pad(3) = 40
+        assert_eq!(mem::size_of::<CtKeyV6>(), 40);
+    }
+
+    #[test]
+    fn ct_value_v6_size() {
+        // timestamp(8) + backend_ip(16) + origin_ip(16) + backend_port(2) + origin_port(2) + flags(1) + pad(1) + pad2(2) = 48
+        assert_eq!(mem::size_of::<CtValueV6>(), 48);
+    }
+
+    #[test]
+    fn sock_lb_origin_v6_size() {
+        // original_ip(16) + original_port(2) + protocol(1) + pad(1) = 20
+        assert_eq!(mem::size_of::<SockLbOriginV6>(), 20);
+    }
+
+    // -- V6 alignment tests --
+
+    #[test]
+    fn endpoint_key_v6_alignment() {
+        assert_eq!(mem::align_of::<EndpointKeyV6>(), 1);
+    }
+
+    #[test]
+    fn endpoint_value_v6_alignment() {
+        assert_eq!(mem::align_of::<EndpointValueV6>(), 4);
+    }
+
+    #[test]
+    fn ct_key_v6_alignment() {
+        assert_eq!(mem::align_of::<CtKeyV6>(), 2);
+    }
+
+    #[test]
+    fn ct_value_v6_alignment() {
+        assert_eq!(mem::align_of::<CtValueV6>(), 8);
+    }
+
+    // -- IPv6 config key tests --
+
+    #[test]
+    fn ipv6_config_keys_are_sequential() {
+        assert_eq!(CONFIG_KEY_NODE_IPV6_HI, 20);
+        assert_eq!(CONFIG_KEY_NODE_IPV6_LO, 21);
+        assert_eq!(CONFIG_KEY_CLUSTER_CIDR_IPV6_HI, 22);
+        assert_eq!(CONFIG_KEY_CLUSTER_CIDR_IPV6_LO, 23);
+        assert_eq!(CONFIG_KEY_CLUSTER_CIDR_PREFIX_V6, 24);
+        assert_eq!(CONFIG_KEY_POD_CIDR_IPV6_HI, 25);
+        assert_eq!(CONFIG_KEY_POD_CIDR_IPV6_LO, 26);
+        assert_eq!(CONFIG_KEY_POD_CIDR_PREFIX_V6, 27);
+        assert_eq!(CONFIG_KEY_SNAT_IPV6_HI, 28);
+        assert_eq!(CONFIG_KEY_SNAT_IPV6_LO, 29);
+        assert_eq!(CONFIG_KEY_IPV6_ENABLED, 30);
+    }
+
+    // -- Helper function tests --
+
+    #[test]
+    fn ipv4_roundtrip() {
+        let bytes = [10u8, 42, 5, 1];
+        let ip = ipv4_to_u32(&bytes);
+        assert_eq!(u32_to_ipv4(ip), bytes);
+    }
+
+    #[test]
+    fn ipv6_u64_pair_roundtrip() {
+        let addr: [u8; 16] = [
+            0xfd, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x01,
+        ];
+        let (hi, lo) = ipv6_to_u64_pair(&addr);
+        assert_eq!(u64_pair_to_ipv6(hi, lo), addr);
+    }
+
+    #[test]
+    fn af_inet_constants() {
+        assert_eq!(AF_INET, 2);
+        assert_eq!(AF_INET6, 10);
+    }
+
+    #[test]
+    fn ipv6_hlen_constant() {
+        assert_eq!(IPV6_HLEN, 40);
     }
 }

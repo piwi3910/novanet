@@ -35,13 +35,13 @@ const (
 
 // Endpoint represents a pod endpoint in the dataplane.
 type Endpoint struct {
-	IP         uint32
+	IP         string
 	Ifindex    uint32
 	MAC        net.HardwareAddr
 	IdentityID uint32
 	PodName    string
 	Namespace  string
-	NodeIP     uint32
+	NodeIP     string
 }
 
 // PolicyRule represents a compiled policy rule.
@@ -55,8 +55,8 @@ type PolicyRule struct {
 
 // FlowEvent represents a network flow event from the dataplane.
 type FlowEvent struct {
-	SrcIP       uint32
-	DstIP       uint32
+	SrcIP       string
+	DstIP       string
 	SrcIdentity uint32
 	DstIdentity uint32
 	Protocol    uint32
@@ -91,12 +91,12 @@ type SyncResult struct {
 type ClientInterface interface {
 	Connect(ctx context.Context) error
 	UpsertEndpoint(ctx context.Context, ep *Endpoint) error
-	DeleteEndpoint(ctx context.Context, ip uint32) error
+	DeleteEndpoint(ctx context.Context, ip string) error
 	UpsertPolicy(ctx context.Context, rule *PolicyRule) error
 	DeletePolicy(ctx context.Context, rule *PolicyRule) error
 	SyncPolicies(ctx context.Context, rules []*PolicyRule) (*SyncResult, error)
-	UpsertTunnel(ctx context.Context, nodeIP, ifindex, vni uint32) error
-	DeleteTunnel(ctx context.Context, nodeIP uint32) error
+	UpsertTunnel(ctx context.Context, nodeIP string, ifindex, vni uint32) error
+	DeleteTunnel(ctx context.Context, nodeIP string) error
 	UpdateConfig(ctx context.Context, entries map[uint32]uint64) error
 	AttachProgram(ctx context.Context, iface string, attachType AttachType) error
 	DetachProgram(ctx context.Context, iface string, attachType AttachType) error
@@ -174,7 +174,7 @@ func (c *Client) UpsertEndpoint(ctx context.Context, ep *Endpoint) error {
 	})
 
 	c.logger.Debug("UpsertEndpoint",
-		zap.Uint32("ip", ep.IP),
+		zap.String("ip", ep.IP),
 		zap.Uint32("identity", ep.IdentityID),
 		zap.Duration("duration", time.Since(start)),
 		zap.Error(err),
@@ -187,7 +187,7 @@ func (c *Client) UpsertEndpoint(ctx context.Context, ep *Endpoint) error {
 }
 
 // DeleteEndpoint removes an endpoint from the dataplane.
-func (c *Client) DeleteEndpoint(ctx context.Context, ip uint32) error {
+func (c *Client) DeleteEndpoint(ctx context.Context, ip string) error {
 	c.mu.RLock()
 	client := c.client
 	c.mu.RUnlock()
@@ -294,7 +294,7 @@ func (c *Client) SyncPolicies(ctx context.Context, rules []*PolicyRule) (*SyncRe
 }
 
 // UpsertTunnel registers a tunnel with the dataplane.
-func (c *Client) UpsertTunnel(ctx context.Context, nodeIP, ifindex, vni uint32) error {
+func (c *Client) UpsertTunnel(ctx context.Context, nodeIP string, ifindex, vni uint32) error {
 	c.mu.RLock()
 	client := c.client
 	c.mu.RUnlock()
@@ -315,7 +315,7 @@ func (c *Client) UpsertTunnel(ctx context.Context, nodeIP, ifindex, vni uint32) 
 }
 
 // DeleteTunnel removes a tunnel from the dataplane.
-func (c *Client) DeleteTunnel(ctx context.Context, nodeIP uint32) error {
+func (c *Client) DeleteTunnel(ctx context.Context, nodeIP string) error {
 	c.mu.RLock()
 	client := c.client
 	c.mu.RUnlock()

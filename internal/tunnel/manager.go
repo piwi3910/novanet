@@ -100,9 +100,8 @@ func (m *Manager) AddTunnel(ctx context.Context, nodeName, nodeIP, podCIDR strin
 	// Register this remote node in the eBPF TUNNELS map.
 	// All remotes share the same ifindex; the eBPF program sets per-packet
 	// tunnel metadata (remote IP, VNI) via bpf_skb_set_tunnel_key.
-	remoteIP := IPToUint32(parsedIP)
 	if m.dpClient != nil {
-		if err := m.dpClient.UpsertTunnel(ctx, remoteIP, uint32(m.tunnelIfindex), m.vni); err != nil { //nolint:gosec // ifindex is always positive and small
+		if err := m.dpClient.UpsertTunnel(ctx, parsedIP.String(), uint32(m.tunnelIfindex), m.vni); err != nil { //nolint:gosec // ifindex is always positive and small
 			return fmt.Errorf("registering tunnel with dataplane: %w", err)
 		}
 	}
@@ -181,10 +180,8 @@ func (m *Manager) removeTunnelLocked(ctx context.Context, nodeName string) {
 	}
 
 	// Remove from eBPF TUNNELS map.
-	parsedIP := net.ParseIP(info.NodeIP)
-	if m.dpClient != nil && parsedIP != nil {
-		remoteIP := IPToUint32(parsedIP)
-		if err := m.dpClient.DeleteTunnel(ctx, remoteIP); err != nil {
+	if m.dpClient != nil && info.NodeIP != "" {
+		if err := m.dpClient.DeleteTunnel(ctx, info.NodeIP); err != nil {
 			m.logger.Error("failed to delete tunnel from dataplane",
 				zap.Error(err),
 				zap.String("node", nodeName),
@@ -235,13 +232,4 @@ func (m *Manager) Count() int {
 // Protocol returns the tunnel protocol in use.
 func (m *Manager) Protocol() string {
 	return m.protocol
-}
-
-// IPToUint32 converts an IPv4 address to a uint32 in network byte order.
-func IPToUint32(ip net.IP) uint32 {
-	ip4 := ip.To4()
-	if ip4 == nil {
-		return 0
-	}
-	return uint32(ip4[0])<<24 | uint32(ip4[1])<<16 | uint32(ip4[2])<<8 | uint32(ip4[3])
 }

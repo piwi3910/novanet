@@ -36,7 +36,7 @@ type mockDPClient struct {
 
 func (m *mockDPClient) Connect(ctx context.Context) error                                { return nil }
 func (m *mockDPClient) UpsertEndpoint(ctx context.Context, ep *dataplane.Endpoint) error { return nil }
-func (m *mockDPClient) DeleteEndpoint(ctx context.Context, ip uint32) error              { return nil }
+func (m *mockDPClient) DeleteEndpoint(ctx context.Context, ip string) error              { return nil }
 func (m *mockDPClient) UpsertPolicy(ctx context.Context, rule *dataplane.PolicyRule) error {
 	return nil
 }
@@ -61,14 +61,14 @@ func (m *mockDPClient) GetStatus(ctx context.Context) (*dataplane.Status, error)
 }
 func (m *mockDPClient) Close() error { return nil }
 
-func (m *mockDPClient) UpsertTunnel(ctx context.Context, nodeIP, ifindex, vni uint32) error {
+func (m *mockDPClient) UpsertTunnel(ctx context.Context, nodeIP string, ifindex, vni uint32) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.upsertTunnelCalls++
 	return nil
 }
 
-func (m *mockDPClient) DeleteTunnel(ctx context.Context, nodeIP uint32) error {
+func (m *mockDPClient) DeleteTunnel(ctx context.Context, nodeIP string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.deleteTunnelCalls++
@@ -251,24 +251,6 @@ func TestListTunnelsEmpty(t *testing.T) {
 	tunnels := m.ListTunnels()
 	if len(tunnels) != 0 {
 		t.Fatalf("expected 0 tunnels, got %d", len(tunnels))
-	}
-}
-
-func TestIPToUint32(t *testing.T) {
-	tests := []struct {
-		ip       string
-		expected uint32
-	}{
-		{"10.0.0.1", 0x0A000001},
-		{"192.168.1.1", 0xC0A80101},
-		{"0.0.0.0", 0x00000000},
-	}
-
-	for _, tt := range tests {
-		got := IPToUint32(net.ParseIP(tt.ip))
-		if got != tt.expected {
-			t.Errorf("IPToUint32(%s) = 0x%08X, want 0x%08X", tt.ip, got, tt.expected)
-		}
 	}
 }
 
