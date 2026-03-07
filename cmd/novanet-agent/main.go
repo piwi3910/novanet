@@ -938,6 +938,7 @@ type shutdownState struct {
 	bgWg          *sync.WaitGroup
 	cniGRPC       *grpc.Server
 	agentGRPC     *grpc.Server
+	ipamGRPC      *grpc.Server
 	metricsServer *http.Server
 	dpConn        *grpc.ClientConn
 	nrClient      *novaroute.Client
@@ -983,6 +984,7 @@ func main() {
 
 	// Initialize core subsystems.
 	ipAlloc := createIPAM(logger, params.podCIDR)
+	ipamMgr := ipam.NewManager(logger)
 	setupMasquerade(logger, cfg, params.podCIDR)
 	idAlloc := identity.NewAllocator(logger)
 	logger.Info("identity allocator created")
@@ -1023,6 +1025,7 @@ func main() {
 	// Start gRPC and metrics servers.
 	cniGRPC := startCNIServer(logger, cfg, agentSrv)
 	agentGRPC := startAgentServer(logger, cfg, agentSrv)
+	ipamGRPC := startIPAMServer(logger, ipamMgr)
 	metricsServer := startMetricsServer(logger, cfg, agentSrv)
 
 	// Mode-specific initialization (overlay tunnels or native BGP).
@@ -1037,6 +1040,7 @@ func main() {
 		bgWg:          &bgWg,
 		cniGRPC:       cniGRPC,
 		agentGRPC:     agentGRPC,
+		ipamGRPC:      ipamGRPC,
 		metricsServer: metricsServer,
 		dpConn:        dpConn,
 		nrClient:      nrClient,
@@ -1427,6 +1431,25 @@ func startAgentServer(logger *zap.Logger, cfg *config.Config, agentSrv *agentSer
 	return agentGRPC
 }
 
+// startIPAMServer starts the shared IPAM gRPC server on /run/novanet/ipam.sock.
+func startIPAMServer(logger *zap.Logger, ipamMgr *ipam.Manager) *grpc.Server {
+	const ipamSocket = "/run/novanet/ipam.sock"
+	ipamSrv := ipam.NewGRPCServer(ipamMgr, logger)
+	ipamListener, ipamGRPC, err := startGRPCServer(logger, ipamSocket, "IPAM", func(s *grpc.Server) {
+		pb.RegisterIPAMServiceServer(s, ipamSrv)
+	})
+	if err != nil {
+		logger.Fatal("failed to start IPAM gRPC server", zap.Error(err))
+	}
+	go func() {
+		logger.Info("IPAM gRPC server listening", zap.String("socket", ipamSocket))
+		if err := ipamGRPC.Serve(ipamListener); err != nil {
+			logger.Error("IPAM gRPC server error", zap.Error(err))
+		}
+	}()
+	return ipamGRPC
+}
+
 // startMetricsServer starts the Prometheus metrics and health check HTTP server.
 func startMetricsServer(logger *zap.Logger, cfg *config.Config, agentSrv *agentServer) *http.Server {
 	metricsMux := http.NewServeMux()
@@ -1640,6 +1663,11 @@ func gracefulShutdown(s *shutdownState) {
 
 	s.agentGRPC.GracefulStop()
 	s.logger.Info("agent gRPC server stopped")
+
+	if s.ipamGRPC != nil {
+		s.ipamGRPC.GracefulStop()
+		s.logger.Info("IPAM gRPC server stopped")
+	}
 
 	// Stop metrics server.
 	if err := s.metricsServer.Shutdown(shutdownCtx); err != nil {
