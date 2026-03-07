@@ -85,6 +85,11 @@ async fn main() -> Result<()> {
                 });
             }
 
+            // Attach cgroup socket-LB programs to root cgroup.
+            if let Err(e) = mgr.attach_cgroup_programs() {
+                tracing::warn!("Failed to attach cgroup socket-LB programs: {}", e);
+            }
+
             mgr
         }
         #[cfg(not(target_os = "linux"))]
