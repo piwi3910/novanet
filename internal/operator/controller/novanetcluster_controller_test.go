@@ -17,7 +17,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	novanetv1alpha1 "github.com/piwi3910/novanet/api/v1alpha1"
+	novanetv1alpha1 "github.com/azrtydxb/novanet/api/v1alpha1"
 )
 
 func newScheme(t *testing.T) *runtime.Scheme {
@@ -47,7 +47,7 @@ func newSampleCluster() *novanetv1alpha1.NovaNetCluster {
 		},
 		Spec: novanetv1alpha1.NovaNetClusterSpec{
 			Version:         "v0.1.0",
-			ImageRepository: "ghcr.io/piwi3910/novanet",
+			ImageRepository: "ghcr.io/azrtydxb/novanet",
 			ImagePullPolicy: corev1.PullIfNotPresent,
 			Agent: novanetv1alpha1.NovaNetAgentSpec{
 				LogLevel:    "info",

@@ -16,9 +16,9 @@ import (
 	"sync"
 	"time"
 
-	pb "github.com/piwi3910/novanet/api/v1"
-	"github.com/piwi3910/novanet/internal/novaroute"
-	"github.com/piwi3910/novanet/internal/tunnel"
+	pb "github.com/azrtydxb/novanet/api/v1"
+	"github.com/azrtydxb/novanet/internal/novaroute"
+	"github.com/azrtydxb/novanet/internal/tunnel"
 	"go.uber.org/zap"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"

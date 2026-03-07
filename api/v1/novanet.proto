@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package novanet.v1;
 
-option go_package = "github.com/piwi3910/novanet/api/v1";
+option go_package = "github.com/azrtydxb/novanet/api/v1";
 
 // DataplaneControl is the internal API between the Go management plane
 // and the Rust eBPF dataplane. The Rust dataplane runs the gRPC server,

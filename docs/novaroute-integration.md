@@ -43,7 +43,7 @@ NovaRoute runs as a DaemonSet with one pod per node. Each pod contains:
 
 NovaRoute exposes a gRPC API over a Unix socket at `/run/novaroute/novaroute.sock`. Clients like NovaNet register as "owners" and request route advertisements.
 
-For detailed NovaRoute documentation, see [github.com/piwi3910/NovaRoute](https://github.com/piwi3910/NovaRoute).
+For detailed NovaRoute documentation, see [github.com/azrtydxb/NovaRoute](https://github.com/azrtydxb/NovaRoute).
 
 ---
 

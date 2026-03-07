@@ -75,7 +75,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.REGISTRY }}/piwi3910/novanet/novanet-agent
+          images: ${{ env.REGISTRY }}/azrtydxb/novanet/novanet-agent
           tags: |
             type=semver,pattern=v{{version}},suffix=-${{ matrix.arch.name }}
             type=semver,pattern=v{{major}}.{{minor}},suffix=-${{ matrix.arch.name }}
@@ -121,7 +121,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.REGISTRY }}/piwi3910/novanet/novanet-dataplane
+          images: ${{ env.REGISTRY }}/azrtydxb/novanet/novanet-dataplane
           tags: |
             type=semver,pattern=v{{version}},suffix=-${{ matrix.arch.name }}
             type=semver,pattern=v{{major}}.{{minor}},suffix=-${{ matrix.arch.name }}

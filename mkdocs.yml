@@ -1,8 +1,8 @@
 site_name: NovaNet
 site_description: High-performance eBPF-based Kubernetes CNI
-site_url: https://piwi3910.github.io/novanet
-repo_url: https://github.com/piwi3910/novanet
-repo_name: piwi3910/novanet
+site_url: https://azrtydxb.github.io/novanet
+repo_url: https://github.com/azrtydxb/novanet
+repo_name: azrtydxb/novanet
 
 theme:
   name: material
@@ -73,4 +73,4 @@ nav:
 extra:
   social:
     - icon: fontawesome/brands/github
-      link: https://github.com/piwi3910/novanet
+      link: https://github.com/azrtydxb/novanet

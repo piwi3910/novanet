@@ -14,7 +14,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
-	pb "github.com/piwi3910/novanet/api/v1"
+	pb "github.com/azrtydxb/novanet/api/v1"
 )
 
 // Sentinel errors for the dataplane client.

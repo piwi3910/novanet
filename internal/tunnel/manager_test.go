@@ -9,9 +9,9 @@ import (
 
 	"go.uber.org/zap"
 
-	"github.com/piwi3910/novanet/internal/dataplane"
+	"github.com/azrtydxb/novanet/internal/dataplane"
 
-	pb "github.com/piwi3910/novanet/api/v1"
+	pb "github.com/azrtydxb/novanet/api/v1"
 )
 
 // requireRoot skips the test when not running as root (needed for netlink).

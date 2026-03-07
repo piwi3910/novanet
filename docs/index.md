@@ -32,10 +32,10 @@
 
 | Component | Role |
 |-----------|------|
-| [NovaEdge](https://github.com/piwi3910/novaedge) | Load balancing, reverse proxy, VIP controller, SD-WAN gateway |
-| [NovaRoute](https://github.com/piwi3910/NovaRoute) | Node-local routing control plane (BGP/OSPF/BFD via FRR) |
+| [NovaEdge](https://github.com/azrtydxb/novaedge) | Load balancing, reverse proxy, VIP controller, SD-WAN gateway |
+| [NovaRoute](https://github.com/azrtydxb/NovaRoute) | Node-local routing control plane (BGP/OSPF/BFD via FRR) |
 | **NovaNet** | Pod networking, L3/L4 policy, observability |
 
 ---
 
-[GitHub Repository](https://github.com/piwi3910/novanet) | [Apache 2.0 License](https://github.com/piwi3910/novanet/blob/main/LICENSE)
+[GitHub Repository](https://github.com/azrtydxb/novanet) | [Apache 2.0 License](https://github.com/azrtydxb/novanet/blob/main/LICENSE)

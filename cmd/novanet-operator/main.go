@@ -17,8 +17,8 @@ import (
 	ctrlzap "sigs.k8s.io/controller-runtime/pkg/log/zap"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
-	novanetv1alpha1 "github.com/piwi3910/novanet/api/v1alpha1"
-	"github.com/piwi3910/novanet/internal/operator/controller"
+	novanetv1alpha1 "github.com/azrtydxb/novanet/api/v1alpha1"
+	"github.com/azrtydxb/novanet/internal/operator/controller"
 )
 
 // Build-time variables set via ldflags.

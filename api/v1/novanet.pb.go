@@ -4245,7 +4245,7 @@ const file_api_v1_novanet_proto_rawDesc = "" +
 	"\x0eListIdentities\x12!.novanet.v1.ListIdentitiesRequest\x1a\".novanet.v1.ListIdentitiesResponse\x12N\n" +
 	"\vListTunnels\x12\x1e.novanet.v1.ListTunnelsRequest\x1a\x1f.novanet.v1.ListTunnelsResponse\x12c\n" +
 	"\x12ListEgressPolicies\x12%.novanet.v1.ListEgressPoliciesRequest\x1a&.novanet.v1.ListEgressPoliciesResponse\x12Q\n" +
-	"\fListServices\x12\x1f.novanet.v1.ListServicesRequest\x1a .novanet.v1.ListServicesResponseB$Z\"github.com/piwi3910/novanet/api/v1b\x06proto3"
+	"\fListServices\x12\x1f.novanet.v1.ListServicesRequest\x1a .novanet.v1.ListServicesResponseB$Z\"github.com/azrtydxb/novanet/api/v1b\x06proto3"
 
 var (
 	file_api_v1_novanet_proto_rawDescOnce sync.Once

@@ -5,7 +5,7 @@ import (
 	"sync"
 	"testing"
 
-	pb "github.com/piwi3910/novanet/api/v1"
+	pb "github.com/azrtydxb/novanet/api/v1"
 	"go.uber.org/zap"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"

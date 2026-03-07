@@ -11,7 +11,7 @@ import (
 	"text/tabwriter"
 	"time"
 
-	pb "github.com/piwi3910/novanet/api/v1"
+	pb "github.com/azrtydxb/novanet/api/v1"
 
 	"github.com/spf13/cobra"
 )

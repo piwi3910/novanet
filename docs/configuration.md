@@ -12,10 +12,10 @@ The following table lists all configurable values in the NovaNet Helm chart (`de
 
 | Key | Default | Description |
 |-----|---------|-------------|
-| `image.agent.repository` | `ghcr.io/piwi3910/novanet/novanet-agent` | Container image for the Go management plane agent |
+| `image.agent.repository` | `ghcr.io/azrtydxb/novanet/novanet-agent` | Container image for the Go management plane agent |
 | `image.agent.tag` | `latest` | Image tag for the agent |
 | `image.agent.pullPolicy` | `IfNotPresent` | Image pull policy for the agent. Use `Always` during development. |
-| `image.dataplane.repository` | `ghcr.io/piwi3910/novanet/novanet-dataplane` | Container image for the Rust eBPF dataplane |
+| `image.dataplane.repository` | `ghcr.io/azrtydxb/novanet/novanet-dataplane` | Container image for the Rust eBPF dataplane |
 | `image.dataplane.tag` | `latest` | Image tag for the dataplane |
 | `image.dataplane.pullPolicy` | `IfNotPresent` | Image pull policy for the dataplane |
 

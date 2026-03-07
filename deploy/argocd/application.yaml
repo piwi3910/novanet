@@ -5,8 +5,8 @@ metadata:
   namespace: argocd
   annotations:
     argocd-image-updater.argoproj.io/image-list: >-
-      agent=ghcr.io/piwi3910/novanet/novanet-agent,
-      dataplane=ghcr.io/piwi3910/novanet/novanet-dataplane
+      agent=ghcr.io/azrtydxb/novanet/novanet-agent,
+      dataplane=ghcr.io/azrtydxb/novanet/novanet-dataplane
     argocd-image-updater.argoproj.io/agent.update-strategy: semver
     argocd-image-updater.argoproj.io/dataplane.update-strategy: semver
     argocd-image-updater.argoproj.io/agent.helm.image-name: image.agent.repository
@@ -18,7 +18,7 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: https://github.com/piwi3910/novanet
+    repoURL: https://github.com/azrtydxb/novanet
     path: deploy/helm/novanet
     targetRevision: main
     helm:
@@ -26,10 +26,10 @@ spec:
       valuesObject:
         image:
           agent:
-            repository: ghcr.io/piwi3910/novanet/novanet-agent
+            repository: ghcr.io/azrtydxb/novanet/novanet-agent
             tag: v1.8.1
           dataplane:
-            repository: ghcr.io/piwi3910/novanet/novanet-dataplane
+            repository: ghcr.io/azrtydxb/novanet/novanet-dataplane
             tag: v1.8.1
         l4lb:
           enabled: true

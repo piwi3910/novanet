@@ -51,6 +51,6 @@ Initial stable release of NovaNet, an eBPF-based Kubernetes CNI providing identi
 ### Docker Images
 
 ```
-ghcr.io/piwi3910/novanet/novanet-agent:1.0.0
-ghcr.io/piwi3910/novanet/novanet-dataplane:1.0.0
+ghcr.io/azrtydxb/novanet/novanet-agent:1.0.0
+ghcr.io/azrtydxb/novanet/novanet-dataplane:1.0.0
 ```

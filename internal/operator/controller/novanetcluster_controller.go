@@ -24,7 +24,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
-	novanetv1alpha1 "github.com/piwi3910/novanet/api/v1alpha1"
+	novanetv1alpha1 "github.com/azrtydxb/novanet/api/v1alpha1"
 )
 
 const (
@@ -846,7 +846,7 @@ func (r *NovaNetClusterReconciler) getSelectorLabels(cluster *novanetv1alpha1.No
 }
 
 func (r *NovaNetClusterReconciler) getImage(cluster *novanetv1alpha1.NovaNetCluster, component string) string {
-	repo := "ghcr.io/piwi3910/novanet"
+	repo := "ghcr.io/azrtydxb/novanet"
 	if cluster.Spec.ImageRepository != "" {
 		repo = cluster.Spec.ImageRepository
 	}

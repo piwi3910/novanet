@@ -15,7 +15,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/cache"
 
-	pb "github.com/piwi3910/novanet/api/v1"
+	pb "github.com/azrtydxb/novanet/api/v1"
 )
 
 const (

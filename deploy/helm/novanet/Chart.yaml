@@ -5,12 +5,12 @@ type: application
 version: 0.1.0
 appVersion: "0.1.0"
 kubeVersion: ">=1.28.0"
-home: https://github.com/piwi3910/novanet
+home: https://github.com/azrtydxb/novanet
 sources:
-  - https://github.com/piwi3910/novanet
+  - https://github.com/azrtydxb/novanet
 maintainers:
   - name: Pascal Watteel
-    url: https://github.com/piwi3910
+    url: https://github.com/azrtydxb
 keywords:
   - cni
   - ebpf

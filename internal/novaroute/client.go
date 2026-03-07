@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	nrpb "github.com/piwi3910/NovaRoute/api/v1"
+	nrpb "github.com/azrtydxb/NovaRoute/api/v1"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"

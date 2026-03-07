@@ -27,7 +27,7 @@ type NovaNetClusterSpec struct {
 	Version string `json:"version"`
 
 	// ImageRepository for NovaNet images.
-	// +kubebuilder:default="ghcr.io/piwi3910/novanet"
+	// +kubebuilder:default="ghcr.io/azrtydxb/novanet"
 	// +optional
 	ImageRepository string `json:"imageRepository,omitempty"`
 

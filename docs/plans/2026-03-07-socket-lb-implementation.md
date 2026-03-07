@@ -672,10 +672,10 @@ Update `deploy/argocd/application.yaml` to use the new image tag:
       valuesObject:
         image:
           agent:
-            repository: ghcr.io/piwi3910/novanet/novanet-agent
+            repository: ghcr.io/azrtydxb/novanet/novanet-agent
             tag: v1.7.0
           dataplane:
-            repository: ghcr.io/piwi3910/novanet/novanet-dataplane
+            repository: ghcr.io/azrtydxb/novanet/novanet-dataplane
             tag: v1.7.0
         l4lb:
           enabled: true

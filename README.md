@@ -3,10 +3,10 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/piwi3910/novanet/actions/workflows/ci.yml"><img src="https://github.com/piwi3910/novanet/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
-  <a href="https://github.com/piwi3910/novanet/actions/workflows/release.yml"><img src="https://github.com/piwi3910/novanet/actions/workflows/release.yml/badge.svg" alt="Release"></a>
+  <a href="https://github.com/azrtydxb/novanet/actions/workflows/ci.yml"><img src="https://github.com/azrtydxb/novanet/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://github.com/azrtydxb/novanet/actions/workflows/release.yml"><img src="https://github.com/azrtydxb/novanet/actions/workflows/release.yml/badge.svg" alt="Release"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-Apache_2.0-blue.svg" alt="License"></a>
-  <a href="go.mod"><img src="https://img.shields.io/github/go-mod/go-version/piwi3910/novanet" alt="Go Version"></a>
+  <a href="go.mod"><img src="https://img.shields.io/github/go-mod/go-version/azrtydxb/novanet" alt="Go Version"></a>
 </p>
 
 ---
@@ -17,8 +17,8 @@ NovaNet is part of the **Nova networking stack**:
 
 | Component | Role |
 |-----------|------|
-| **[NovaEdge](https://github.com/piwi3910/novaedge)** | Load balancing, reverse proxy, VIP controller, SD-WAN gateway |
-| **[NovaRoute](https://github.com/piwi3910/NovaRoute)** | Node-local routing control plane (BGP/OSPF/BFD via FRR) |
+| **[NovaEdge](https://github.com/azrtydxb/novaedge)** | Load balancing, reverse proxy, VIP controller, SD-WAN gateway |
+| **[NovaRoute](https://github.com/azrtydxb/NovaRoute)** | Node-local routing control plane (BGP/OSPF/BFD via FRR) |
 | **NovaNet** (this repo) | Pod networking, L3/L4 policy, observability |
 
 ---
@@ -84,7 +84,7 @@ NovaNet is part of the **Nova networking stack**:
 ### Install (Overlay Mode)
 
 ```bash
-git clone https://github.com/piwi3910/novanet.git
+git clone https://github.com/azrtydxb/novanet.git
 cd novanet
 
 helm install novanet ./deploy/helm/novanet \
@@ -159,8 +159,8 @@ novaroute:
 Multi-arch images (`linux/amd64` + `linux/arm64`) are published to GHCR on every tagged release:
 
 ```
-ghcr.io/piwi3910/novanet/novanet-agent:<version>
-ghcr.io/piwi3910/novanet/novanet-dataplane:<version>
+ghcr.io/azrtydxb/novanet/novanet-agent:<version>
+ghcr.io/azrtydxb/novanet/novanet-dataplane:<version>
 ```
 
 ---

@@ -1,10 +1,10 @@
-module github.com/piwi3910/novanet
+module github.com/azrtydxb/novanet
 
 go 1.26.0
 
 require (
 	github.com/containernetworking/cni v1.3.0
-	github.com/piwi3910/NovaRoute v0.5.2
+	github.com/azrtydxb/NovaRoute v0.5.2
 	github.com/prometheus/client_golang v1.23.2
 	github.com/prometheus/client_model v0.6.2
 	github.com/spf13/cobra v1.10.2

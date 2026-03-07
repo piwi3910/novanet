@@ -7,7 +7,7 @@ replicaCount: 1
 # -- Image configuration
 image:
   # -- Image repository
-  repository: ghcr.io/piwi3910/novanet/novanet-operator
+  repository: ghcr.io/azrtydxb/novanet/novanet-operator
   # -- Image pull policy
   pullPolicy: IfNotPresent
   # -- Image tag (defaults to chart appVersion)

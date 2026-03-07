@@ -60,14 +60,14 @@ mount -t bpf bpf /sys/fs/bpf
 **From a local clone:**
 
 ```bash
-git clone https://github.com/piwi3910/novanet.git
+git clone https://github.com/azrtydxb/novanet.git
 cd novanet
 ```
 
 **From the Helm repository (when published):**
 
 ```bash
-helm repo add novanet https://piwi3910.github.io/novanet/charts
+helm repo add novanet https://azrtydxb.github.io/novanet/charts
 helm repo update
 ```
 

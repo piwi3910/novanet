@@ -10,9 +10,9 @@ keywords:
   - cni
   - networking
   - kubernetes
-home: https://github.com/piwi3910/novanet
+home: https://github.com/azrtydxb/novanet
 sources:
-  - https://github.com/piwi3910/novanet
+  - https://github.com/azrtydxb/novanet
 maintainers:
-  - name: piwi3910
-    url: https://github.com/piwi3910
+  - name: azrtydxb
+    url: https://github.com/azrtydxb

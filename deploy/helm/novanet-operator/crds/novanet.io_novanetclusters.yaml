@@ -414,7 +414,7 @@ spec:
                   x-kubernetes-map-type: atomic
                 type: array
               imageRepository:
-                default: ghcr.io/piwi3910/novanet
+                default: ghcr.io/azrtydxb/novanet
                 description: ImageRepository for NovaNet images.
                 type: string
               networking:

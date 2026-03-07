@@ -236,7 +236,7 @@ Triggered by pushing a version tag (`v*`):
 
 1. Builds Go binaries for `linux/amd64` and `linux/arm64`
 2. Builds multi-arch Docker images (amd64 + arm64) for both agent and dataplane
-3. Pushes images to `ghcr.io/piwi3910/novanet/novanet-agent` and `ghcr.io/piwi3910/novanet/novanet-dataplane`
+3. Pushes images to `ghcr.io/azrtydxb/novanet/novanet-agent` and `ghcr.io/azrtydxb/novanet/novanet-dataplane`
 4. Runs Trivy vulnerability scans on published images
 5. Creates a GitHub Release with tarballs attached
 

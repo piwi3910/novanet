@@ -10,10 +10,10 @@ import (
 
 	"go.uber.org/zap"
 
-	"github.com/piwi3910/novanet/internal/config"
-	"github.com/piwi3910/novanet/internal/node"
-	"github.com/piwi3910/novanet/internal/novaroute"
-	"github.com/piwi3910/novanet/internal/tunnel"
+	"github.com/azrtydxb/novanet/internal/config"
+	"github.com/azrtydxb/novanet/internal/node"
+	"github.com/azrtydxb/novanet/internal/novaroute"
+	"github.com/azrtydxb/novanet/internal/tunnel"
 )
 
 // Sentinel errors for routing mode operations.

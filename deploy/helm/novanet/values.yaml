@@ -4,11 +4,11 @@ fullnameOverride: ""
 
 image:
   agent:
-    repository: ghcr.io/piwi3910/novanet/novanet-agent
+    repository: ghcr.io/azrtydxb/novanet/novanet-agent
     tag: latest
     pullPolicy: IfNotPresent
   dataplane:
-    repository: ghcr.io/piwi3910/novanet/novanet-dataplane
+    repository: ghcr.io/azrtydxb/novanet/novanet-dataplane
     tag: latest
     pullPolicy: IfNotPresent
 

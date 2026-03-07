@@ -768,7 +768,7 @@ kubectl get events -n nova-system --sort-by='.lastTimestamp'
 
 ## Getting Help
 
-- GitHub Issues: [github.com/piwi3910/novanet/issues](https://github.com/piwi3910/novanet/issues)
+- GitHub Issues: [github.com/azrtydxb/novanet/issues](https://github.com/azrtydxb/novanet/issues)
 - Include the debug bundle output when reporting issues
 - Specify your Kubernetes distribution, kernel version, and NovaNet version
 

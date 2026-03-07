@@ -8,7 +8,7 @@
 
 **Tech Stack:** Go 1.26 (management plane, CNI binary, CLI), Rust (dataplane, Aya framework for eBPF), Protobuf/gRPC (agent ↔ dataplane IPC), eBPF (TC ingress/egress hooks), Kubernetes client-go (watchers), Prometheus (metrics).
 
-**Reference:** NovaRoute repo at github.com/piwi3910/NovaRoute — match its Go conventions (package layout, zap logging, cobra CLI, protobuf API, Makefile structure, CI pipeline, config pattern).
+**Reference:** NovaRoute repo at github.com/azrtydxb/NovaRoute — match its Go conventions (package layout, zap logging, cobra CLI, protobuf API, Makefile structure, CI pipeline, config pattern).
 
 ---
 
@@ -31,7 +31,7 @@
 
 ```bash
 cd /Users/pascal/Development/novanet
-go mod init github.com/piwi3910/novanet
+go mod init github.com/azrtydxb/novanet
 ```
 
 **Step 2: Create .gitignore**
@@ -408,7 +408,7 @@ syntax = "proto3";
 
 package novanet.v1;
 
-option go_package = "github.com/piwi3910/novanet/api/v1";
+option go_package = "github.com/azrtydxb/novanet/api/v1";
 
 // DataplaneControl is the internal API between the Go management plane
 // and the Rust eBPF dataplane. The Rust dataplane runs the gRPC server,
@@ -1328,7 +1328,7 @@ Configurable values:
 - Create: `Dockerfile` (multi-stage: Go build + Rust build → minimal runtime)
 - Create: `.github/workflows/release.yml`
 
-Multi-arch (amd64, arm64). Publish to `ghcr.io/piwi3910/novanet/novanet-agent` and `ghcr.io/piwi3910/novanet/novanet-dataplane`.
+Multi-arch (amd64, arm64). Publish to `ghcr.io/azrtydxb/novanet/novanet-agent` and `ghcr.io/azrtydxb/novanet/novanet-dataplane`.
 
 ---
 
