@@ -6,7 +6,7 @@
 #   2. Runtime stage uses the target platform's Alpine.
 
 # ---------- builder (always runs on native build platform) ----------
-FROM --platform=$BUILDPLATFORM golang:1.26.0-bookworm AS builder
+FROM --platform=$BUILDPLATFORM golang:1.26.1-bookworm AS builder
 
 ARG TARGETARCH
 ARG TARGETOS

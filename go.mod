@@ -1,6 +1,6 @@
 module github.com/azrtydxb/novanet
 
-go 1.26.0
+go 1.26.1
 
 require (
 	github.com/azrtydxb/NovaRoute v0.5.2
