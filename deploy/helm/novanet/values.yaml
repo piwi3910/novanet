@@ -35,6 +35,18 @@ routing:
     minRxMs: 300
     minTxMs: 300
     detectMultiplier: 3
+  # External BGP peers (e.g., TOR routers). Applied on every agent node.
+  peers: []
+  # Example:
+  # peers:
+  #   - neighbor_address: "192.168.100.2"
+  #     remote_as: 65000
+  #     description: "TOR-1"
+  #     bfd_enabled: true
+  #   - neighbor_address: "192.168.100.3"
+  #     remote_as: 65000
+  #     description: "TOR-2"
+  #     bfd_enabled: true
 
 egress:
   masqueradeEnabled: true

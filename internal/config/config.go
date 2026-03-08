@@ -117,6 +117,35 @@ type RoutingConfig struct {
 
 	// BFDDetectMult is the BFD detect multiplier. 0 means FRR default (3).
 	BFDDetectMult uint32 `json:"bfd_detect_mult"`
+
+	// Peers defines external BGP peers (e.g., TOR routers) to configure on
+	// each agent node. These are applied in addition to the auto-discovered
+	// inter-node mesh peers.
+	Peers []RoutingPeerConfig `json:"peers"`
+}
+
+// RoutingPeerConfig defines an external BGP peer (e.g., TOR switch).
+type RoutingPeerConfig struct {
+	// NeighborAddress is the IP address of the BGP neighbor.
+	NeighborAddress string `json:"neighbor_address"`
+
+	// RemoteAS is the remote autonomous system number.
+	RemoteAS uint32 `json:"remote_as"`
+
+	// Description is an optional human-readable label.
+	Description string `json:"description"`
+
+	// BFDEnabled enables BFD for this peer.
+	BFDEnabled bool `json:"bfd_enabled"`
+
+	// BFDMinRxMs overrides the BFD minimum receive interval (ms). 0 = use global default.
+	BFDMinRxMs uint32 `json:"bfd_min_rx_ms"`
+
+	// BFDMinTxMs overrides the BFD minimum transmit interval (ms). 0 = use global default.
+	BFDMinTxMs uint32 `json:"bfd_min_tx_ms"`
+
+	// BFDDetectMultiplier overrides the BFD detect multiplier. 0 = use global default.
+	BFDDetectMultiplier uint32 `json:"bfd_detect_multiplier"`
 }
 
 // EgressConfig holds egress control settings.

@@ -40,6 +40,15 @@ spec:
             minRxMs: 300
             minTxMs: 300
             detectMultiplier: 3
+          peers:
+            - neighbor_address: "192.168.100.2"
+              remote_as: 65000
+              description: "TOR-1"
+              bfd_enabled: true
+            - neighbor_address: "192.168.100.3"
+              remote_as: 65000
+              description: "TOR-2"
+              bfd_enabled: true
         l4lb:
           enabled: true
   destination:

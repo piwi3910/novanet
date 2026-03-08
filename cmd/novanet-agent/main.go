@@ -1694,6 +1694,41 @@ func initNativeMode(ctx context.Context, logger *zap.Logger, cfg *config.Config,
 		}()
 	}
 
+	// Apply external BGP peers (e.g., TOR routers) from config.
+	for _, peer := range cfg.Routing.Peers {
+		peerBFD := &routing.BFDOptions{Enabled: peer.BFDEnabled}
+		if peer.BFDEnabled {
+			peerBFD.MinRxMs = peer.BFDMinRxMs
+			peerBFD.MinTxMs = peer.BFDMinTxMs
+			peerBFD.DetectMultiplier = peer.BFDDetectMultiplier
+			// Fall back to global BFD settings if per-peer not set.
+			if peerBFD.MinRxMs == 0 {
+				peerBFD.MinRxMs = cfg.Routing.BFDMinRxMs
+			}
+			if peerBFD.MinTxMs == 0 {
+				peerBFD.MinTxMs = cfg.Routing.BFDMinTxMs
+			}
+			if peerBFD.DetectMultiplier == 0 {
+				peerBFD.DetectMultiplier = cfg.Routing.BFDDetectMult
+			}
+		}
+		if err := routingMgr.ApplyPeer(peer.NeighborAddress, peer.RemoteAS, peerBFD); err != nil {
+			logger.Error("failed to apply external BGP peer",
+				zap.Error(err),
+				zap.String("neighbor", peer.NeighborAddress),
+				zap.Uint32("remote_as", peer.RemoteAS),
+				zap.String("description", peer.Description),
+			)
+		} else {
+			logger.Info("applied external BGP peer",
+				zap.String("neighbor", peer.NeighborAddress),
+				zap.Uint32("remote_as", peer.RemoteAS),
+				zap.String("description", peer.Description),
+				zap.Bool("bfd", peer.BFDEnabled),
+			)
+		}
+	}
+
 	// Watch nodes and establish eBGP peering with each remote node.
 	bgWg.Add(1)
 	go func() {

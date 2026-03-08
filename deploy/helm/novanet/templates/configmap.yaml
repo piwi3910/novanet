@@ -23,7 +23,8 @@ data:
         "bfd_enabled": {{ .Values.routing.bfd.enabled }},
         "bfd_min_rx_ms": {{ .Values.routing.bfd.minRxMs | int }},
         "bfd_min_tx_ms": {{ .Values.routing.bfd.minTxMs | int }},
-        "bfd_detect_mult": {{ .Values.routing.bfd.detectMultiplier | int }}
+        "bfd_detect_mult": {{ .Values.routing.bfd.detectMultiplier | int }},
+        "peers": {{ .Values.routing.peers | default list | toJson }}
       },
       "egress": {
         "masquerade_enabled": {{ .Values.egress.masqueradeEnabled }}
