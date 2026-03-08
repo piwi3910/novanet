@@ -27,7 +27,7 @@ spec:
         image:
           agent:
             repository: ghcr.io/azrtydxb/novanet/novanet-agent
-            tag: v1.8.1
+            tag: v1.9.0
           dataplane:
             repository: ghcr.io/azrtydxb/novanet/novanet-dataplane
             tag: v1.8.1
