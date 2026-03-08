@@ -31,6 +31,15 @@ spec:
           dataplane:
             repository: ghcr.io/azrtydxb/novanet/novanet-dataplane
             tag: v1.8.1
+        config:
+          routingMode: "native"
+        routing:
+          protocol: "bgp"
+          bfd:
+            enabled: true
+            minRxMs: 300
+            minTxMs: 300
+            detectMultiplier: 3
         l4lb:
           enabled: true
   destination:
