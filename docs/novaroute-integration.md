@@ -1,12 +1,12 @@
-# NovaRoute Integration Guide
+# Native Routing (BGP/OSPF)
 
-This guide covers how NovaNet integrates with NovaRoute to provide native routing mode, eliminating tunnel encapsulation for near line-rate pod networking performance.
+This guide covers NovaNet's native routing mode, which eliminates tunnel encapsulation for near line-rate pod networking performance using BGP or OSPF route advertisement via FRR.
 
 ---
 
 ## Overview
 
-In native routing mode, NovaNet does not create overlay tunnels (Geneve/VXLAN). Instead, it delegates route advertisement to **NovaRoute**, a per-node routing control plane that manages BGP, OSPF, and BFD sessions via FRR (Free Range Routing).
+In native routing mode, NovaNet does not create overlay tunnels (Geneve/VXLAN). Instead, the NovaNet agent manages route advertisement directly through an integrated routing manager that configures FRR (Free Range Routing) running as a sidecar container in the NovaNet DaemonSet.
 
 The data path becomes:
 
@@ -16,53 +16,42 @@ Pod A --> TC egress --> policy check --> kernel routing table --> underlay fabri
 
 No encapsulation overhead. Near line-rate performance. The underlay fabric learns pod routes via BGP or OSPF and forwards traffic natively.
 
-### Role Separation
+### Architecture
 
-NovaNet and NovaRoute have distinct responsibilities:
+Routing is fully integrated into the NovaNet DaemonSet. Each NovaNet pod contains:
 
-| Responsibility | NovaNet | NovaRoute |
-|---------------|---------|-----------|
+| Container | Role |
+|-----------|------|
+| `novanet-agent` | Management plane: IPAM, identity, policy, routing manager, CNI handler |
+| `novanet-dataplane` | eBPF program loader and map manager |
+| `frr` | FRR sidecar running BGP, OSPF, and BFD daemons |
+
+The agent communicates with FRR via the FRR management socket (in-process function calls to the routing manager, which writes FRR configuration). There is no gRPC socket, no authentication token, and no separate service to deploy.
+
+### Responsibilities
+
+| Responsibility | NovaNet Agent | FRR Sidecar |
+|---------------|---------------|-------------|
 | Pod networking (veth, IPAM) | Yes | No |
 | L3/L4 policy enforcement | Yes | No |
-| Route advertisement (BGP/OSPF) | No | Yes |
-| BGP session management | No | Yes |
-| BFD failure detection | No | Yes |
+| Route advertisement (BGP/OSPF) | Configures | Executes |
+| BGP session management | Configures | Executes |
+| BFD failure detection | Configures | Executes |
 | Tunnel management (overlay) | Yes | No |
 | eBPF dataplane | Yes | No |
-
-NovaNet is a **client** of NovaRoute. It never runs routing protocols directly.
-
----
-
-## NovaRoute Architecture
-
-NovaRoute runs as a DaemonSet with one pod per node. Each pod contains:
-
-- **novaroute** -- Go control plane that manages FRR configuration and exposes a gRPC API
-- **FRR** -- The routing suite that runs BGP, OSPF, and BFD daemons
-
-NovaRoute exposes a gRPC API over a Unix socket at `/run/novaroute/novaroute.sock`. Clients like NovaNet register as "owners" and request route advertisements.
-
-For detailed NovaRoute documentation, see [github.com/azrtydxb/NovaRoute](https://github.com/azrtydxb/NovaRoute).
 
 ---
 
 ## Prerequisites
 
-1. **NovaRoute deployed as a DaemonSet** on every node where NovaNet runs
-2. **BGP or OSPF-capable network fabric** (ToR switches, spine switches, or route reflectors)
-3. **NovaRoute authentication token** configured for the `"novanet"` owner
+1. **BGP or OSPF-capable network fabric** (ToR switches, spine switches, or route reflectors)
+2. **FRR sidecar enabled** in the NovaNet Helm values (enabled automatically when `routingMode` is `"native"`)
 
-Verify NovaRoute is running:
-
-```bash
-kubectl get pods -n novaroute -o wide
-```
-
-Verify the NovaRoute socket exists on each node:
+Verify the FRR sidecar is running:
 
 ```bash
-ls -la /run/novaroute/novaroute.sock
+kubectl get pods -n nova-system -l app.kubernetes.io/name=novanet -o wide
+kubectl logs -n nova-system <novanet-pod> -c frr
 ```
 
 ---
@@ -77,33 +66,19 @@ Enable native routing in your NovaNet Helm values:
 config:
   routingMode: "native"
 
-novaroute:
+routing:
   enabled: true
-  socket: "/run/novaroute/novaroute.sock"
-  token: "novanet-auth-token"
   protocol: "bgp"
+  frr_socket_dir: "/run/frr"
 ```
 
 ### Configuration Fields
 
 | Field | Required | Description |
 |-------|----------|-------------|
-| `novaroute.enabled` | Yes | Must be `true` for native routing mode. |
-| `novaroute.socket` | Yes | Path to the NovaRoute gRPC Unix socket. Default: `/run/novaroute/novaroute.sock` |
-| `novaroute.token` | Yes | Authentication token. NovaRoute validates this when NovaNet registers as owner `"novanet"`. |
-| `novaroute.protocol` | Yes | Routing protocol: `"bgp"` or `"ospf"`. |
-
-### Authentication
-
-NovaRoute uses token-based authentication. When NovaNet registers, it sends:
-
-- **Owner:** `"novanet"` -- identifies this client as the pod networking component
-- **Token:** the configured authentication token
-
-NovaRoute's owner policy for `"novanet"` restricts it to:
-
-- **Subnet prefixes only** (e.g., `/24` PodCIDRs) -- host routes (`/32`) are NovaEdge's domain
-- **Configurable CIDR allowlist** (e.g., only prefixes within `10.42.0.0/16`)
+| `routing.enabled` | Yes | Must be `true` for native routing mode. |
+| `routing.protocol` | Yes | Routing protocol: `"bgp"` or `"ospf"`. |
+| `routing.frr_socket_dir` | No | Path to the FRR management socket directory. Default: `"/run/frr"` |
 
 ---
 
@@ -126,7 +101,7 @@ This enables eBGP peering between nodes and with ToR switches. The ASN range 645
 
 ### ToR/Spine Switch Peering
 
-Each node's NovaRoute instance establishes BGP sessions with the configured ToR peers:
+Each node's FRR sidecar establishes BGP sessions with the configured ToR peers:
 
 ```
 Node (ASN 65010) <--eBGP--> ToR Switch 1 (ASN 65000)
@@ -156,7 +131,7 @@ ip prefix-list PODCIDR permit 10.42.0.0/16 le 24
 
 ### Route Advertisement
 
-Each node advertises its PodCIDR via NovaRoute:
+Each node advertises its PodCIDR via the integrated routing manager:
 
 ```
 Node 1 (10.0.0.10): advertises 10.42.1.0/24
@@ -168,16 +143,16 @@ The ToR/spine fabric learns these routes and can forward pod traffic directly be
 
 ### Node-to-Node Peering
 
-In addition to ToR peering, NovaNet automatically discovers other cluster nodes via the Kubernetes Node watcher and configures eBGP peering between them through NovaRoute. This enables direct node-to-node route exchange without relying solely on the ToR fabric.
+In addition to ToR peering, NovaNet automatically discovers other cluster nodes via the Kubernetes Node watcher and configures eBGP peering between them through the routing manager. This enables direct node-to-node route exchange without relying solely on the ToR fabric.
 
 When a new node joins the cluster:
 1. NovaNet's node watcher detects the new Node object
-2. The agent configures a new BGP peer via NovaRoute pointing to the new node's IP
+2. The routing manager configures a new BGP peer in FRR pointing to the new node's IP
 3. The eBGP session establishes and routes are exchanged
 
 When a node leaves the cluster:
 1. NovaNet's node watcher detects the Node deletion
-2. The agent removes the BGP peer configuration via NovaRoute
+2. The routing manager removes the BGP peer configuration from FRR
 3. Routes from that node are withdrawn
 
 ---
@@ -190,8 +165,8 @@ When the NovaNet agent starts in native routing mode, it performs the following 
 
 ```
 1. Load config, verify routing_mode = "native"
-2. Connect to NovaRoute via /run/novaroute/novaroute.sock
-3. Register as owner "novanet" with token authentication
+2. Initialize the integrated routing manager
+3. Connect to FRR via the management socket
 4. Configure BGP:
    a. Set local AS number (65000 + last octet of node IP)
    b. Set router ID (node IP)
@@ -209,7 +184,7 @@ During normal operation:
 - New pods are assigned IPs from the node's PodCIDR (already advertised)
 - Pod-to-pod traffic across nodes is routed by the underlay fabric
 - Identity for policy enforcement is resolved via endpoint map lookup (no in-band metadata)
-- NovaRoute handles all BGP keepalives, route refresh, and BFD
+- FRR handles all BGP keepalives, route refresh, and BFD
 
 ### Agent Shutdown
 
@@ -217,11 +192,10 @@ On SIGTERM (graceful shutdown):
 
 ```
 1. Stop accepting new CNI requests
-2. Withdraw PodCIDR prefix from NovaRoute
-3. Wait for NovaRoute to propagate withdrawal (brief delay)
-4. Deregister from NovaRoute
-5. Close gRPC connection
-6. Exit
+2. Withdraw PodCIDR prefix via the routing manager
+3. Wait for FRR to propagate withdrawal (brief delay)
+4. Shut down FRR sidecar
+5. Exit
 ```
 
 The prefix withdrawal ensures that the fabric stops sending traffic to this node before the agent exits, minimizing packet loss during drain.
@@ -244,26 +218,30 @@ This is a single eBPF hash map read -- O(1) lookup taking nanoseconds. The endpo
 
 ---
 
-## Troubleshooting BGP
+## Troubleshooting
 
-### Check NovaRoute Status
+### Check Routing Status
 
 ```bash
-kubectl logs -n novaroute <novaroute-pod> -c novaroute
+# Check routing status via novanetctl
+novanetctl routing status
+
+# View agent logs for routing-related messages
+kubectl logs -n nova-system <novanet-pod> -c novanet-agent | grep -i routing
 ```
 
 Look for:
-- `"registered owner"` messages confirming NovaNet connected
+- `"routing manager initialized"` confirming the routing subsystem started
 - `"prefix advertised"` messages confirming PodCIDR advertisement
-- Any error messages about socket or authentication failures
+- Any error messages about FRR connection failures
 
 ### Verify BGP Sessions
 
-SSH to a node and check FRR's BGP state:
+Check FRR's BGP state via the FRR sidecar:
 
 ```bash
-# Enter the NovaRoute pod
-kubectl exec -n novaroute <novaroute-pod> -c frr -- vtysh -c "show bgp summary"
+# Enter the FRR sidecar in the NovaNet pod
+kubectl exec -n nova-system <novanet-pod> -c frr -- vtysh -c "show bgp summary"
 ```
 
 Expected output shows established sessions with ToR peers and other nodes:
@@ -285,7 +263,7 @@ If a session shows `Active` or `Connect` instead of a prefix count, the peering 
 ### Check Advertised Routes
 
 ```bash
-kubectl exec -n novaroute <novaroute-pod> -c frr -- vtysh -c "show bgp ipv4 unicast"
+kubectl exec -n nova-system <novanet-pod> -c frr -- vtysh -c "show bgp ipv4 unicast"
 ```
 
 You should see your node's PodCIDR and routes from other nodes:
@@ -295,6 +273,16 @@ You should see your node's PodCIDR and routes from other nodes:
 *> 10.42.1.0/24     0.0.0.0               0         32768   i
 *> 10.42.2.0/24     10.0.0.11             0             0   65011 i
 *> 10.42.3.0/24     10.0.0.12             0             0   65012 i
+```
+
+### Show BGP/OSPF Peers via CLI
+
+```bash
+# Show peers
+novanetctl routing peers
+
+# Show advertised prefixes
+novanetctl routing prefixes
 ```
 
 ### Verify Kernel Routes
@@ -314,36 +302,20 @@ Expected output:
 ```
 
 If routes are missing, check:
-- NovaRoute FRR logs for route installation errors
+- FRR logs for route installation errors: `kubectl logs -n nova-system <novanet-pod> -c frr`
 - Kernel routing table capacity (`sysctl net.ipv4.route.max_size`)
-
-### Verify NovaRoute Socket
-
-```bash
-ls -la /run/novaroute/novaroute.sock
-```
-
-If the socket does not exist:
-- NovaRoute is not running on this node
-- NovaRoute crashed and the socket was cleaned up
-- The hostPath volume mount is misconfigured
 
 ### Common Issues
 
-**NovaNet agent fails to connect to NovaRoute:**
-- Verify NovaRoute pod is running: `kubectl get pods -n novaroute`
-- Verify socket exists: `ls -la /run/novaroute/novaroute.sock`
-- Check agent logs for connection errors: `kubectl logs -n nova-system <pod> -c novanet-agent`
-
-**Authentication failure:**
-- Verify the token in NovaNet config matches the NovaRoute owner configuration
-- Check NovaRoute logs for authentication rejection messages
+**Routing manager fails to initialize:**
+- Verify the FRR sidecar is running: `kubectl get pods -n nova-system -o wide`
+- Check FRR logs: `kubectl logs -n nova-system <novanet-pod> -c frr`
+- Check agent logs for routing initialization errors
 
 **Routes not propagating to other nodes:**
 - Verify BGP sessions are established (see above)
 - Check that ToR switches are redistributing routes
 - Verify no prefix filters are blocking PodCIDR routes
-- Check that the PodCIDR falls within NovaRoute's allowed CIDR range for the `"novanet"` owner
 
 **Packets dropped after route is installed:**
 - Verify `rp_filter` (reverse path filtering) is not dropping asymmetric traffic:
@@ -359,13 +331,13 @@ sysctl net.ipv4.conf.all.rp_filter
 
 ## OSPF Mode
 
-NovaNet also supports OSPF as an alternative to BGP, configured via `novaroute.protocol: "ospf"`. In OSPF mode:
+NovaNet also supports OSPF as an alternative to BGP, configured via `routing.protocol: "ospf"`. In OSPF mode:
 
-- NovaRoute injects PodCIDR routes into the configured OSPF area
+- The routing manager injects PodCIDR routes into the configured OSPF area via FRR
 - No per-node ASN configuration is needed
 - Suitable for environments where the underlay runs OSPF instead of BGP
 
-The integration flow is identical -- only the NovaRoute-internal protocol handling changes. NovaNet is unaware of whether routes are distributed via BGP or OSPF.
+The integration flow is identical -- only the FRR protocol handling changes. The routing manager abstracts the protocol differences.
 
 ---
 

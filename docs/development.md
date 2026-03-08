@@ -54,9 +54,8 @@ internal/
   masquerade/            iptables SNAT rules
   metrics/               Prometheus metric definitions
   node/                  Node management
-  novaroute/             NovaRoute gRPC client
   policy/                NetworkPolicy compiler and watcher
-  routing/               Routing mode manager
+  routing/               Integrated routing manager (BGP/OSPF via FRR)
   tunnel/                Geneve/VXLAN tunnel creation
 dataplane/
   novanet-common/        Shared types between eBPF and userspace (Rust)

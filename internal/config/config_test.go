@@ -98,30 +98,17 @@ func TestValidate_HappyPath(t *testing.T) {
 func TestValidate_NativeMode(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.RoutingMode = testNativeMode
-	cfg.NovaRoute.Token = "secret"
-	cfg.NovaRoute.Protocol = "bgp"
+	cfg.Routing.Protocol = "bgp"
 
 	if err := Validate(cfg); err != nil {
 		t.Errorf("unexpected error for valid native config: %v", err)
 	}
 }
 
-func TestValidate_NativeMode_MissingToken(t *testing.T) {
-	cfg := DefaultConfig()
-	cfg.RoutingMode = testNativeMode
-	cfg.NovaRoute.Token = ""
-
-	err := Validate(cfg)
-	if err == nil {
-		t.Error("expected error for missing token in native mode")
-	}
-}
-
 func TestValidate_NativeMode_MissingProtocol(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.RoutingMode = testNativeMode
-	cfg.NovaRoute.Token = "secret"
-	cfg.NovaRoute.Protocol = ""
+	cfg.Routing.Protocol = ""
 
 	err := Validate(cfg)
 	if err == nil {
@@ -222,18 +209,13 @@ func TestValidate_InvalidNodeCIDRMaskSize(t *testing.T) {
 
 func TestExpandEnvVars(t *testing.T) {
 	cfg := DefaultConfig()
-	cfg.NovaRoute.Token = "${NOVANET_TEST_TOKEN}"
 
-	t.Setenv("NOVANET_TEST_TOKEN", "my-secret-token")
 	t.Setenv("NOVANET_CLUSTER_CIDR", "10.200.0.0/16")
 	t.Setenv("NOVANET_ROUTING_MODE", "native")
 	t.Setenv("NOVANET_TUNNEL_PROTOCOL", "vxlan")
 
 	ExpandEnvVars(cfg)
 
-	if cfg.NovaRoute.Token != "my-secret-token" {
-		t.Errorf("expected expanded token, got %s", cfg.NovaRoute.Token)
-	}
 	if cfg.ClusterCIDR != "10.200.0.0/16" {
 		t.Errorf("expected overridden cluster_cidr, got %s", cfg.ClusterCIDR)
 	}
@@ -247,13 +229,9 @@ func TestExpandEnvVars(t *testing.T) {
 
 func TestExpandEnvVars_UnsetVars(t *testing.T) {
 	cfg := DefaultConfig()
-	cfg.NovaRoute.Token = "${UNSET_VAR_12345}"
 
 	ExpandEnvVars(cfg)
 
-	if cfg.NovaRoute.Token != "" {
-		t.Errorf("expected empty token for unset var, got %s", cfg.NovaRoute.Token)
-	}
 	// Defaults should be preserved when env vars are not set.
 	if cfg.ClusterCIDR != "10.244.0.0/16" {
 		t.Errorf("expected default cluster_cidr, got %s", cfg.ClusterCIDR)

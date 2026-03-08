@@ -62,6 +62,7 @@ func main() {
 		newEgressCmd(),
 		newMetricsCmd(),
 		newServicesCmd(),
+		newRoutingCmd(),
 	)
 
 	if err := rootCmd.Execute(); err != nil {

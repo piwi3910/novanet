@@ -157,8 +157,12 @@ ip route show | grep 10.42
 ```
 
 ```bash
-# Check BGP session status (requires NovaRoute)
-kubectl exec -n novaroute <pod> -c frr -- vtysh -c "show bgp summary"
+# Check BGP session status via the FRR sidecar
+kubectl exec -n nova-system <novanet-pod> -c frr -- vtysh -c "show bgp summary"
+
+# Or use the novanetctl routing commands
+novanetctl routing status
+novanetctl routing peers
 ```
 
 3. Check for firewall rules blocking tunnel traffic:
@@ -180,7 +184,7 @@ iptables -L -n | grep 4789
 
 **Common Causes (Native):**
 
-- BGP session not established (see [NovaRoute Integration Guide](novaroute-integration.md))
+- BGP session not established (see [Native Routing Guide](novaroute-integration.md))
 - Routes not propagated through the fabric
 - Reverse path filtering dropping packets (`rp_filter`)
 - ToR switch not accepting or redistributing PodCIDR routes
@@ -193,7 +197,7 @@ iptables -L -n | grep 4789
 
 **Resolution (Native):**
 
-- See [Troubleshooting BGP](novaroute-integration.md#troubleshooting-bgp) in the NovaRoute Integration Guide
+- See [Troubleshooting](novaroute-integration.md#troubleshooting) in the Native Routing Guide
 - Disable strict reverse path filtering: `sysctl -w net.ipv4.conf.all.rp_filter=0`
 
 ---
@@ -613,11 +617,11 @@ IPAM allocations are persisted to `/var/lib/cni/networks/novanet/` on the host:
 
 In native routing mode:
 
-- BGP sessions are managed by NovaRoute (via FRR), not NovaNet
-- When the NovaNet agent restarts, it reconnects to NovaRoute and re-registers
-- NovaRoute's BGP sessions are unaffected by NovaNet restarts
+- BGP sessions are managed by the FRR sidecar within the NovaNet DaemonSet pod
+- When the NovaNet agent restarts, it reconnects to FRR and re-initializes the routing manager
+- FRR's BGP sessions are unaffected by agent container restarts (the FRR sidecar runs independently)
 - PodCIDR routes remain in the fabric during the brief restart window
-- If NovaRoute itself restarts, FRR re-establishes BGP sessions automatically
+- If the FRR sidecar restarts, FRR re-establishes BGP sessions automatically
 
 ### State Reconciliation
 
@@ -677,16 +681,19 @@ ls -la /var/lib/cni/networks/novanet/
 
 If the directory is empty after restart, the hostPath volume may be misconfigured.
 
-4. **Check NovaRoute reconnection (native routing mode)**:
+4. **Check routing reconnection (native routing mode)**:
 
 ```bash
-# Verify owner registration
-novaroutectl owners list
-# Look for "novanet" with status "active"
+# Verify routing manager status
+novanetctl routing status
+# Look for "connected" FRR state
 
 # Verify route advertisement
-novaroutectl routes show --owner novanet
-# The node PodCIDR should be listed
+novanetctl routing prefixes
+# The node PodCIDR should be listed as advertised
+
+# Or check FRR directly
+kubectl exec -n nova-system <novanet-pod> -c frr -- vtysh -c "show bgp summary"
 ```
 
 5. **Review agent logs for startup errors**:
@@ -704,8 +711,8 @@ kubectl logs -n nova-system <pod-name> -c novanet-agent --tail=100
 | 100% packet loss during restart | eBPF programs not pinned to `/sys/fs/bpf/` | Verify hostPath mount for `/sys/fs/bpf/` in DaemonSet |
 | Pods get new IPs after restart | IPAM state directory not on hostPath | Check `/var/lib/cni/` hostPath mount |
 | Agent crash-loops after restart | Stale BPF map schema from version upgrade | Delete pins in `/sys/fs/bpf/novanet/` and restart |
-| Routes missing after restart | NovaRoute socket unavailable | Verify NovaRoute is running; check `/run/novaroute/novaroute.sock` |
-| Slow route reconvergence (>30s) | BGP timers too conservative | Enable BFD in NovaRoute for sub-second failover detection |
+| Routes missing after restart | FRR sidecar not running | Verify FRR sidecar is running; check `/run/frr/` socket directory |
+| Slow route reconvergence (>30s) | BGP timers too conservative | Enable BFD in the routing configuration for sub-second failover detection |
 | New pods fail to start | CNI binary cannot reach agent during restart | Wait for agent pod to become ready; pods retry automatically |
 
 ### Running the Graceful Restart Integration Test
@@ -778,4 +785,4 @@ kubectl get events -n nova-system --sort-by='.lastTimestamp'
 
 - [Installation Guide](installation.md) -- Getting started
 - [Configuration Reference](configuration.md) -- All configuration options
-- [NovaRoute Integration Guide](novaroute-integration.md) -- Native routing details
+- [Native Routing Guide](novaroute-integration.md) -- Native routing details

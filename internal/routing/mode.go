@@ -1,5 +1,5 @@
 // Package routing manages the routing mode (overlay or native) and
-// orchestrates tunnels or NovaRoute integration accordingly.
+// orchestrates tunnels or integrated FRR routing accordingly.
 package routing
 
 import (
@@ -12,30 +12,29 @@ import (
 
 	"github.com/azrtydxb/novanet/internal/config"
 	"github.com/azrtydxb/novanet/internal/node"
-	"github.com/azrtydxb/novanet/internal/novaroute"
 	"github.com/azrtydxb/novanet/internal/tunnel"
 )
 
 // Sentinel errors for routing mode operations.
 var (
-	ErrUnsupportedMode   = errors.New("unsupported routing mode")
-	ErrNovaRouteRequired = errors.New("NovaRoute client is required for native routing mode")
+	ErrUnsupportedMode    = errors.New("unsupported routing mode")
+	ErrRoutingMgrRequired = errors.New("routing manager is required for native routing mode")
 )
 
 // ModeManager orchestrates the networking mode — either overlay (tunnel-based)
-// or native (NovaRoute-based routing).
+// or native (FRR-based routing).
 //
 // NOTE: This is not yet wired into main.go; the agent currently manages overlay
 // and native routing inline. ModeManager is the intended replacement — once
-// wired in, the inline tunnel/NovaRoute logic in main.go should be removed.
+// wired in, the inline routing logic in main.go should be removed.
 type ModeManager struct {
 	mu sync.RWMutex
 
-	cfg             *config.Config
-	tunnelMgr       *tunnel.Manager
-	novarouteClient *novaroute.Client
-	nodeRegistry    *node.Registry
-	logger          *zap.Logger
+	cfg          *config.Config
+	tunnelMgr    *tunnel.Manager
+	routingMgr   *Manager
+	nodeRegistry *node.Registry
+	logger       *zap.Logger
 
 	mode   string // "overlay" or "native"
 	cancel context.CancelFunc
@@ -45,17 +44,17 @@ type ModeManager struct {
 func NewModeManager(
 	cfg *config.Config,
 	tunnelMgr *tunnel.Manager,
-	novarouteClient *novaroute.Client,
+	routingMgr *Manager,
 	nodeRegistry *node.Registry,
 	logger *zap.Logger,
 ) *ModeManager {
 	return &ModeManager{
-		cfg:             cfg,
-		tunnelMgr:       tunnelMgr,
-		novarouteClient: novarouteClient,
-		nodeRegistry:    nodeRegistry,
-		logger:          logger,
-		mode:            cfg.RoutingMode,
+		cfg:          cfg,
+		tunnelMgr:    tunnelMgr,
+		routingMgr:   routingMgr,
+		nodeRegistry: nodeRegistry,
+		logger:       logger,
+		mode:         cfg.RoutingMode,
 	}
 }
 
@@ -191,31 +190,28 @@ func (m *ModeManager) stopOverlay(ctx context.Context) error {
 	return nil
 }
 
-// startNative sets up native routing mode by connecting to NovaRoute
-// and advertising the PodCIDR.
+// startNative sets up native routing mode using the integrated FRR routing
+// manager and advertises the ClusterCIDR.
 func (m *ModeManager) startNative(ctx context.Context) error {
 	m.logger.Info("starting native routing mode",
-		zap.String("novaroute_socket", m.cfg.NovaRoute.Socket),
-		zap.String("protocol", m.cfg.NovaRoute.Protocol),
+		zap.String("protocol", m.cfg.Routing.Protocol),
 	)
 
-	if m.novarouteClient == nil {
-		return ErrNovaRouteRequired
+	if m.routingMgr == nil {
+		return ErrRoutingMgrRequired
 	}
 
-	// Connect to NovaRoute.
-	if err := m.novarouteClient.Connect(ctx); err != nil {
-		return fmt.Errorf("connecting to NovaRoute: %w", err)
+	// Wait for FRR sidecar daemons.
+	if err := m.routingMgr.WaitForFRR(ctx); err != nil {
+		return fmt.Errorf("waiting for FRR: %w", err)
 	}
 
-	// Register with NovaRoute.
-	if _, err := m.novarouteClient.Register(ctx); err != nil {
-		return fmt.Errorf("registering with NovaRoute: %w", err)
-	}
+	// Start the reconciliation loop.
+	m.routingMgr.Start(ctx)
 
-	// Advertise PodCIDR.
-	if err := m.novarouteClient.AdvertisePrefix(ctx, m.cfg.ClusterCIDR); err != nil {
-		return fmt.Errorf("advertising PodCIDR: %w", err)
+	// Advertise ClusterCIDR.
+	if err := m.routingMgr.AdvertisePrefix(m.cfg.ClusterCIDR); err != nil {
+		return fmt.Errorf("advertising ClusterCIDR: %w", err)
 	}
 
 	m.logger.Info("native routing mode initialized",
@@ -225,27 +221,23 @@ func (m *ModeManager) startNative(ctx context.Context) error {
 	return nil
 }
 
-// stopNative withdraws routes and closes the NovaRoute connection.
-func (m *ModeManager) stopNative(ctx context.Context) error {
+// stopNative withdraws routes and shuts down the routing manager.
+func (m *ModeManager) stopNative(_ context.Context) error {
 	m.logger.Info("stopping native routing mode")
 
-	if m.novarouteClient == nil {
+	if m.routingMgr == nil {
 		return nil
 	}
 
-	// Withdraw the PodCIDR.
-	if err := m.novarouteClient.WithdrawPrefix(ctx, m.cfg.ClusterCIDR); err != nil {
+	// Withdraw the ClusterCIDR.
+	if err := m.routingMgr.WithdrawPrefix(m.cfg.ClusterCIDR); err != nil {
 		m.logger.Error("failed to withdraw prefix during shutdown",
 			zap.Error(err),
 		)
 	}
 
-	// Close the connection.
-	if err := m.novarouteClient.Close(); err != nil {
-		m.logger.Error("failed to close NovaRoute connection",
-			zap.Error(err),
-		)
-	}
+	// Shut down the routing manager.
+	m.routingMgr.Shutdown()
 
 	return nil
 }

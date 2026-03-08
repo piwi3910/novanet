@@ -44,7 +44,7 @@ NovaNet Agent Status
   Tunnels:           4
   Attached Programs: 26
   Dataplane:         connected
-  NovaRoute:         not connected
+  Routing:           disabled (overlay mode)
 ```
 
 ---
@@ -178,6 +178,68 @@ SRC_IDENTITY  DST_CIDR          PROTOCOL  DST_PORT  ACTION  SNAT_IP
 1001          0.0.0.0/0         TCP       443       SNAT    192.168.100.21
 1002          10.0.0.0/8        ANY       0         ALLOW   -
 1003          0.0.0.0/0         ANY       0         DENY    -
+```
+
+---
+
+### routing
+
+Inspect and manage native routing state (native routing mode only).
+
+#### routing status
+
+Show the current routing mode, protocol, and FRR connection state.
+
+```bash
+novanetctl routing status
+```
+
+Example output:
+
+```
+Routing Status
+  Mode:        native
+  Protocol:    bgp
+  FRR:         connected
+  Local ASN:   65010
+  Router ID:   10.0.0.10
+  Peers:       4 (4 established)
+  Prefixes:    1 advertised, 3 received
+```
+
+#### routing peers
+
+Show BGP or OSPF peers and their session state. Queries FRR via vtysh.
+
+```bash
+novanetctl routing peers
+```
+
+Example output:
+
+```
+NEIGHBOR        AS      STATE         UP/DOWN     PREFIXES
+10.0.0.1        65000   established   01:30:00    3
+10.0.0.2        65000   established   01:30:00    3
+10.0.0.11       65011   established   01:15:00    1
+10.0.0.12       65012   established   01:10:00    1
+```
+
+#### routing prefixes
+
+Show advertised and received route prefixes.
+
+```bash
+novanetctl routing prefixes
+```
+
+Example output:
+
+```
+TYPE          PREFIX           NEXT_HOP      AS_PATH
+advertised    10.42.1.0/24     0.0.0.0       i
+received      10.42.2.0/24     10.0.0.11     65011 i
+received      10.42.3.0/24     10.0.0.12     65012 i
 ```
 
 ---

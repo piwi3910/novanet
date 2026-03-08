@@ -42,9 +42,8 @@ func testOverlayConfig() *config.Config {
 func testNativeConfig() *config.Config {
 	cfg := config.DefaultConfig()
 	cfg.RoutingMode = "native"
-	cfg.NovaRoute.Socket = "/run/novaroute/novaroute.sock"
-	cfg.NovaRoute.Token = "test-token"
-	cfg.NovaRoute.Protocol = "bgp"
+	cfg.Routing.Protocol = "bgp"
+	cfg.Routing.FRRSocketDir = "/run/frr"
 	return cfg
 }
 
@@ -162,7 +161,7 @@ func TestOverlayModeStop(t *testing.T) {
 	}
 }
 
-func TestNativeModeRequiresClient(t *testing.T) {
+func TestNativeModeRequiresManager(t *testing.T) {
 	cfg := testNativeConfig()
 	nodeReg := node.NewRegistry(testLogger())
 
@@ -172,7 +171,7 @@ func TestNativeModeRequiresClient(t *testing.T) {
 
 	err := m.Start(ctx)
 	if err == nil {
-		t.Fatal("expected error when NovaRoute client is nil")
+		t.Fatal("expected error when routing manager is nil")
 	}
 }
 

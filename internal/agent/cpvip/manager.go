@@ -17,7 +17,7 @@ import (
 	"time"
 
 	pb "github.com/azrtydxb/novanet/api/v1"
-	"github.com/azrtydxb/novanet/internal/novaroute"
+	"github.com/azrtydxb/novanet/internal/routing"
 	"github.com/azrtydxb/novanet/internal/tunnel"
 	"go.uber.org/zap"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -53,7 +53,7 @@ type Config struct {
 type Manager struct {
 	cfg        Config
 	dpClient   pb.DataplaneControlClient
-	nrClient   *novaroute.Client
+	nrClient   *routing.Manager
 	k8sClient  kubernetes.Interface
 	logger     *zap.Logger
 	httpClient *http.Client
@@ -65,7 +65,7 @@ type Manager struct {
 }
 
 // NewManager creates a cp-vip manager. nrClient may be nil if BGP is not used.
-func NewManager(cfg Config, dpClient pb.DataplaneControlClient, nrClient *novaroute.Client,
+func NewManager(cfg Config, dpClient pb.DataplaneControlClient, nrClient *routing.Manager,
 	k8sClient kubernetes.Interface, logger *zap.Logger) *Manager {
 
 	if cfg.HealthInterval == 0 {
@@ -165,7 +165,7 @@ func (m *Manager) reconcile(ctx context.Context) {
 	// On control-plane nodes, manage BGP and loopback.
 	if m.cfg.IsControlPlane {
 		localHealthy := healthy[m.localIP(cpNodes)]
-		m.manageBGP(ctx, localHealthy)
+		m.manageBGP(localHealthy)
 		m.manageLoopback(localHealthy)
 	}
 }
@@ -260,7 +260,7 @@ func (m *Manager) updateDataplane(ctx context.Context, healthyIPs []string) erro
 }
 
 // manageBGP advertises or withdraws the VIP prefix based on local health.
-func (m *Manager) manageBGP(ctx context.Context, localHealthy bool) {
+func (m *Manager) manageBGP(localHealthy bool) {
 	if m.nrClient == nil {
 		return
 	}
@@ -268,14 +268,14 @@ func (m *Manager) manageBGP(ctx context.Context, localHealthy bool) {
 	vipCIDR := m.cfg.VIP + "/32"
 
 	if localHealthy && !m.bgpAdvertised {
-		if err := m.nrClient.AdvertisePrefix(ctx, vipCIDR); err != nil {
+		if err := m.nrClient.AdvertisePrefix(vipCIDR); err != nil {
 			m.logger.Error("failed to advertise cp-vip", zap.Error(err))
 		} else {
 			m.bgpAdvertised = true
 			m.logger.Info("advertised cp-vip via BGP (local API server healthy)")
 		}
 	} else if !localHealthy && m.bgpAdvertised {
-		if err := m.nrClient.WithdrawPrefix(ctx, vipCIDR); err != nil {
+		if err := m.nrClient.WithdrawPrefix(vipCIDR); err != nil {
 			m.logger.Error("failed to withdraw cp-vip", zap.Error(err))
 		} else {
 			m.bgpAdvertised = false
@@ -311,12 +311,9 @@ func (m *Manager) shutdown() {
 	m.logger.Info("cp-vip manager shutting down")
 
 	if m.cfg.IsControlPlane {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-
 		if m.bgpAdvertised && m.nrClient != nil {
 			vipCIDR := m.cfg.VIP + "/32"
-			if err := m.nrClient.WithdrawPrefix(ctx, vipCIDR); err != nil {
+			if err := m.nrClient.WithdrawPrefix(vipCIDR); err != nil {
 				m.logger.Error("failed to withdraw cp-vip on shutdown", zap.Error(err))
 			}
 		}

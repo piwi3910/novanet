@@ -26,17 +26,16 @@ The following table lists all configurable values in the NovaNet Helm chart (`de
 | `config.clusterCIDR` | `"10.42.0.0/16"` | The cluster-wide CIDR from which PodCIDRs are allocated. Must match the cluster's `--cluster-cidr` setting. |
 | `config.nodeCIDRMaskSize` | `24` | Subnet mask size for per-node PodCIDR allocation. A `/24` provides 254 pod IPs per node. |
 | `config.tunnelProtocol` | `"geneve"` | Tunnel encapsulation protocol for overlay mode. `"geneve"` supports identity metadata in TLV options. `"vxlan"` provides broader hardware offload compatibility. |
-| `config.routingMode` | `"overlay"` | Networking mode. `"overlay"` creates tunnels between nodes. `"native"` uses underlay routing via NovaRoute (requires NovaRoute). |
+| `config.routingMode` | `"overlay"` | Networking mode. `"overlay"` creates tunnels between nodes. `"native"` uses underlay routing via the integrated routing manager and FRR sidecar. |
 | `config.logLevel` | `"info"` | Log verbosity level. One of `"debug"`, `"info"`, `"warn"`, `"error"`. |
 
-### NovaRoute Integration
+### Native Routing
 
 | Key | Default | Description |
 |-----|---------|-------------|
-| `novaroute.enabled` | `false` | Enable NovaRoute integration for native routing. Must be `true` when `config.routingMode` is `"native"`. |
-| `novaroute.socket` | `"/run/novaroute/novaroute.sock"` | Path to the NovaRoute gRPC Unix socket. |
-| `novaroute.token` | `""` | Authentication token for registering with NovaRoute as the `"novanet"` owner. Must be set to a real token before enabling NovaRoute. |
-| `novaroute.protocol` | `"bgp"` | Routing protocol to use. `"bgp"` for eBGP peering or `"ospf"` for OSPF area injection. |
+| `routing.enabled` | `false` | Enable native routing. Must be `true` when `config.routingMode` is `"native"`. |
+| `routing.protocol` | `"bgp"` | Routing protocol to use. `"bgp"` for eBGP peering or `"ospf"` for OSPF area injection. |
+| `routing.frr_socket_dir` | `"/run/frr"` | Path to the FRR management socket directory. The FRR sidecar must mount this path. |
 
 
 ### CNI Configuration
@@ -105,10 +104,9 @@ The Helm chart generates a ConfigMap that is mounted as `/etc/novanet/novanet.js
   "node_cidr_mask_size": 24,
   "tunnel_protocol": "geneve",
   "routing_mode": "overlay",
-  "novaroute": {
-    "socket": "/run/novaroute/novaroute.sock",
-    "token": "novanet-secret-token",
-    "protocol": "bgp"
+  "routing": {
+    "protocol": "bgp",
+    "frr_socket_dir": "/run/frr"
   },
   "egress": {
     "masquerade_enabled": true
@@ -132,9 +130,8 @@ The Helm chart generates a ConfigMap that is mounted as `/etc/novanet/novanet.js
 | `node_cidr_mask_size` | int | Subnet mask size for per-node PodCIDR allocation (e.g., `24`). |
 | `tunnel_protocol` | string | `"geneve"` or `"vxlan"`. Only used in overlay mode. |
 | `routing_mode` | string | `"overlay"` or `"native"`. |
-| `novaroute.socket` | string | Path to NovaRoute's gRPC Unix socket. Only used in native mode. |
-| `novaroute.token` | string | Token for authenticating with NovaRoute. Only used in native mode. |
-| `novaroute.protocol` | string | Routing protocol: `"bgp"` or `"ospf"`. Only used in native mode. |
+| `routing.protocol` | string | Routing protocol: `"bgp"` or `"ospf"`. Only used in native mode. |
+| `routing.frr_socket_dir` | string | Path to the FRR management socket directory. Only used in native mode. |
 | `egress.masquerade_enabled` | bool | Enable SNAT/masquerade for pod-to-external traffic. |
 | `policy.default_deny` | bool | Enable cluster-wide default-deny policy. |
 | `log_level` | string | One of `"debug"`, `"info"`, `"warn"`, `"error"`. |
@@ -147,7 +144,7 @@ The agent validates the config on startup and exits with a clear error if any ru
 - `cluster_cidr` must be a valid CIDR notation
 - `tunnel_protocol` must be `"geneve"` or `"vxlan"`
 - `routing_mode` must be `"overlay"` or `"native"`
-- If `routing_mode` is `"native"`, `novaroute.socket` must be set and `novaroute.token` must be non-empty
+- If `routing_mode` is `"native"`, `routing.protocol` must be set
 
 ---
 
@@ -183,7 +180,7 @@ config:
   routingMode: "overlay"
   logLevel: "info"
 
-novaroute:
+routing:
   enabled: false
 
 egress:
@@ -206,9 +203,9 @@ helm install novanet ./deploy/helm/novanet \
   -f values-overlay-geneve.yaml
 ```
 
-### Native Routing with NovaRoute and BGP
+### Native Routing with BGP
 
-High-performance configuration using BGP to distribute pod routes. Requires NovaRoute and a BGP-capable network.
+High-performance configuration using BGP to distribute pod routes. Requires a BGP-capable network.
 
 ```yaml
 # values-native-bgp.yaml
@@ -218,11 +215,10 @@ config:
   routingMode: "native"
   logLevel: "info"
 
-novaroute:
+routing:
   enabled: true
-  socket: "/run/novaroute/novaroute.sock"
-  token: "novanet-auth-token"
   protocol: "bgp"
+  frr_socket_dir: "/run/frr"
 
 egress:
   masqueradeEnabled: true
@@ -257,7 +253,7 @@ config:
   routingMode: "overlay"
   logLevel: "warn"
 
-novaroute:
+routing:
   enabled: false
 
 egress:
@@ -361,14 +357,14 @@ NovaNet uses Unix domain sockets for all inter-component communication:
 | Agent listen | `/run/novanet/novanet.sock` | CLI (`novanetctl`) connects here |
 | CNI | `/run/novanet/cni.sock` | CNI binary connects here during pod setup |
 | Dataplane | `/run/novanet/dataplane.sock` | Agent-to-dataplane gRPC communication |
-| NovaRoute | `/run/novaroute/novaroute.sock` | Agent connects here for native routing |
+| FRR | `/run/frr/` | Agent routing manager communicates with the FRR sidecar |
 
-All sockets under `/run/novanet/` are created by the NovaNet agent. The NovaRoute socket is created by the NovaRoute daemon and must exist before the agent starts in native routing mode.
+All sockets under `/run/novanet/` are created by the NovaNet agent. The FRR socket directory is managed by the FRR sidecar container within the same DaemonSet pod.
 
 ---
 
 ## Next Steps
 
 - [Installation Guide](installation.md) -- Getting started
-- [NovaRoute Integration Guide](novaroute-integration.md) -- Native routing setup
+- [Native Routing Guide](novaroute-integration.md) -- Native routing setup
 - [Troubleshooting Guide](troubleshooting.md) -- Debugging issues

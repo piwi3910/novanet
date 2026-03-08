@@ -455,24 +455,22 @@ spec:
                   type: string
                 description: NodeSelector for scheduling.
                 type: object
-              novaRouteIntegration:
-                description: NovaRouteIntegration enables native routing via NovaRoute.
+              routing:
+                description: Routing configures the in-process routing manager for
+                  native routing mode.
                 properties:
-                  enabled:
-                    default: false
-                    description: Enabled activates NovaRoute integration for native
-                      routing.
-                    type: boolean
-                  ownerToken:
-                    description: OwnerToken is the authentication token for the NovaRoute
-                      gRPC API.
+                  frrSocketDir:
+                    default: /run/frr
+                    description: FRRSocketDir is the directory containing FRR VTY
+                      sockets shared between the agent and FRR sidecar.
                     type: string
-                  socketPath:
-                    default: /run/novaroute/novaroute.sock
-                    description: SocketPath is the NovaRoute Unix socket path.
+                  protocol:
+                    default: bgp
+                    description: Protocol is the routing protocol to use.
+                    enum:
+                    - bgp
+                    - ospf
                     type: string
-                required:
-                - enabled
                 type: object
               tolerations:
                 description: Tolerations for scheduling.

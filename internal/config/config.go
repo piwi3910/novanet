@@ -15,18 +15,16 @@ import (
 
 // Sentinel validation errors.
 var (
-	ErrEmptyListenSocket     = errors.New("listen_socket must not be empty")
-	ErrEmptyCNISocket        = errors.New("cni_socket must not be empty")
-	ErrEmptyDataplaneSocket  = errors.New("dataplane_socket must not be empty")
-	ErrEmptyClusterCIDR      = errors.New("cluster_cidr must not be empty")
-	ErrInvalidNodeCIDRMask   = errors.New("node_cidr_mask_size must be between 16 and 28")
-	ErrInvalidTunnelProto    = errors.New("tunnel_protocol must be geneve or vxlan")
-	ErrInvalidRoutingMode    = errors.New("routing_mode must be overlay or native")
-	ErrEmptyNovaRouteSocket  = errors.New("novaroute.socket must not be empty when routing_mode is native")
-	ErrEmptyNovaRouteToken   = errors.New("novaroute.token must not be empty when routing_mode is native")
-	ErrEmptyNovaRouteProto   = errors.New("novaroute.protocol must not be empty when routing_mode is native")
-	ErrInvalidNovaRouteProto = errors.New("novaroute.protocol must be bgp or ospf")
-	ErrInvalidLogLevel       = errors.New("log_level must be debug, info, warn, or error")
+	ErrEmptyListenSocket    = errors.New("listen_socket must not be empty")
+	ErrEmptyCNISocket       = errors.New("cni_socket must not be empty")
+	ErrEmptyDataplaneSocket = errors.New("dataplane_socket must not be empty")
+	ErrEmptyClusterCIDR     = errors.New("cluster_cidr must not be empty")
+	ErrInvalidNodeCIDRMask  = errors.New("node_cidr_mask_size must be between 16 and 28")
+	ErrInvalidTunnelProto   = errors.New("tunnel_protocol must be geneve or vxlan")
+	ErrInvalidRoutingMode   = errors.New("routing_mode must be overlay or native")
+	ErrEmptyRoutingProto    = errors.New("routing.protocol must not be empty when routing_mode is native")
+	ErrInvalidRoutingProto  = errors.New("routing.protocol must be bgp or ospf")
+	ErrInvalidLogLevel      = errors.New("log_level must be debug, info, warn, or error")
 )
 
 // Config holds the complete NovaNet agent configuration.
@@ -52,8 +50,8 @@ type Config struct {
 	// RoutingMode selects the networking mode: "overlay" or "native".
 	RoutingMode string `json:"routing_mode"`
 
-	// NovaRoute holds NovaRoute integration settings (native routing mode).
-	NovaRoute NovaRouteConfig `json:"novaroute"`
+	// Routing holds integrated routing settings (native routing mode via FRR).
+	Routing RoutingConfig `json:"routing"`
 
 	// Egress holds egress control settings.
 	Egress EgressConfig `json:"egress"`
@@ -92,43 +90,33 @@ type Config struct {
 	MetricsAddress string `json:"metrics_address"`
 }
 
-// NovaRouteConfig holds NovaRoute integration settings.
-type NovaRouteConfig struct {
-	// Socket is the path to the NovaRoute Unix domain socket.
-	Socket string `json:"socket"`
-
-	// Token is the pre-shared authentication token for owner "novanet".
-	Token string `json:"token"`
-
+// RoutingConfig holds integrated routing settings (FRR sidecar).
+type RoutingConfig struct {
 	// Protocol selects the routing protocol: "bgp" or "ospf".
 	Protocol string `json:"protocol"`
 
+	// FRRSocketDir is the directory containing FRR VTY sockets.
+	// Default: "/run/frr".
+	FRRSocketDir string `json:"frr_socket_dir"`
+
 	// ControlPlaneVIP is the virtual IP for the Kubernetes API server.
-	// When set, the agent registers the VIP as an L4 LB service with
-	// health-checked control-plane node backends. On CP nodes the VIP
-	// is also bound on loopback and advertised via BGP, but only while
-	// the local API server health check passes.
 	ControlPlaneVIP string `json:"control_plane_vip"`
 
 	// ControlPlaneVIPHealthInterval is the interval between API server
 	// health checks in seconds. Default: 5.
 	ControlPlaneVIPHealthInterval int `json:"control_plane_vip_health_interval"`
 
-	// BFDEnabled enables BFD (Bidirectional Forwarding Detection) on mesh
-	// BGP peers for sub-second failover detection.
+	// BFDEnabled enables BFD on mesh BGP peers for sub-second failover.
 	BFDEnabled bool `json:"bfd_enabled"`
 
 	// BFDMinRxMs is the minimum BFD receive interval in milliseconds.
-	// 0 means use FRR defaults (300ms).
 	BFDMinRxMs uint32 `json:"bfd_min_rx_ms"`
 
 	// BFDMinTxMs is the minimum BFD transmit interval in milliseconds.
-	// 0 means use FRR defaults (300ms).
 	BFDMinTxMs uint32 `json:"bfd_min_tx_ms"`
 
-	// BFDDetectMultiplier is the number of missed BFD packets before
-	// declaring the peer down. 0 means use FRR defaults (3).
-	BFDDetectMultiplier uint32 `json:"bfd_detect_multiplier"`
+	// BFDDetectMult is the BFD detect multiplier. 0 means FRR default (3).
+	BFDDetectMult uint32 `json:"bfd_detect_mult"`
 }
 
 // EgressConfig holds egress control settings.
@@ -211,9 +199,9 @@ func DefaultConfig() *Config {
 		NodeCIDRMaskSize: 24,
 		TunnelProtocol:   "geneve",
 		RoutingMode:      "overlay",
-		NovaRoute: NovaRouteConfig{
-			Socket:   "/run/novaroute/novaroute.sock",
-			Protocol: "bgp",
+		Routing: RoutingConfig{
+			Protocol:     "bgp",
+			FRRSocketDir: "/run/frr",
 		},
 		Egress: EgressConfig{
 			MasqueradeEnabled: true,
@@ -311,19 +299,13 @@ func Validate(cfg *Config) error {
 	}
 
 	if strings.ToLower(cfg.RoutingMode) == "native" {
-		if cfg.NovaRoute.Socket == "" {
-			return ErrEmptyNovaRouteSocket
-		}
-		if cfg.NovaRoute.Token == "" {
-			return ErrEmptyNovaRouteToken
-		}
-		switch strings.ToLower(cfg.NovaRoute.Protocol) {
+		switch strings.ToLower(cfg.Routing.Protocol) {
 		case "bgp", "ospf":
 			// valid
 		case "":
-			return ErrEmptyNovaRouteProto
+			return ErrEmptyRoutingProto
 		default:
-			return fmt.Errorf("%w: got %q", ErrInvalidNovaRouteProto, cfg.NovaRoute.Protocol)
+			return fmt.Errorf("%w: got %q", ErrInvalidRoutingProto, cfg.Routing.Protocol)
 		}
 	}
 
@@ -343,15 +325,12 @@ const envTrue = "true"
 // ExpandEnvVars replaces ${VAR} placeholders in configuration strings with
 // the corresponding environment variable values.
 //
-// Supported fields:
-//   - NovaRoute token (e.g., "token": "${NOVANET_TOKEN}")
-//
-// Additionally, the following environment variables override config values:
+// The following environment variables override config values:
 //   - NOVANET_CLUSTER_CIDR → cluster_cidr
 //   - NOVANET_ROUTING_MODE → routing_mode
 //   - NOVANET_TUNNEL_PROTOCOL → tunnel_protocol
 func ExpandEnvVars(cfg *Config) {
-	cfg.NovaRoute.Token = os.ExpandEnv(cfg.NovaRoute.Token)
+	// No token expansion needed — routing is in-process now.
 
 	if v := os.Getenv("NOVANET_CLUSTER_CIDR"); v != "" {
 		cfg.ClusterCIDR = v
