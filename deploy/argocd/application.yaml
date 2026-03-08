@@ -31,6 +31,8 @@ spec:
           dataplane:
             repository: ghcr.io/azrtydxb/novanet/novanet-dataplane
             tag: v1.9.0
+        imagePullSecrets:
+          - name: ghcr-pull-secret
         config:
           routingMode: "native"
         routing:
