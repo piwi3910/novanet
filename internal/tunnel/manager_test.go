@@ -3,10 +3,10 @@ package tunnel
 import (
 	"context"
 	"net"
-	"os"
 	"sync"
 	"testing"
 
+	"github.com/vishvananda/netlink"
 	"go.uber.org/zap"
 
 	"github.com/azrtydxb/novanet/internal/dataplane"
@@ -14,12 +14,18 @@ import (
 	pb "github.com/azrtydxb/novanet/api/v1"
 )
 
-// requireRoot skips the test when not running as root (needed for netlink).
+// requireRoot skips the test when the process lacks CAP_NET_ADMIN.
+// Checking os.Getuid() alone is insufficient because CI containers often
+// run as root but without network administration capabilities.
 func requireRoot(t *testing.T) {
 	t.Helper()
-	if os.Getuid() != 0 {
-		t.Skip("requires root (CAP_NET_ADMIN) for netlink operations")
+	// Try creating a dummy bridge interface — a write operation that requires
+	// CAP_NET_ADMIN. LinkList() is read-only and may succeed without it.
+	dummy := &netlink.Bridge{LinkAttrs: netlink.LinkAttrs{Name: "novanet_captest"}}
+	if err := netlink.LinkAdd(dummy); err != nil {
+		t.Skipf("requires CAP_NET_ADMIN for netlink operations: %v", err)
 	}
+	_ = netlink.LinkDel(dummy)
 }
 
 func testLogger() *zap.Logger {

@@ -3,10 +3,10 @@ package routing
 import (
 	"context"
 	"net"
-	"os"
 	"testing"
 	"time"
 
+	"github.com/vishvananda/netlink"
 	"go.uber.org/zap"
 
 	"github.com/azrtydxb/novanet/internal/config"
@@ -14,17 +14,19 @@ import (
 	"github.com/azrtydxb/novanet/internal/tunnel"
 )
 
-// requireRoot skips the test when not running as root (needed for netlink).
 const (
 	testOverlayMode = "overlay"
 	testGeneveProto = "geneve"
 )
 
+// requireRoot skips the test when the process lacks CAP_NET_ADMIN.
 func requireRoot(t *testing.T) {
 	t.Helper()
-	if os.Getuid() != 0 {
-		t.Skip("requires root (CAP_NET_ADMIN) for netlink operations")
+	dummy := &netlink.Bridge{LinkAttrs: netlink.LinkAttrs{Name: "novanet_captest"}}
+	if err := netlink.LinkAdd(dummy); err != nil {
+		t.Skipf("requires CAP_NET_ADMIN for netlink operations: %v", err)
 	}
+	_ = netlink.LinkDel(dummy)
 }
 
 func testLogger() *zap.Logger {

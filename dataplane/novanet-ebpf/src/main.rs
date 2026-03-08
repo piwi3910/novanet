@@ -161,7 +161,7 @@ fn inc_drop_counter(reason: u8) {
     let idx = reason as u32;
     // SAFETY: eBPF per-CPU array access; the BPF verifier ensures bounds checking.
     // Writing through the raw pointer is safe because per-CPU arrays give exclusive access.
-    if let Some(counter) = unsafe { DROP_COUNTERS.get_ptr_mut(idx) } {
+    if let Some(counter) = DROP_COUNTERS.get_ptr_mut(idx) {
         unsafe {
             *counter += 1;
         }
@@ -187,9 +187,24 @@ fn emit_flow_event(
     bytes: u64,
 ) {
     if let Some(mut entry) = FLOW_EVENTS.reserve::<FlowEvent>(0) {
+        // Convert IPv4 u32 addresses to [u8; 16] (first 4 bytes, rest zeroed).
+        let mut src_ip_bytes = [0u8; 16];
+        src_ip_bytes[0] = (src_ip >> 24) as u8;
+        src_ip_bytes[1] = (src_ip >> 16) as u8;
+        src_ip_bytes[2] = (src_ip >> 8) as u8;
+        src_ip_bytes[3] = src_ip as u8;
+
+        let mut dst_ip_bytes = [0u8; 16];
+        dst_ip_bytes[0] = (dst_ip >> 24) as u8;
+        dst_ip_bytes[1] = (dst_ip >> 16) as u8;
+        dst_ip_bytes[2] = (dst_ip >> 8) as u8;
+        dst_ip_bytes[3] = dst_ip as u8;
+
         let event = FlowEvent {
-            src_ip,
-            dst_ip,
+            family: AF_INET,
+            verdict,
+            drop_reason,
+            tcp_flags,
             src_identity,
             dst_identity,
             protocol,
@@ -197,10 +212,8 @@ fn emit_flow_event(
             src_port,
             dst_port,
             _pad2: [0; 2],
-            verdict,
-            drop_reason,
-            tcp_flags,
-            _pad3: 0,
+            src_ip: src_ip_bytes,
+            dst_ip: dst_ip_bytes,
             bytes,
             packets: 1,
             // SAFETY: BPF helper call; always available in TC programs.
@@ -351,7 +364,7 @@ fn service_lookup(
     let idx = match algorithm {
         LB_ALG_ROUND_ROBIN => {
             // SAFETY: eBPF per-CPU array access; BPF verifier ensures bounds.
-            if let Some(c) = unsafe { RR_COUNTERS.get_ptr_mut(offset as u32) } {
+            if let Some(c) = RR_COUNTERS.get_ptr_mut(offset as u32) {
                 let val = unsafe { *c };
                 unsafe { *c = val.wrapping_add(1) };
                 val % (count as u32)
@@ -364,7 +377,7 @@ fn service_lookup(
             let maglev_offset = svc.maglev_offset;
             let maglev_idx = maglev_offset + (hash % MAGLEV_TABLE_SIZE);
             // SAFETY: eBPF array lookup; safety guaranteed by BPF verifier.
-            if let Some(backend_idx) = unsafe { MAGLEV.get(maglev_idx) } {
+            if let Some(backend_idx) = MAGLEV.get(maglev_idx) {
                 *backend_idx
             } else {
                 0
@@ -379,7 +392,7 @@ fn service_lookup(
 
     let backend_array_idx = (offset as u32) + idx;
     // SAFETY: eBPF array lookup; safety guaranteed by BPF verifier.
-    let backend = unsafe { BACKENDS.get(backend_array_idx) }?;
+    let backend = BACKENDS.get(backend_array_idx)?;
     let backend_ip = backend.ip;
     let backend_port = backend.port;
 
@@ -395,7 +408,7 @@ fn service_lookup(
         _pad2: [0; 2],
     };
     // SAFETY: eBPF map insert; safety guaranteed by BPF verifier.
-    let _ = unsafe { CONNTRACK.insert(&ct_key, &ct_val, 0) };
+    let _ = CONNTRACK.insert(&ct_key, &ct_val, 0);
 
     // Create reverse conntrack entry for return traffic SNAT.
     let rev_ct_key = CtKey {
@@ -417,7 +430,7 @@ fn service_lookup(
         _pad2: [0; 2],
     };
     // SAFETY: eBPF map insert; safety guaranteed by BPF verifier.
-    let _ = unsafe { CONNTRACK.insert(&rev_ct_key, &rev_ct_val, 0) };
+    let _ = CONNTRACK.insert(&rev_ct_key, &rev_ct_val, 0);
 
     Some((backend_ip, backend_port, dst_ip, dst_port))
 }
@@ -456,7 +469,7 @@ fn sock_service_lookup(dst_ip: u32, dst_port: u16, protocol: u8) -> Option<(u32,
     let idx = match algorithm {
         LB_ALG_ROUND_ROBIN => {
             // SAFETY: eBPF per-CPU array access; BPF verifier ensures bounds.
-            if let Some(c) = unsafe { RR_COUNTERS.get_ptr_mut(offset as u32) } {
+            if let Some(c) = RR_COUNTERS.get_ptr_mut(offset as u32) {
                 let val = unsafe { *c };
                 unsafe { *c = val.wrapping_add(1) };
                 val % (count as u32)
@@ -476,7 +489,7 @@ fn sock_service_lookup(dst_ip: u32, dst_port: u16, protocol: u8) -> Option<(u32,
             let maglev_offset = svc.maglev_offset;
             let maglev_idx = maglev_offset + (h % MAGLEV_TABLE_SIZE);
             // SAFETY: eBPF array lookup; safety guaranteed by BPF verifier.
-            if let Some(backend_idx) = unsafe { MAGLEV.get(maglev_idx) } {
+            if let Some(backend_idx) = MAGLEV.get(maglev_idx) {
                 *backend_idx
             } else {
                 0
@@ -497,7 +510,7 @@ fn sock_service_lookup(dst_ip: u32, dst_port: u16, protocol: u8) -> Option<(u32,
 
     let backend_array_idx = (offset as u32) + idx;
     // SAFETY: eBPF array lookup; safety guaranteed by BPF verifier.
-    let backend = unsafe { BACKENDS.get(backend_array_idx) }?;
+    let backend = BACKENDS.get(backend_array_idx)?;
 
     Some((backend.ip, backend.port))
 }
@@ -1569,7 +1582,7 @@ fn try_sock_connect4(ctx: &SockAddrContext) -> Result<i32, i64> {
             _pad: 0,
         };
         // SAFETY: eBPF map insert; safety guaranteed by BPF verifier.
-        let _ = unsafe { SOCK_LB_ORIGINS.insert(&cookie, &origin, 0) };
+        let _ = SOCK_LB_ORIGINS.insert(&cookie, &origin, 0);
 
         // Rewrite destination to backend.
         unsafe {
@@ -1609,7 +1622,7 @@ fn try_sock_sendmsg4(ctx: &SockAddrContext) -> Result<i32, i64> {
             protocol: 17,
             _pad: 0,
         };
-        let _ = unsafe { SOCK_LB_ORIGINS.insert(&cookie, &origin, 0) };
+        let _ = SOCK_LB_ORIGINS.insert(&cookie, &origin, 0);
 
         unsafe {
             (*ctx.sock_addr).user_ip4 = backend_ip;
