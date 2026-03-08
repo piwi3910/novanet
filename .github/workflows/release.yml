@@ -93,6 +93,7 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+          provenance: false
 
   docker-dataplane:
     name: Docker dataplane (${{ matrix.arch.name }})
@@ -139,6 +140,7 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+          provenance: false
 
   docker-manifest:
     name: Docker Manifest
