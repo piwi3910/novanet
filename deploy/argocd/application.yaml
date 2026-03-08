@@ -50,7 +50,7 @@ spec:
               description: "TOR-2"
               bfd_enabled: true
         l4lb:
-          enabled: false
+          enabled: true
   destination:
     server: https://kubernetes.default.svc
     namespace: novanet-system

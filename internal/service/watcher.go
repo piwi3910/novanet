@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"strings"
 	"sync"
 
@@ -587,12 +588,14 @@ func (w *Watcher) collectBackends(svc *corev1.Service) []backendInfo {
 				continue
 			}
 			for _, addr := range ep.Addresses {
+				// EndpointSlice addresses may contain hostnames (e.g. node
+				// names like "worker-21") instead of IPs.  The dataplane
+				// expects valid IP addresses, so skip non-IP entries.
+				if net.ParseIP(addr) == nil {
+					continue
+				}
 				be := backendInfo{
 					ip: addr,
-				}
-				// Capture node IP if available.
-				if ep.NodeName != nil {
-					be.nodeIP = *ep.NodeName
 				}
 				// Capture port info from the EndpointSlice ports.
 				if len(eps.Ports) > 0 && eps.Ports[0].Port != nil {
