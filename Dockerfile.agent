@@ -41,6 +41,7 @@ RUN apk add --no-cache \
     iptables \
     ip6tables \
     iproute2 \
+    frr \
     && addgroup -S novanet && adduser -S -G novanet novanet
 
 # Copy binaries from builder.
