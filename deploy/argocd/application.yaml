@@ -40,6 +40,7 @@ spec:
             minRxMs: 300
             minTxMs: 300
             detectMultiplier: 3
+          controlPlaneVIP: "192.168.100.10"
           peers:
             - neighbor_address: "192.168.100.2"
               remote_as: 65000
