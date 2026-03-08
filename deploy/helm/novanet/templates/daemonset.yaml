@@ -118,10 +118,9 @@ spec:
               readOnly: true
             - name: run-novanet
               mountPath: /run/novanet
-            {{- if .Values.novaroute.enabled }}
-            - name: run-novaroute
-              mountPath: /run/novaroute
-              readOnly: true
+            {{- if eq (lower .Values.config.routingMode) "native" }}
+            - name: frr-run
+              mountPath: /run/frr
             {{- end }}
             - name: netns
               mountPath: /run/netns
@@ -176,6 +175,21 @@ spec:
               mountPath: /proc
               readOnly: true
 
+        {{- if eq (lower .Values.config.routingMode) "native" }}
+        - name: frr
+          image: "{{ .Values.image.frr.repository }}:{{ .Values.image.frr.tag }}"
+          imagePullPolicy: {{ .Values.image.frr.pullPolicy }}
+          securityContext:
+            privileged: true
+          volumeMounts:
+            - name: frr-run
+              mountPath: /run/frr
+            - name: frr-config
+              mountPath: /etc/frr
+          resources:
+            {{- toYaml .Values.resources.frr | nindent 12 }}
+        {{- end }}
+
       terminationGracePeriodSeconds: 30
       volumes:
         - name: config
@@ -188,11 +202,12 @@ spec:
           hostPath:
             path: /run/novanet
             type: DirectoryOrCreate
-        {{- if .Values.novaroute.enabled }}
-        - name: run-novaroute
-          hostPath:
-            path: /run/novaroute
-            type: DirectoryOrCreate
+        {{- if eq (lower .Values.config.routingMode) "native" }}
+        - name: frr-run
+          emptyDir: {}
+        - name: frr-config
+          configMap:
+            name: {{ include "novanet.fullname" . }}-frr-config
         {{- end }}
         - name: cni-bin
           hostPath:

@@ -6,12 +6,13 @@ This document describes the internal architecture of NovaNet, including data pat
 
 ## Component Overview
 
-NovaNet runs as a DaemonSet with two containers per node:
+NovaNet runs as a DaemonSet with two containers per node (three in native routing mode):
 
 | Container | Binary | Language | Role |
 |-----------|--------|----------|------|
-| agent | `novanet-agent` | Go | Management plane: IPAM, identity allocation, policy compilation, Kubernetes watchers, NovaRoute client, CNI handler, metrics |
+| agent | `novanet-agent` | Go | Management plane: IPAM, identity allocation, policy compilation, Kubernetes watchers, integrated routing manager, CNI handler, metrics |
 | dataplane | `novanet-dataplane` | Rust | eBPF program loader and map manager, gRPC server for agent commands, flow event export |
+| frr | FRR daemons | C | BGP/OSPF/BFD routing suite (native routing mode only, runs as a sidecar) |
 
 A third binary, `novanet-cni`, is installed as a CNI plugin on the host at `/opt/cni/bin/novanet-cni`. It is invoked by the kubelet during pod creation and deletion.
 
@@ -36,7 +37,7 @@ novanetctl ──gRPC──► novanet-agent ◄───────┘
 | `/run/novanet/cni.sock` | agent | CNI binary |
 | `/run/novanet/novanet.sock` | agent | novanetctl |
 | `/run/novanet/dataplane.sock` | dataplane | agent |
-| `/run/novaroute/novaroute.sock` | NovaRoute | agent (native mode) |
+| `/run/frr/` | FRR sidecar | agent routing manager (native mode) |
 
 ---
 
@@ -63,7 +64,7 @@ Processes packets leaving a pod.
 2. Check egress policy in EGRESS_POLICIES map
 3. **Local delivery**: If destination IP is in ENDPOINTS map (local pod), return TC_ACT_OK to let the kernel route the packet to that pod's veth
 4. **Overlay remote delivery**: Look up TUNNELS map by destination node IP. Redirect to tunnel interface with identity injected into Geneve TLV
-5. **Native routing**: Let the kernel routing table handle forwarding (routes installed by NovaRoute)
+5. **Native routing**: Let the kernel routing table handle forwarding (routes installed by the integrated routing manager via FRR)
 6. **External traffic**: Passes through iptables MASQUERADE for SNAT
 
 ### tc_tunnel_ingress (Tunnel interface, ingress)
@@ -192,7 +193,7 @@ Pod A eth0 -> tc_egress -> TUNNELS lookup (remote node)
 
 ```
 Pod A eth0 -> tc_egress -> egress policy check
-  -> kernel routing (BGP/OSPF-learned routes via NovaRoute)
+  -> kernel routing (BGP/OSPF-learned routes via FRR sidecar)
   -> underlay network -> remote node
   -> Pod B eth0 tc_ingress -> ENDPOINTS lookup (src IP -> identity)
   -> policy check -> deliver
@@ -216,7 +217,7 @@ When the agent receives SIGTERM:
 
 1. Cancel the root context (stops all background watchers)
 2. Wait for all goroutines to finish (`sync.WaitGroup`)
-3. In native mode: withdraw PodCIDR from NovaRoute and close the connection
+3. In native mode: withdraw PodCIDR via the routing manager and shut down FRR
 4. Stop gRPC servers
 5. Close dataplane connection
 6. Exit

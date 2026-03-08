@@ -1,0 +1,23 @@
+{{- if eq (lower .Values.config.routingMode) "native" }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "novanet.fullname" . }}-frr-config
+  labels:
+    {{- include "novanet.labels" . | nindent 4 }}
+data:
+  daemons: |
+    bgpd=yes
+    bfdd=yes
+    zebra=yes
+    ospfd={{ if eq .Values.routing.protocol "ospf" }}yes{{ else }}no{{ end }}
+    vtysh_enable=yes
+    watchfrr_enable=yes
+  vtysh.conf: |
+    service integrated-vtysh-config
+  frr.conf: |
+    frr defaults datacenter
+    log syslog informational
+    service integrated-vtysh-config
+    !
+{{- end }}

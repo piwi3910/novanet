@@ -11,6 +11,10 @@ image:
     repository: ghcr.io/azrtydxb/novanet/novanet-dataplane
     tag: latest
     pullPolicy: IfNotPresent
+  frr:
+    repository: quay.io/frrouting/frr
+    tag: "10.3.1"
+    pullPolicy: IfNotPresent
 
 imagePullSecrets: []
 
@@ -21,25 +25,15 @@ config:
   routingMode: "overlay"     # overlay or native
   logLevel: "info"
 
-novaroute:
-  enabled: false
-  socket: "/run/novaroute/novaroute.sock"
-  # WARNING: Set a real authentication token before enabling NovaRoute.
-  token: ""
-  protocol: "bgp"  # bgp or ospf
-  # controlPlaneVIP is the virtual IP for the Kubernetes API server.
-  # On control-plane nodes, the agent binds this IP on loopback and
-  # advertises it via BGP for ECMP.
+routing:
+  protocol: "bgp"        # bgp or ospf
+  frrSocketDir: "/run/frr"
   controlPlaneVIP: ""
-  # BFD (Bidirectional Forwarding Detection) for sub-second failover.
+  controlPlaneVIPHealthInterval: 5
   bfd:
-    # -- Enable BFD on mesh BGP peers
     enabled: true
-    # -- Minimum receive interval in milliseconds (0 = FRR default 300ms)
     minRxMs: 300
-    # -- Minimum transmit interval in milliseconds (0 = FRR default 300ms)
     minTxMs: 300
-    # -- Detect multiplier (0 = FRR default 3)
     detectMultiplier: 3
 
 egress:
@@ -83,6 +77,13 @@ resources:
       memory: 64Mi
     limits:
       cpu: 500m
+      memory: 128Mi
+  frr:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
       memory: 128Mi
 
 priorityClassName: system-node-critical

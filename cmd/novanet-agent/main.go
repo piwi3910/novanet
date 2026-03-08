@@ -1,6 +1,6 @@
 // Package main implements the NovaNet agent daemon. It is the management
 // plane component that bridges the CNI binary, the Rust eBPF dataplane,
-// and (optionally) the NovaRoute routing control plane.
+// and the integrated routing subsystem (BGP/BFD/OSPF via FRR).
 package main
 
 import (
@@ -33,8 +33,8 @@ import (
 	"github.com/azrtydxb/novanet/internal/l2announce"
 	"github.com/azrtydxb/novanet/internal/lbipam"
 	"github.com/azrtydxb/novanet/internal/masquerade"
-	"github.com/azrtydxb/novanet/internal/novaroute"
 	"github.com/azrtydxb/novanet/internal/policy"
+	"github.com/azrtydxb/novanet/internal/routing"
 	"github.com/azrtydxb/novanet/internal/service"
 	"github.com/azrtydxb/novanet/internal/tunnel"
 	"github.com/azrtydxb/novanet/internal/xdp"
@@ -166,16 +166,16 @@ type endpoint struct {
 type agentServer struct {
 	pb.UnimplementedAgentControlServer
 
-	logger             *zap.Logger
-	cfg                *config.Config
-	ipAlloc            *ipam.Allocator
-	idAlloc            *identity.Allocator
-	dpClient           pb.DataplaneControlClient
-	k8sClient          kubernetes.Interface
-	nodeIP             net.IP
-	podCIDR            string
-	dpConnected        atomic.Bool
-	novarouteConnected bool
+	logger           *zap.Logger
+	cfg              *config.Config
+	ipAlloc          *ipam.Allocator
+	idAlloc          *identity.Allocator
+	dpClient         pb.DataplaneControlClient
+	k8sClient        kubernetes.Interface
+	nodeIP           net.IP
+	podCIDR          string
+	dpConnected      atomic.Bool
+	routingConnected bool
 
 	// Policy enforcement.
 	policyCompiler *policy.Compiler
@@ -440,7 +440,7 @@ func (s *agentServer) GetAgentStatus(ctx context.Context, _ *pb.GetAgentStatusRe
 		NodeIp:             s.nodeIP.String(),
 		PodCidr:            s.podCIDR,
 		ClusterCidr:        s.cfg.ClusterCIDR,
-		NovarouteConnected: s.novarouteConnected,
+		NovarouteConnected: s.routingConnected,
 		Dataplane: &pb.DataplaneStatusInfo{
 			Connected: s.dpConnected.Load(),
 		},
@@ -972,7 +972,7 @@ type shutdownState struct {
 	ipamGRPC      *grpc.Server
 	metricsServer *http.Server
 	dpConn        *grpc.ClientConn
-	nrClient      *novaroute.Client
+	nrClient      *routing.Manager
 	podCIDR       string
 	xdpMgr        *xdp.Manager
 	wgManager     *encryption.WireGuardManager
@@ -1598,7 +1598,7 @@ func startMetricsServer(logger *zap.Logger, cfg *config.Config, agentSrv *agentS
 // Returns the NovaRoute client if native mode, nil otherwise.
 func initRoutingMode(ctx context.Context, logger *zap.Logger, cfg *config.Config,
 	k8sClient *kubernetes.Clientset, agentSrv *agentServer, dpClient pb.DataplaneControlClient,
-	nodeIP net.IP, podCIDR, nodeName string, bgWg *sync.WaitGroup) *novaroute.Client {
+	nodeIP net.IP, podCIDR, nodeName string, bgWg *sync.WaitGroup) *routing.Manager {
 
 	switch strings.ToLower(cfg.RoutingMode) {
 	case "overlay":
@@ -1637,13 +1637,13 @@ func initOverlayMode(ctx context.Context, logger *zap.Logger, cfg *config.Config
 	}()
 }
 
-// initNativeMode sets up native routing mode with eBGP via NovaRoute.
+// initNativeMode sets up native routing mode with eBGP via the integrated
+// routing manager (FRR sidecar).
 func initNativeMode(ctx context.Context, logger *zap.Logger, cfg *config.Config,
 	k8sClient *kubernetes.Clientset, agentSrv *agentServer, dpClient pb.DataplaneControlClient,
-	nodeIP net.IP, podCIDR, nodeName string, bgWg *sync.WaitGroup) *novaroute.Client {
+	nodeIP net.IP, podCIDR, nodeName string, bgWg *sync.WaitGroup) *routing.Manager {
 
-	logger.Info("running in native routing mode (eBGP)",
-		zap.String("socket", cfg.NovaRoute.Socket))
+	logger.Info("running in native routing mode (eBGP)")
 
 	if k8sClient == nil {
 		logger.Fatal("native mode requires NOVANET_NODE_NAME to be set for node discovery")
@@ -1666,43 +1666,38 @@ func initNativeMode(ctx context.Context, logger *zap.Logger, cfg *config.Config,
 		logger.Info("added blackhole route for local PodCIDR", zap.String("pod_cidr", podCIDR))
 	}
 
-	nrClient := novaroute.NewClient(cfg.NovaRoute.Socket, "novanet", cfg.NovaRoute.Token, logger)
+	// Create the integrated routing manager (replaces NovaRoute gRPC client).
+	routingMgr := routing.NewManager(routing.ManagerConfig{
+		FRRSocketDir: cfg.Routing.FRRSocketDir,
+	}, "novanet", logger)
 
-	if err := nrClient.Connect(ctx); err != nil {
-		logger.Fatal("failed to connect to NovaRoute", zap.Error(err))
+	// Wait for FRR sidecar daemons to be ready.
+	if err := routingMgr.WaitForFRR(ctx); err != nil {
+		logger.Fatal("FRR daemons not ready", zap.Error(err))
 	}
 
-	resp, err := nrClient.Register(ctx)
-	if err != nil {
-		logger.Fatal("failed to register with NovaRoute", zap.Error(err))
-	}
-	logger.Info("registered with NovaRoute",
-		zap.Strings("current_prefixes", resp.CurrentPrefixes))
+	// Start the reconciliation loop.
+	routingMgr.Start(ctx)
 
 	// Compute per-node eBGP AS: 65000 + last octet of node IP.
 	lastOctet := uint32(nodeIP.To4()[3])
 	localAS := uint32(65000) + lastOctet
 	routerID := nodeIP.String()
 
-	if err := nrClient.ConfigureBGP(ctx, localAS, routerID); err != nil {
-		logger.Fatal("failed to configure BGP", zap.Error(err))
-	}
-	logger.Info("BGP configured",
-		zap.Uint32("local_as", localAS),
-		zap.String("router_id", routerID))
+	routingMgr.ConfigureBGP(localAS, routerID)
 
 	// Advertise this node's PodCIDR.
-	if err := nrClient.AdvertisePrefix(ctx, podCIDR); err != nil {
+	if err := routingMgr.AdvertisePrefix(podCIDR); err != nil {
 		logger.Fatal("failed to advertise PodCIDR", zap.Error(err))
 	}
 	logger.Info("advertised PodCIDR via BGP", zap.String("pod_cidr", podCIDR))
-	agentSrv.novarouteConnected = true
+	agentSrv.routingConnected = true
 
 	// Control-plane VIP: register as L4 LB service with health-checked backends.
-	if vip := cfg.NovaRoute.ControlPlaneVIP; vip != "" && cfg.L4LB.Enabled {
+	if vip := cfg.Routing.ControlPlaneVIP; vip != "" && cfg.L4LB.Enabled {
 		healthInterval := 5 * time.Second
-		if cfg.NovaRoute.ControlPlaneVIPHealthInterval > 0 {
-			healthInterval = time.Duration(cfg.NovaRoute.ControlPlaneVIPHealthInterval) * time.Second
+		if cfg.Routing.ControlPlaneVIPHealthInterval > 0 {
+			healthInterval = time.Duration(cfg.Routing.ControlPlaneVIPHealthInterval) * time.Second
 		}
 
 		cpvipMgr := cpvip.NewManager(cpvip.Config{
@@ -1710,7 +1705,7 @@ func initNativeMode(ctx context.Context, logger *zap.Logger, cfg *config.Config,
 			HealthInterval: healthInterval,
 			NodeName:       nodeName,
 			IsControlPlane: isControlPlaneNode(ctx, k8sClient, nodeName, logger),
-		}, dpClient, nrClient, k8sClient, logger)
+		}, dpClient, routingMgr, k8sClient, logger)
 
 		bgWg.Add(1)
 		go func() {
@@ -1723,19 +1718,19 @@ func initNativeMode(ctx context.Context, logger *zap.Logger, cfg *config.Config,
 	bgWg.Add(1)
 	go func() {
 		defer bgWg.Done()
-		var bfdOpts *novaroute.BFDOptions
-		if cfg.NovaRoute.BFDEnabled {
-			bfdOpts = &novaroute.BFDOptions{
+		var bfdOpts *routing.BFDOptions
+		if cfg.Routing.BFDEnabled {
+			bfdOpts = &routing.BFDOptions{
 				Enabled:          true,
-				MinRxMs:          cfg.NovaRoute.BFDMinRxMs,
-				MinTxMs:          cfg.NovaRoute.BFDMinTxMs,
-				DetectMultiplier: cfg.NovaRoute.BFDDetectMultiplier,
+				MinRxMs:          cfg.Routing.BFDMinRxMs,
+				MinTxMs:          cfg.Routing.BFDMinTxMs,
+				DetectMultiplier: cfg.Routing.BFDDetectMult,
 			}
 		}
-		watchNodesNative(ctx, logger, k8sClient, nrClient, nodeName, bfdOpts)
+		watchNodesNative(ctx, logger, k8sClient, routingMgr, nodeName, bfdOpts)
 	}()
 
-	return nrClient
+	return routingMgr
 }
 
 // isControlPlaneNode checks if the given node has the control-plane role label.
@@ -1770,8 +1765,8 @@ func gracefulShutdown(s *shutdownState) {
 	s.bgWg.Wait()
 	s.logger.Info("background goroutines stopped")
 
-	// If native mode, withdraw prefix and close NovaRoute connection.
-	shutdownNovaRoute(shutdownCtx, s.logger, s.nrClient, s.podCIDR)
+	// If native mode, withdraw prefix and shut down routing manager.
+	shutdownRouting(s.logger, s.nrClient, s.podCIDR)
 
 	// Stop gRPC servers.
 	s.cniGRPC.GracefulStop()
@@ -1815,25 +1810,23 @@ func gracefulShutdown(s *shutdownState) {
 	s.logger.Info("novanet-agent shutdown complete")
 }
 
-// shutdownNovaRoute withdraws the PodCIDR prefix and closes the NovaRoute connection.
+// shutdownRouting withdraws the PodCIDR prefix and shuts down the routing manager.
 // CP-VIP shutdown is handled by the cpvip.Manager via context cancellation.
-func shutdownNovaRoute(ctx context.Context, logger *zap.Logger, nrClient *novaroute.Client, podCIDR string) {
-	if nrClient == nil {
+func shutdownRouting(logger *zap.Logger, routingMgr *routing.Manager, podCIDR string) {
+	if routingMgr == nil {
 		return
 	}
 
-	logger.Info("withdrawing PodCIDR from NovaRoute", zap.String("pod_cidr", podCIDR))
-	if err := nrClient.WithdrawPrefix(ctx, podCIDR); err != nil {
+	logger.Info("withdrawing PodCIDR", zap.String("pod_cidr", podCIDR))
+	if err := routingMgr.WithdrawPrefix(podCIDR); err != nil {
 		logger.Error("failed to withdraw prefix", zap.Error(err))
 	}
-	if err := nrClient.Close(); err != nil {
-		logger.Error("failed to close NovaRoute connection", zap.Error(err))
-	}
+	routingMgr.Shutdown()
 	// Remove the blackhole route.
 	if err := tunnel.RemoveBlackholeRoute(podCIDR); err != nil {
 		logger.Debug("failed to remove blackhole route", zap.Error(err))
 	}
-	logger.Info("NovaRoute connection closed")
+	logger.Info("routing manager stopped")
 }
 
 // buildLogger creates a production zap logger with JSON encoding and ISO8601
@@ -1997,9 +1990,9 @@ func pushDataplaneConfig(ctx context.Context, logger *zap.Logger, client pb.Data
 }
 
 // watchNodesNative periodically lists Kubernetes nodes and establishes
-// eBGP peering via NovaRoute for each remote node.
+// eBGP peering via the integrated routing manager for each remote node.
 func watchNodesNative(ctx context.Context, logger *zap.Logger, k8sClient *kubernetes.Clientset,
-	nrClient *novaroute.Client, selfNode string, bfdOpts *novaroute.BFDOptions) {
+	routingMgr *routing.Manager, selfNode string, bfdOpts *routing.BFDOptions) {
 
 	const pollInterval = 15 * time.Second
 
@@ -2053,7 +2046,7 @@ func watchNodesNative(ctx context.Context, logger *zap.Logger, k8sClient *kubern
 			}
 			remoteAS := uint32(65000) + uint32(ip[3])
 
-			if err := nrClient.ApplyPeer(ctx, remoteIP, remoteAS, bfdOpts); err != nil {
+			if err := routingMgr.ApplyPeer(remoteIP, remoteAS, bfdOpts); err != nil {
 				logger.Error("failed to apply BGP peer",
 					zap.Error(err),
 					zap.String("node", n.Name),

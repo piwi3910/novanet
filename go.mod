@@ -3,7 +3,6 @@ module github.com/azrtydxb/novanet
 go 1.26.1
 
 require (
-	github.com/azrtydxb/NovaRoute v0.5.2
 	github.com/containernetworking/cni v1.3.0
 	github.com/prometheus/client_golang v1.23.2
 	github.com/prometheus/client_model v0.6.2
@@ -76,8 +75,3 @@ require (
 	sigs.k8s.io/yaml v1.6.0 // indirect
 )
 
-// NovaRoute was transferred from piwi3910 to azrtydxb org but its go.mod
-// still declares github.com/piwi3910/NovaRoute. This replace maps the old
-// module path so the build works until NovaRoute publishes a new release
-// with the updated module path.
-replace github.com/azrtydxb/NovaRoute v0.5.2 => github.com/piwi3910/NovaRoute v0.5.2

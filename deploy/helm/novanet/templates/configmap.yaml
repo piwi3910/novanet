@@ -15,26 +15,16 @@ data:
       "node_cidr_mask_size": {{ .Values.config.nodeCIDRMaskSize }},
       "tunnel_protocol": {{ .Values.config.tunnelProtocol | quote }},
       "routing_mode": {{ .Values.config.routingMode | quote }},
-      {{- if .Values.novaroute.enabled }}
-      "novaroute": {
-        "socket": {{ .Values.novaroute.socket | quote }},
-        "token": {{ .Values.novaroute.token | quote }},
-        "protocol": {{ .Values.novaroute.protocol | quote }},
-        "bfd_enabled": {{ .Values.novaroute.bfd.enabled }},
-        "bfd_min_rx_ms": {{ .Values.novaroute.bfd.minRxMs | int }},
-        "bfd_min_tx_ms": {{ .Values.novaroute.bfd.minTxMs | int }},
-        "bfd_detect_multiplier": {{ .Values.novaroute.bfd.detectMultiplier | int }}
-        {{- if .Values.novaroute.controlPlaneVIP }},
-        "control_plane_vip": {{ .Values.novaroute.controlPlaneVIP | quote }}
-        {{- end }}
+      "routing": {
+        "protocol": {{ .Values.routing.protocol | quote }},
+        "frr_socket_dir": {{ .Values.routing.frrSocketDir | quote }},
+        "control_plane_vip": {{ .Values.routing.controlPlaneVIP | quote }},
+        "control_plane_vip_health_interval": {{ .Values.routing.controlPlaneVIPHealthInterval | int }},
+        "bfd_enabled": {{ .Values.routing.bfd.enabled }},
+        "bfd_min_rx_ms": {{ .Values.routing.bfd.minRxMs | int }},
+        "bfd_min_tx_ms": {{ .Values.routing.bfd.minTxMs | int }},
+        "bfd_detect_mult": {{ .Values.routing.bfd.detectMultiplier | int }}
       },
-      {{- else }}
-      "novaroute": {
-        "socket": "",
-        "token": "",
-        "protocol": ""
-      },
-      {{- end }}
       "egress": {
         "masquerade_enabled": {{ .Values.egress.masqueradeEnabled }}
       },

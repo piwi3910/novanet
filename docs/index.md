@@ -19,7 +19,7 @@
 ## Operations
 
 - [CLI Reference](cli-reference.md) -- All `novanetctl` commands with flags and output examples
-- [NovaRoute Integration](novaroute-integration.md) -- Native routing setup with BGP/OSPF
+- [Native Routing](novaroute-integration.md) -- Native routing setup with BGP/OSPF
 - [Troubleshooting](troubleshooting.md) -- Common issues, debugging commands, log analysis
 
 ## Development
@@ -33,7 +33,7 @@
 | Component | Role |
 |-----------|------|
 | [NovaEdge](https://github.com/azrtydxb/novaedge) | Load balancing, reverse proxy, VIP controller, SD-WAN gateway |
-| [NovaRoute](https://github.com/azrtydxb/NovaRoute) | Node-local routing control plane (BGP/OSPF/BFD via FRR) |
+| NovaRoute (merged into NovaNet) | Routing control plane (BGP/OSPF/BFD via FRR), now integrated as a native component |
 | **NovaNet** | Pod networking, L3/L4 policy, observability |
 
 ---

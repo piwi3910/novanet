@@ -47,9 +47,8 @@ mount -t bpf bpf /sys/fs/bpf
 
 ### For Native Routing Mode (Optional)
 
-- **NovaRoute** deployed as a DaemonSet on each node
 - BGP or OSPF-capable network fabric (ToR switches or route reflectors)
-- See the [NovaRoute Integration Guide](novaroute-integration.md) for details
+- See the [Native Routing Guide](novaroute-integration.md) for details
 
 ---
 
@@ -171,13 +170,12 @@ helm install novanet ./deploy/helm/novanet \
 
 ## Quick Start: Native Routing Mode
 
-Native routing mode eliminates encapsulation overhead by using BGP or OSPF to distribute pod routes through the underlay network. This requires NovaRoute to be deployed on each node.
+Native routing mode eliminates encapsulation overhead by using BGP or OSPF to distribute pod routes through the underlay network. The FRR routing suite runs as a sidecar container in the NovaNet DaemonSet.
 
 ### Prerequisites
 
-1. NovaRoute must be installed and running as a DaemonSet
-2. The network fabric must support BGP or OSPF
-3. NovaRoute must be configured with peer information for ToR switches or route reflectors
+1. The network fabric must support BGP or OSPF
+2. ToR switches or route reflectors must be configured to peer with cluster nodes
 
 ### Install NovaNet with Native Routing
 
@@ -186,21 +184,20 @@ helm install novanet ./deploy/helm/novanet \
   -n nova-system \
   --create-namespace \
   --set config.routingMode=native \
-  --set novaroute.enabled=true \
-  --set novaroute.socket=/run/novaroute/novaroute.sock \
-  --set novaroute.token=<your-novaroute-token> \
-  --set novaroute.protocol=bgp
+  --set routing.enabled=true \
+  --set routing.protocol=bgp
 ```
 
-Verify NovaRoute integration:
+Verify native routing:
 
 ```bash
 novanetctl status
+novanetctl routing status
 ```
 
 The output should show `Mode: native` and no tunnels.
 
-See the [NovaRoute Integration Guide](novaroute-integration.md) for detailed configuration.
+See the [Native Routing Guide](novaroute-integration.md) for detailed configuration.
 
 ---
 
@@ -324,5 +321,5 @@ helm install novanet ./deploy/helm/novanet \
 ## Next Steps
 
 - [Configuration Reference](configuration.md) -- All Helm values and config options
-- [NovaRoute Integration Guide](novaroute-integration.md) -- Native routing setup
+- [Native Routing Guide](novaroute-integration.md) -- Native routing setup
 - [Troubleshooting Guide](troubleshooting.md) -- Debugging connectivity issues
