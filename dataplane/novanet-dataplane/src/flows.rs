@@ -48,9 +48,32 @@ fn raw_to_proto(raw: &RawFlowEvent) -> crate::proto::FlowEvent {
         _ => DropReason::None as i32,
     };
 
+    // Convert [u8; 16] IP addresses to human-readable strings.
+    let (src_ip_str, dst_ip_str, ip_version) = if raw.family == novanet_common::AF_INET {
+        // IPv4: first 4 bytes.
+        let src =
+            std::net::Ipv4Addr::new(raw.src_ip[0], raw.src_ip[1], raw.src_ip[2], raw.src_ip[3]);
+        let dst =
+            std::net::Ipv4Addr::new(raw.dst_ip[0], raw.dst_ip[1], raw.dst_ip[2], raw.dst_ip[3]);
+        (
+            src.to_string(),
+            dst.to_string(),
+            crate::proto::IpVersion::Ipv4 as i32,
+        )
+    } else {
+        // IPv6: full 16 bytes.
+        let src = std::net::Ipv6Addr::from(raw.src_ip);
+        let dst = std::net::Ipv6Addr::from(raw.dst_ip);
+        (
+            src.to_string(),
+            dst.to_string(),
+            crate::proto::IpVersion::Ipv6 as i32,
+        )
+    };
+
     crate::proto::FlowEvent {
-        src_ip: raw.src_ip,
-        dst_ip: raw.dst_ip,
+        src_ip: src_ip_str,
+        dst_ip: dst_ip_str,
         src_identity: raw.src_identity,
         dst_identity: raw.dst_identity,
         protocol: raw.protocol as u32,
@@ -62,6 +85,7 @@ fn raw_to_proto(raw: &RawFlowEvent) -> crate::proto::FlowEvent {
         timestamp_ns: raw.timestamp_ns as i64,
         drop_reason,
         tcp_flags: raw.tcp_flags as u32,
+        ip_version,
     }
 }
 

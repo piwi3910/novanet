@@ -2340,12 +2340,13 @@ impl RealMaps {
     // -- IPCache operations --
 
     fn upsert_ipcache(&self, key: IPCacheKey, value: IPCacheValue) -> anyhow::Result<()> {
+        use aya::maps::lpm_trie::Key;
         let trie = self
             .ipcache
             .as_ref()
             .ok_or_else(|| anyhow::anyhow!("IPCACHE map not available"))?;
         let mut map = trie.write().expect("ipcache lock poisoned");
-        map.insert(&key, value, 0)?;
+        map.insert(&Key::new(key.prefix_len, key), value, 0)?;
         debug!(
             prefix_len = key.prefix_len,
             identity = value.identity,
@@ -2355,12 +2356,13 @@ impl RealMaps {
     }
 
     fn delete_ipcache(&self, key: &IPCacheKey) -> anyhow::Result<()> {
+        use aya::maps::lpm_trie::Key;
         let trie = self
             .ipcache
             .as_ref()
             .ok_or_else(|| anyhow::anyhow!("IPCACHE map not available"))?;
         let mut map = trie.write().expect("ipcache lock poisoned");
-        map.remove(key)?;
+        map.remove(&Key::new(key.prefix_len, *key))?;
         debug!(prefix_len = key.prefix_len, "delete ipcache");
         Ok(())
     }
@@ -2368,12 +2370,13 @@ impl RealMaps {
     // -- Host firewall policy operations --
 
     fn upsert_host_policy(&self, key: HostPolicyKey, value: HostPolicyValue) -> anyhow::Result<()> {
+        use aya::maps::lpm_trie::Key;
         let trie = self
             .host_policies
             .as_ref()
             .ok_or_else(|| anyhow::anyhow!("HOST_POLICIES map not available"))?;
         let mut map = trie.write().expect("host_policies lock poisoned");
-        map.insert(&key, value, 0)?;
+        map.insert(&Key::new(key.prefix_len, key), value, 0)?;
         debug!(
             identity = key.identity,
             direction = key.direction,
@@ -2386,12 +2389,13 @@ impl RealMaps {
     }
 
     fn delete_host_policy(&self, key: &HostPolicyKey) -> anyhow::Result<()> {
+        use aya::maps::lpm_trie::Key;
         let trie = self
             .host_policies
             .as_ref()
             .ok_or_else(|| anyhow::anyhow!("HOST_POLICIES map not available"))?;
         let mut map = trie.write().expect("host_policies lock poisoned");
-        map.remove(key)?;
+        map.remove(&Key::new(key.prefix_len, *key))?;
         debug!(
             identity = key.identity,
             direction = key.direction,
@@ -2414,6 +2418,7 @@ impl RealMaps {
         &self,
         new_policies: Vec<(HostPolicyKey, HostPolicyValue)>,
     ) -> anyhow::Result<(u32, u32)> {
+        use aya::maps::lpm_trie::Key;
         let trie = self
             .host_policies
             .as_ref()
@@ -2421,7 +2426,7 @@ impl RealMaps {
         let mut map = trie.write().expect("host_policies lock poisoned");
 
         // Collect existing entries to remove.
-        let existing: Vec<HostPolicyKey> = map
+        let existing: Vec<Key<HostPolicyKey>> = map
             .iter()
             .filter_map(|res| res.ok())
             .map(|(k, _v)| k)
@@ -2436,7 +2441,7 @@ impl RealMaps {
 
         let mut added = 0u32;
         for (key, value) in &new_policies {
-            map.insert(key, *value, 0)?;
+            map.insert(&Key::new(key.prefix_len, *key), *value, 0)?;
             added += 1;
         }
 
