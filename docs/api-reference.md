@@ -204,9 +204,88 @@ Config keys:
 | `drops_only` | `bool` | If true, stream only denied/dropped flow events |
 
 #### Policy and Identity Listing
+
+| RPC | Description |
+|-----|-------------|
 | `ListIdentities` | Pod-to-identity mappings |
 | `ListTunnels` | Active tunnel list |
 | `ListEgressPolicies` | Egress rules |
+
+#### Routing (Native Mode)
+
+These RPCs query the integrated routing manager and FRR sidecar for live routing state.
+
+| RPC | Description |
+|-----|-------------|
+| `GetRoutingPeers` | BGP peer state with BFD status and intent owner info |
+| `GetRoutingPrefixes` | Prefix advertisement state from the intent store |
+| `GetRoutingBFDSessions` | BFD session state with timers and uptime |
+| `GetRoutingOSPFNeighbors` | OSPF neighbor adjacencies |
+| `StreamRoutingEvents` | Server-streaming RPC for real-time routing events |
+
+**RoutingPeerInfo:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `neighbor_address` | `string` | Peer IP address |
+| `remote_as` | `uint32` | Remote Autonomous System number |
+| `state` | `string` | BGP session state (e.g., "Established") |
+| `uptime` | `string` | Session uptime |
+| `prefixes_received` | `uint32` | Number of prefixes received from peer |
+| `prefixes_sent` | `uint32` | Number of prefixes sent to peer |
+| `msg_received` | `uint32` | BGP messages received |
+| `msg_sent` | `uint32` | BGP messages sent |
+| `bfd_status` | `string` | BFD session status ("up", "down", or empty) |
+| `owner` | `string` | Intent owner that configured this peer |
+
+**RoutingPrefixInfo:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `prefix` | `string` | Route prefix in CIDR notation |
+| `protocol` | `string` | Protocol ("bgp" or "ospf") |
+| `state` | `string` | Advertisement state |
+| `owner` | `string` | Intent owner |
+
+**RoutingBFDSessionInfo:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `peer_address` | `string` | BFD peer IP address |
+| `status` | `string` | Session status ("up", "down") |
+| `uptime` | `string` | Session uptime |
+| `min_rx_ms` | `uint32` | Minimum receive interval (milliseconds) |
+| `min_tx_ms` | `uint32` | Minimum transmit interval (milliseconds) |
+| `detect_multiplier` | `uint32` | Detect multiplier |
+| `interface_name` | `string` | Network interface |
+| `owner` | `string` | Intent owner |
+
+**RoutingOSPFNeighborInfo:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `neighbor_id` | `string` | OSPF neighbor router ID |
+| `address` | `string` | Neighbor IP address |
+| `interface_name` | `string` | Local interface |
+| `state` | `string` | OSPF adjacency state |
+| `owner` | `string` | Intent owner |
+
+**StreamRoutingEventsRequest:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `owner_filter` | `string` | Filter events by owner (empty = all) |
+| `event_types` | `repeated string` | Filter by event types (empty = all) |
+
+**RoutingEvent:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `timestamp_ns` | `int64` | Event timestamp in nanoseconds |
+| `event_type` | `string` | Event type (e.g., "bgp_peer_established", "bfd_session_up") |
+| `owner` | `string` | Intent owner |
+| `detail` | `string` | Human-readable event detail |
+| `metadata` | `map<string, string>` | Additional key-value metadata |
 
 ---
 

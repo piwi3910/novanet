@@ -209,7 +209,7 @@ Runs on every push to `main` and on pull requests. The pipeline is organized int
 **Phase 2: Security & Docs**
 - `govulncheck` for Go vulnerability scanning
 - `gitleaks` for secret detection
-- Jekyll documentation build
+- MkDocs Material documentation build
 - Documentation freshness check (PRs that change code must also update `docs/`)
 
 **Phase 3: Tests**

@@ -184,11 +184,11 @@ SRC_IDENTITY  DST_CIDR          PROTOCOL  DST_PORT  ACTION  SNAT_IP
 
 ### routing
 
-Inspect and manage native routing state (native routing mode only).
+Inspect routing state (native routing mode only). All subcommands query the agent's integrated routing manager, which communicates with the FRR sidecar.
 
 #### routing status
 
-Show the current routing mode, protocol, and FRR connection state.
+Show the current routing mode, FRR connection state, and tunnel protocol.
 
 ```bash
 novanetctl routing status
@@ -198,18 +198,16 @@ Example output:
 
 ```
 Routing Status
-  Mode:        native
-  Protocol:    bgp
-  FRR:         connected
-  Local ASN:   65010
-  Router ID:   10.0.0.10
-  Peers:       4 (4 established)
-  Prefixes:    1 advertised, 3 received
+==============
+
+Routing Mode:       native
+Routing Connected:  true
+Tunnel Protocol:    geneve
 ```
 
 #### routing peers
 
-Show BGP or OSPF peers and their session state. Queries FRR via vtysh.
+Show BGP peer sessions with state, prefix counts, BFD status, uptime, and owner.
 
 ```bash
 novanetctl routing peers
@@ -218,16 +216,16 @@ novanetctl routing peers
 Example output:
 
 ```
-NEIGHBOR        AS      STATE         UP/DOWN     PREFIXES
-10.0.0.1        65000   established   01:30:00    3
-10.0.0.2        65000   established   01:30:00    3
-10.0.0.11       65011   established   01:15:00    1
-10.0.0.12       65012   established   01:10:00    1
+NEIGHBOR        REMOTE AS  STATE        PFX RECV  PFX SENT  BFD  UPTIME    OWNER
+192.168.100.2   65000      Established  14        16        up   01:30:00  novanet
+192.168.100.3   65000      Established  14        16        up   01:30:00  novanet
+192.168.100.11  65011      Established  15        16        up   01:15:00  novanet
+192.168.100.12  65012      Established  15        16        up   01:10:00  novanet
 ```
 
 #### routing prefixes
 
-Show advertised and received route prefixes.
+Show advertised route prefixes from the intent store.
 
 ```bash
 novanetctl routing prefixes
@@ -236,10 +234,65 @@ novanetctl routing prefixes
 Example output:
 
 ```
-TYPE          PREFIX           NEXT_HOP      AS_PATH
-advertised    10.42.1.0/24     0.0.0.0       i
-received      10.42.2.0/24     10.0.0.11     65011 i
-received      10.42.3.0/24     10.0.0.12     65012 i
+PREFIX             PROTOCOL  STATE       OWNER
+10.42.1.0/24       bgp       advertised  novanet
+192.168.100.10/32  bgp       advertised  novanet
+```
+
+#### routing bfd
+
+Show BFD session state with timers, detect multiplier, and uptime.
+
+```bash
+novanetctl routing bfd
+```
+
+Example output:
+
+```
+PEER ADDRESS    STATUS  MIN RX  MIN TX  DETECT MULT  UPTIME   OWNER
+192.168.100.2   up      300ms   300ms   3            0h6m9s   novanet
+192.168.100.3   up      300ms   300ms   3            0h6m11s  novanet
+192.168.100.11  up      300ms   300ms   3            0h5m31s  novanet
+192.168.100.12  up      300ms   300ms   3            0h2m39s  novanet
+```
+
+#### routing ospf
+
+Show OSPF neighbor adjacencies with state, interface, and owner.
+
+```bash
+novanetctl routing ospf
+```
+
+Example output (when OSPF is configured):
+
+```
+NEIGHBOR ID  ADDRESS       INTERFACE  STATE  OWNER
+10.0.0.1     192.168.1.1   eth0       Full   novanet
+10.0.0.2     192.168.1.2   eth0       Full   novanet
+```
+
+#### routing events
+
+Stream real-time routing events (BGP state changes, BFD transitions, prefix updates).
+
+```bash
+novanetctl routing events [flags]
+```
+
+| Flag | Description |
+|------|-------------|
+| `--owner` | Filter events by owner name |
+
+Example output:
+
+```
+Streaming routing events (Ctrl+C to stop)...
+
+[10:15:03.123] bgp_peer_established   owner=novanet    peer 192.168.100.2 AS 65000 established
+[10:15:04.456] bfd_session_up         owner=novanet    BFD session to 192.168.100.2 is up
+[10:15:05.789] prefix_advertised      owner=novanet    advertised 10.42.1.0/24 via bgp
 ```
 
 ---
@@ -274,12 +327,13 @@ To use novanetctl from outside the pod, find the socket path and connect:
 
 ```bash
 # Find the novanet pod on this node
-POD=$(kubectl get pods -n nova-system -l app.kubernetes.io/name=novanet \
+POD=$(kubectl get pods -n novanet-system -l app.kubernetes.io/name=novanet \
   --field-selector spec.nodeName=$(hostname) -o name | head -1)
 
 # Execute inside the pod
-kubectl exec -n nova-system $POD -c agent -- novanetctl status
-kubectl exec -n nova-system $POD -c agent -- novanetctl flows
+kubectl exec -n novanet-system $POD -c agent -- novanetctl status
+kubectl exec -n novanet-system $POD -c agent -- novanetctl flows
+kubectl exec -n novanet-system $POD -c agent -- novanetctl routing peers
 ```
 
 ---

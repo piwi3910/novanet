@@ -2,7 +2,7 @@
   <img src="assets/novanet-logo-light.svg" alt="NovaNet" width="480">
 </p>
 
-**NovaNet** is a high-performance, eBPF-based Kubernetes CNI providing secure pod-to-pod connectivity, identity-based L3/L4 network policy enforcement, and real-time flow visibility.
+**NovaNet** is a high-performance, eBPF-based Kubernetes CNI providing secure pod-to-pod connectivity, identity-based L3/L4 network policy enforcement, native BGP/OSPF/BFD routing, L4 socket-based load balancing, and real-time flow visibility.
 
 ---
 
@@ -19,7 +19,7 @@
 ## Operations
 
 - [CLI Reference](cli-reference.md) -- All `novanetctl` commands with flags and output examples
-- [Native Routing](novaroute-integration.md) -- Native routing setup with BGP/OSPF
+- [Native Routing](novaroute-integration.md) -- Native routing setup with BGP/OSPF/BFD
 - [Troubleshooting](troubleshooting.md) -- Common issues, debugging commands, log analysis
 
 ## Development
@@ -32,9 +32,10 @@
 
 | Component | Role |
 |-----------|------|
-| [NovaEdge](https://github.com/azrtydxb/novaedge) | Load balancing, reverse proxy, VIP controller, SD-WAN gateway |
-| NovaRoute (merged into NovaNet) | Routing control plane (BGP/OSPF/BFD via FRR), now integrated as a native component |
-| **NovaNet** | Pod networking, L3/L4 policy, observability |
+| [NovaEdge](https://github.com/azrtydxb/novaedge) | Ingress load balancing, reverse proxy, SD-WAN gateway |
+| **NovaNet** | Pod networking, L3/L4 policy, native routing (BGP/OSPF/BFD), L4 LB, observability |
+
+> NovaRoute was merged into NovaNet in v1.13.0. All routing functionality is now integrated. The [NovaRoute repository](https://github.com/azrtydxb/NovaRoute) has been archived.
 
 ---
 

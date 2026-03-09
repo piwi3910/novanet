@@ -1,5 +1,5 @@
 site_name: NovaNet
-site_description: High-performance eBPF-based Kubernetes CNI
+site_description: High-performance eBPF-based Kubernetes CNI with native BGP/OSPF/BFD routing, L4 load balancing, and identity-based policy
 site_url: https://azrtydxb.github.io/novanet
 repo_url: https://github.com/azrtydxb/novanet
 repo_name: azrtydxb/novanet

@@ -36,7 +36,18 @@ The following table lists all configurable values in the NovaNet Helm chart (`de
 | `routing.enabled` | `false` | Enable native routing. Must be `true` when `config.routingMode` is `"native"`. |
 | `routing.protocol` | `"bgp"` | Routing protocol to use. `"bgp"` for eBGP peering or `"ospf"` for OSPF area injection. |
 | `routing.frr_socket_dir` | `"/run/frr"` | Path to the FRR management socket directory. The FRR sidecar must mount this path. |
+| `routing.controlPlaneVIP` | `""` | Virtual IP for Kubernetes API server HA. Advertised via BGP with health checks. |
+| `routing.bfd.enabled` | `false` | Enable BFD (Bidirectional Forwarding Detection) for fast failure detection. |
+| `routing.bfd.minRxMs` | `300` | BFD minimum receive interval in milliseconds. |
+| `routing.bfd.minTxMs` | `300` | BFD minimum transmit interval in milliseconds. |
+| `routing.bfd.detectMultiplier` | `3` | BFD detect multiplier (missed packets before declaring peer down). |
+| `routing.peers` | `[]` | List of BGP peers to configure. Each entry has `neighbor_address`, `remote_as`, `description`, and optionally `bfd_enabled`, `bfd_min_rx_ms`, `bfd_min_tx_ms`, `bfd_detect_multiplier`. |
 
+### L4 Load Balancing
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `l4lb.enabled` | `false` | Enable L4 socket-based load balancing (kube-proxy replacement). Uses eBPF cgroup programs for Kubernetes Service load balancing. |
 
 ### CNI Configuration
 
@@ -219,6 +230,24 @@ routing:
   enabled: true
   protocol: "bgp"
   frr_socket_dir: "/run/frr"
+  controlPlaneVIP: "192.168.100.10"
+  bfd:
+    enabled: true
+    minRxMs: 300
+    minTxMs: 300
+    detectMultiplier: 3
+  peers:
+    - neighbor_address: "192.168.100.2"
+      remote_as: 65000
+      description: "TOR-1"
+      bfd_enabled: true
+    - neighbor_address: "192.168.100.3"
+      remote_as: 65000
+      description: "TOR-2"
+      bfd_enabled: true
+
+l4lb:
+  enabled: true
 
 egress:
   masqueradeEnabled: true

@@ -50,8 +50,8 @@ The agent communicates with FRR via the FRR management socket (in-process functi
 Verify the FRR sidecar is running:
 
 ```bash
-kubectl get pods -n nova-system -l app.kubernetes.io/name=novanet -o wide
-kubectl logs -n nova-system <novanet-pod> -c frr
+kubectl get pods -n novanet-system -l app.kubernetes.io/name=novanet -o wide
+kubectl logs -n novanet-system <novanet-pod> -c frr
 ```
 
 ---
@@ -227,7 +227,7 @@ This is a single eBPF hash map read -- O(1) lookup taking nanoseconds. The endpo
 novanetctl routing status
 
 # View agent logs for routing-related messages
-kubectl logs -n nova-system <novanet-pod> -c novanet-agent | grep -i routing
+kubectl logs -n novanet-system <novanet-pod> -c novanet-agent | grep -i routing
 ```
 
 Look for:
@@ -241,7 +241,7 @@ Check FRR's BGP state via the FRR sidecar:
 
 ```bash
 # Enter the FRR sidecar in the NovaNet pod
-kubectl exec -n nova-system <novanet-pod> -c frr -- vtysh -c "show bgp summary"
+kubectl exec -n novanet-system <novanet-pod> -c frr -- vtysh -c "show bgp summary"
 ```
 
 Expected output shows established sessions with ToR peers and other nodes:
@@ -263,7 +263,7 @@ If a session shows `Active` or `Connect` instead of a prefix count, the peering 
 ### Check Advertised Routes
 
 ```bash
-kubectl exec -n nova-system <novanet-pod> -c frr -- vtysh -c "show bgp ipv4 unicast"
+kubectl exec -n novanet-system <novanet-pod> -c frr -- vtysh -c "show bgp ipv4 unicast"
 ```
 
 You should see your node's PodCIDR and routes from other nodes:
@@ -302,14 +302,14 @@ Expected output:
 ```
 
 If routes are missing, check:
-- FRR logs for route installation errors: `kubectl logs -n nova-system <novanet-pod> -c frr`
+- FRR logs for route installation errors: `kubectl logs -n novanet-system <novanet-pod> -c frr`
 - Kernel routing table capacity (`sysctl net.ipv4.route.max_size`)
 
 ### Common Issues
 
 **Routing manager fails to initialize:**
-- Verify the FRR sidecar is running: `kubectl get pods -n nova-system -o wide`
-- Check FRR logs: `kubectl logs -n nova-system <novanet-pod> -c frr`
+- Verify the FRR sidecar is running: `kubectl get pods -n novanet-system -o wide`
+- Check FRR logs: `kubectl logs -n novanet-system <novanet-pod> -c frr`
 - Check agent logs for routing initialization errors
 
 **Routes not propagating to other nodes:**
