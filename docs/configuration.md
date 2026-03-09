@@ -68,6 +68,13 @@ The following table lists all configurable values in the NovaNet Helm chart (`de
 |-----|---------|-------------|
 | `policy.defaultDeny` | `false` | Enable cluster-wide default-deny policy. When `false` (default), pods without any selecting NetworkPolicy allow all traffic (standard Kubernetes behavior). When `true`, all traffic is denied unless explicitly allowed by a NetworkPolicy. |
 
+### eBPF Services
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `ebpfServices.enabled` | `true` | Enable the eBPF Services gRPC API for external consumers (e.g., NovaEdge). Exposes SOCKMAP acceleration, mesh redirects, rate limiting, and backend health monitoring via a dedicated Unix socket. |
+| `ebpfServices.socketPath` | `"/run/novanet/ebpf-services.sock"` | Unix socket path for the EBPFServices gRPC server. External consumers connect to this socket to request kernel-level eBPF operations. |
+
 ### Metrics Configuration
 
 | Key | Default | Description |
@@ -125,6 +132,10 @@ The Helm chart generates a ConfigMap that is mounted as `/etc/novanet/novanet.js
   "policy": {
     "default_deny": false
   },
+  "ebpf_services": {
+    "enabled": true,
+    "socket_path": "/run/novanet/ebpf-services.sock"
+  },
   "log_level": "info",
   "metrics_address": ":9103"
 }
@@ -146,6 +157,8 @@ The Helm chart generates a ConfigMap that is mounted as `/etc/novanet/novanet.js
 | `egress.masquerade_enabled` | bool | Enable SNAT/masquerade for pod-to-external traffic. |
 | `policy.default_deny` | bool | Enable cluster-wide default-deny policy. |
 | `log_level` | string | One of `"debug"`, `"info"`, `"warn"`, `"error"`. |
+| `ebpf_services.enabled` | bool | Enable the eBPF Services gRPC API. |
+| `ebpf_services.socket_path` | string | Unix socket path for the EBPFServices gRPC server. |
 | `metrics_address` | string | Address for the Prometheus metrics HTTP endpoint. |
 
 ### Validation Rules
@@ -386,6 +399,7 @@ NovaNet uses Unix domain sockets for all inter-component communication:
 | Agent listen | `/run/novanet/novanet.sock` | CLI (`novanetctl`) connects here |
 | CNI | `/run/novanet/cni.sock` | CNI binary connects here during pod setup |
 | Dataplane | `/run/novanet/dataplane.sock` | Agent-to-dataplane gRPC communication |
+| eBPF Services | `/run/novanet/ebpf-services.sock` | External consumers (e.g., NovaEdge) connect here for eBPF operations |
 | FRR | `/run/frr/` | Agent routing manager communicates with the FRR sidecar |
 
 All sockets under `/run/novanet/` are created by the NovaNet agent. The FRR socket directory is managed by the FRR sidecar container within the same DaemonSet pod.

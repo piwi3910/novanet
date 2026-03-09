@@ -289,6 +289,145 @@ These RPCs query the integrated routing manager and FRR sidecar for live routing
 
 ---
 
+### EBPFServices (Go server, external clients)
+
+**Socket:** `/run/novanet/ebpf-services.sock`
+
+The EBPFServices API exposes kernel-level eBPF operations to external consumers such as NovaEdge. It provides SOCKMAP acceleration, mesh traffic redirection via SK_LOOKUP, per-source-IP rate limiting, and passive TCP health monitoring.
+
+**Proto source:** [`api/v1/ebpf_services.proto`](https://github.com/azrtydxb/novanet/blob/main/api/v1/ebpf_services.proto)
+
+#### SOCKMAP Acceleration
+
+| RPC | Description |
+|-----|-------------|
+| `EnableSockmap` | Enable SOCKMAP acceleration for a pod (same-node pod-to-pod bypass) |
+| `DisableSockmap` | Disable SOCKMAP acceleration for a pod |
+| `GetSockmapStats` | Get SOCKMAP statistics (redirected, fallback, active sockets) |
+
+**EnableSockmapRequest / DisableSockmapRequest:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `pod_namespace` | `string` | Pod namespace |
+| `pod_name` | `string` | Pod name |
+
+**GetSockmapStatsResponse:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `redirected` | `uint64` | Number of packets redirected via SOCKMAP |
+| `fallback` | `uint64` | Number of packets that fell back to normal path |
+| `active_sockets` | `uint32` | Number of sockets currently tracked |
+
+#### SK_LOOKUP Mesh Redirection
+
+| RPC | Description |
+|-----|-------------|
+| `AddMeshRedirect` | Add a mesh traffic redirect entry |
+| `RemoveMeshRedirect` | Remove a mesh traffic redirect entry |
+| `ListMeshRedirects` | List all active mesh redirect entries |
+
+**AddMeshRedirectRequest:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `ip` | `string` | Target IP address |
+| `port` | `uint32` | Original destination port |
+| `redirect_port` | `uint32` | Port to redirect traffic to |
+
+**RemoveMeshRedirectRequest:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `ip` | `string` | Target IP address |
+| `port` | `uint32` | Original destination port |
+
+**MeshRedirectEntry** (returned by `ListMeshRedirects`):
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `ip` | `string` | Target IP address |
+| `port` | `uint32` | Original destination port |
+| `redirect_port` | `uint32` | Port traffic is redirected to |
+
+#### Rate Limiting
+
+| RPC | Description |
+|-----|-------------|
+| `ConfigureRateLimit` | Configure kernel-level per-source-IP rate limiting |
+| `RemoveRateLimit` | Remove a rate limit configuration |
+| `GetRateLimitStats` | Get rate limit statistics for a CIDR |
+
+**ConfigureRateLimitRequest:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `cidr` | `string` | Source CIDR to rate limit |
+| `rate` | `uint32` | Allowed packets per second |
+| `burst` | `uint32` | Burst allowance |
+
+**RemoveRateLimitRequest:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `cidr` | `string` | Source CIDR to remove rate limit for |
+
+**GetRateLimitStatsRequest:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `cidr` | `string` | Source CIDR to query stats for |
+
+**GetRateLimitStatsResponse:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `allowed` | `uint64` | Number of packets allowed |
+| `denied` | `uint64` | Number of packets denied (rate limited) |
+
+#### Backend Health Monitoring
+
+| RPC | Description |
+|-----|-------------|
+| `GetBackendHealth` | Get passive TCP health counters for backends |
+| `StreamBackendHealth` | Server-streaming RPC for real-time backend health events |
+
+**GetBackendHealthRequest:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `ip` | `string` | Backend IP to filter (empty = all) |
+| `port` | `uint32` | Backend port to filter (0 = all) |
+
+**BackendHealthInfo** (returned by `GetBackendHealth` and `StreamBackendHealth`):
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `ip` | `string` | Backend IP address |
+| `port` | `uint32` | Backend port |
+| `total_conns` | `uint64` | Total connections observed |
+| `failed_conns` | `uint64` | Failed connections |
+| `timeout_conns` | `uint64` | Timed-out connections |
+| `success_conns` | `uint64` | Successful connections |
+| `avg_rtt_ns` | `uint64` | Average round-trip time in nanoseconds |
+| `failure_rate` | `double` | Failure rate (0.0 to 1.0) |
+
+**StreamBackendHealthRequest:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `poll_interval_ms` | `uint32` | Polling interval in milliseconds |
+
+**BackendHealthEvent** (streamed by `StreamBackendHealth`):
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `backend` | `BackendHealthInfo` | Backend health data |
+| `timestamp_ns` | `uint64` | Event timestamp in nanoseconds |
+
+---
+
 ## Enums
 
 ### PolicyAction

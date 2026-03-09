@@ -297,6 +297,103 @@ Streaming routing events (Ctrl+C to stop)...
 
 ---
 
+### ebpf
+
+Inspect eBPF Services state. These commands connect to the EBPFServices gRPC API via a dedicated Unix socket (default: `/run/novanet/ebpf-services.sock`).
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--ebpf-socket` | `/run/novanet/ebpf-services.sock` | Path to the eBPF Services gRPC socket |
+
+#### ebpf sockmap status
+
+Show SOCKMAP acceleration statistics.
+
+```bash
+novanetctl ebpf sockmap status
+```
+
+Example output:
+
+```
+SOCKMAP Stats
+=============
+
+Redirected:      1284032
+Fallback:        512
+Active Sockets:  48
+```
+
+#### ebpf mesh list
+
+List active mesh redirect entries (SK_LOOKUP).
+
+```bash
+novanetctl ebpf mesh list
+```
+
+Example output:
+
+```
+MESH REDIRECTS
+==============
+
+IP              PORT  REDIRECT PORT
+10.42.1.5       80    15001
+10.42.1.5       443   15001
+10.42.2.8       8080  15001
+```
+
+#### ebpf ratelimit stats
+
+Show rate limit statistics for a specific CIDR.
+
+```bash
+novanetctl ebpf ratelimit stats --cidr 10.0.0.0/8
+```
+
+| Flag | Description |
+|------|-------------|
+| `--cidr` | CIDR to query rate limit stats for (required) |
+
+Example output:
+
+```
+RATE LIMIT STATS
+================
+
+CIDR:     10.0.0.0/8
+Allowed:  50432
+Denied:   1203
+```
+
+#### ebpf health list
+
+Show backend health status from passive TCP monitoring.
+
+```bash
+novanetctl ebpf health list [flags]
+```
+
+| Flag | Description |
+|------|-------------|
+| `--ip` | Filter by backend IP (optional) |
+| `--port` | Filter by backend port (optional) |
+
+Example output:
+
+```
+BACKEND HEALTH
+==============
+
+IP           PORT  TOTAL  SUCCESS  FAILED  TIMEOUT  AVG RTT   FAILURE RATE
+10.42.1.5    80    5024   4998     20      6        1.23ms    0.52%
+10.42.2.8    8080  3201   3180     15      6        2.45ms    0.66%
+10.42.3.12   443   8102   8090     8       4        0.89ms    0.15%
+```
+
+---
+
 ### metrics
 
 Show summary statistics.
