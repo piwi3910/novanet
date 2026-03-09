@@ -801,8 +801,7 @@ fn track_backend_health(dst_ip: u32, dst_port: u16, tcp_flags: u8) {
         port: dst_port as u32,
     };
 
-    // SAFETY: eBPF per-CPU hash map access; BPF verifier ensures safety.
-    if let Some(counters) = unsafe { BACKEND_HEALTH.get_ptr_mut(&key) } {
+    if let Some(counters) = BACKEND_HEALTH.get_ptr_mut(&key) {
         // SYN (0x02) without ACK = new connection attempt.
         if tcp_flags & 0x02 != 0 && tcp_flags & 0x10 == 0 {
             unsafe { (*counters).total_conns += 1 };
@@ -1939,9 +1938,9 @@ fn try_sockops_sockmap(ctx: SockOpsContext) -> Result<u32, i64> {
         };
 
         // Insert socket into SOCK_HASH for later redirect by sk_msg program.
-        // TODO: Verify aya-ebpf SockHash API — the hash_map_update method
-        // may have a different signature on different aya versions.
-        let _ = SOCK_HASH.update(&mut ctx.into(), &key, 0);
+        let mut key = key;
+        // SAFETY: ctx.ops is the raw bpf_sock_ops pointer required by bpf_sock_hash_update.
+        let _ = SOCK_HASH.update(&mut key, unsafe { &mut *ctx.ops }, 0);
     }
 
     Ok(0)
@@ -1968,12 +1967,13 @@ pub fn sk_msg_sockmap(ctx: SkMsgContext) -> u32 {
 #[inline(always)]
 fn try_sk_msg_sockmap(ctx: SkMsgContext) -> Result<u32, i64> {
     // Build the reverse key to find the peer socket.
-    let src_ip = ctx.local_ip4();
-    let dst_ip = ctx.remote_ip4();
-    let src_port = ctx.local_port() as u16;
-    let dst_port = u16::from_be(ctx.remote_port() as u16);
+    // SAFETY: Accessing sk_msg_md fields via raw pointer; BPF verifier ensures validity.
+    let src_ip = unsafe { (*ctx.msg).local_ip4 };
+    let dst_ip = unsafe { (*ctx.msg).remote_ip4 };
+    let src_port = unsafe { (*ctx.msg).local_port } as u16;
+    let dst_port = u16::from_be(unsafe { (*ctx.msg).remote_port } as u16);
 
-    let peer_key = SockKey {
+    let mut peer_key = SockKey {
         src_ip: dst_ip,
         dst_ip: src_ip,
         src_port: dst_port,
@@ -1981,25 +1981,23 @@ fn try_sk_msg_sockmap(ctx: SkMsgContext) -> Result<u32, i64> {
         family: 2, // AF_INET
     };
 
-    // Try to redirect the message to the peer socket via SOCK_HASH.
-    // TODO: Verify aya-ebpf SkMsgContext redirect API.
+    // Redirect the message to the peer socket via SOCK_HASH.
     // bpf_msg_redirect_hash redirects the message to the socket matching peer_key.
-    match ctx.redirect_hash(&SOCK_HASH, &peer_key, 0) {
-        Ok(_) => {
-            // Increment redirected counter.
-            if let Some(counter) = SOCKMAP_STATS.get_ptr_mut(0) {
-                unsafe { *counter += 1 };
-            }
-            Ok(1) // SK_PASS (with redirect)
+    let ret = SOCK_HASH.redirect_msg(&ctx, &mut peer_key, 0);
+    if ret == 1 {
+        // SK_PASS with redirect — increment redirected counter.
+        if let Some(counter) = SOCKMAP_STATS.get_ptr_mut(0) {
+            unsafe { *counter += 1 };
         }
-        Err(_) => {
-            // Redirect failed — increment fallback counter and pass normally.
-            if let Some(counter) = SOCKMAP_STATS.get_ptr_mut(1) {
-                unsafe { *counter += 1 };
-            }
-            Ok(1) // SK_PASS
+    } else {
+        // Redirect failed — increment fallback counter.
+        if let Some(counter) = SOCKMAP_STATS.get_ptr_mut(1) {
+            unsafe { *counter += 1 };
         }
     }
+    // Always return SK_PASS — if redirect succeeded the kernel handles it,
+    // otherwise the message passes through the normal stack.
+    Ok(1)
 }
 
 // ===========================================================================
