@@ -2186,7 +2186,7 @@ pub struct RealMaps {
     mesh_services:
         Option<RwLock<aya::maps::HashMap<aya::maps::MapData, MeshServiceKey, MeshRedirectValue>>>,
     rl_tokens:
-        Option<RwLock<aya::maps::LruHashMap<aya::maps::MapData, RateLimitKey, TokenBucketState>>>,
+        Option<RwLock<aya::maps::HashMap<aya::maps::MapData, RateLimitKey, TokenBucketState>>>,
     rl_config: Option<RwLock<aya::maps::Array<aya::maps::MapData, RateLimitConfig>>>,
     backend_health: Option<
         RwLock<
@@ -2237,9 +2237,7 @@ impl RealMaps {
         mesh_services: Option<
             aya::maps::HashMap<aya::maps::MapData, MeshServiceKey, MeshRedirectValue>,
         >,
-        rl_tokens: Option<
-            aya::maps::LruHashMap<aya::maps::MapData, RateLimitKey, TokenBucketState>,
-        >,
+        rl_tokens: Option<aya::maps::HashMap<aya::maps::MapData, RateLimitKey, TokenBucketState>>,
         rl_config: Option<aya::maps::Array<aya::maps::MapData, RateLimitConfig>>,
         backend_health: Option<
             aya::maps::PerCpuHashMap<aya::maps::MapData, BackendHealthKey, BackendHealthCounters>,
