@@ -106,6 +106,34 @@ fn parse_ip(s: &str) -> Result<IpAddr, Status> {
         .map_err(|e| Status::invalid_argument(format!("invalid IP '{}': {}", s, e)))
 }
 
+/// Convert BackendHealthCounters to the proto response message.
+fn health_counters_to_proto(
+    ip: &str,
+    port: u32,
+    counters: &BackendHealthCounters,
+) -> proto::InternalBackendHealthInfo {
+    let avg_rtt_ns = if counters.success_conns > 0 {
+        counters.total_rtt_ns / counters.success_conns
+    } else {
+        0
+    };
+    let failure_rate = if counters.total_conns > 0 {
+        counters.failed_conns as f64 / counters.total_conns as f64
+    } else {
+        0.0
+    };
+    proto::InternalBackendHealthInfo {
+        ip: ip.to_string(),
+        port,
+        total_conns: counters.total_conns,
+        failed_conns: counters.failed_conns,
+        timeout_conns: counters.timeout_conns,
+        success_conns: counters.success_conns,
+        avg_rtt_ns,
+        failure_rate,
+    }
+}
+
 #[tonic::async_trait]
 impl proto::dataplane_control_server::DataplaneControl for DataplaneService {
     // -----------------------------------------------------------------------
@@ -1228,5 +1256,265 @@ impl proto::dataplane_control_server::DataplaneControl for DataplaneService {
         info!(interface = %req.interface_name, "Detached XDP program");
 
         Ok(Response::new(proto::DetachXdpResponse {}))
+    }
+
+    // -----------------------------------------------------------------------
+    // SOCKMAP endpoint management
+    // -----------------------------------------------------------------------
+
+    async fn upsert_sockmap_endpoint(
+        &self,
+        request: Request<proto::UpsertSockmapEndpointRequest>,
+    ) -> Result<Response<proto::UpsertSockmapEndpointResponse>, Status> {
+        let req = request.into_inner();
+        let ip = parse_ip(&req.ip)?;
+
+        let key = SockmapEndpointKey {
+            ip: match ip {
+                IpAddr::V4(v4) => u32::from(v4),
+                _ => {
+                    return Err(Status::invalid_argument(
+                        "IPv6 not yet supported for SOCKMAP",
+                    ))
+                }
+            },
+            port: req.port,
+        };
+
+        self.maps
+            .upsert_sockmap_endpoint(key, 1)
+            .map_err(|e| Status::internal(format!("Failed to upsert sockmap endpoint: {}", e)))?;
+
+        debug!(ip = %req.ip, port = req.port, "Upserted SOCKMAP endpoint");
+
+        Ok(Response::new(proto::UpsertSockmapEndpointResponse {}))
+    }
+
+    async fn delete_sockmap_endpoint(
+        &self,
+        request: Request<proto::DeleteSockmapEndpointRequest>,
+    ) -> Result<Response<proto::DeleteSockmapEndpointResponse>, Status> {
+        let req = request.into_inner();
+        let ip = parse_ip(&req.ip)?;
+
+        let key = SockmapEndpointKey {
+            ip: match ip {
+                IpAddr::V4(v4) => u32::from(v4),
+                _ => {
+                    return Err(Status::invalid_argument(
+                        "IPv6 not yet supported for SOCKMAP",
+                    ))
+                }
+            },
+            port: req.port,
+        };
+
+        self.maps
+            .delete_sockmap_endpoint(&key)
+            .map_err(|e| Status::internal(format!("Failed to delete sockmap endpoint: {}", e)))?;
+
+        debug!(ip = %req.ip, port = req.port, "Deleted SOCKMAP endpoint");
+
+        Ok(Response::new(proto::DeleteSockmapEndpointResponse {}))
+    }
+
+    async fn get_sockmap_stats(
+        &self,
+        _request: Request<proto::GetInternalSockmapStatsRequest>,
+    ) -> Result<Response<proto::GetInternalSockmapStatsResponse>, Status> {
+        let (redirected, fallback) = self.maps.get_sockmap_stats();
+        let active_endpoints =
+            self.maps.count_sockmap_endpoints().map_err(|e| {
+                Status::internal(format!("Failed to count sockmap endpoints: {}", e))
+            })? as u32;
+
+        Ok(Response::new(proto::GetInternalSockmapStatsResponse {
+            redirected,
+            fallback,
+            active_endpoints,
+        }))
+    }
+
+    // -----------------------------------------------------------------------
+    // Mesh redirect management
+    // -----------------------------------------------------------------------
+
+    async fn upsert_mesh_service(
+        &self,
+        request: Request<proto::UpsertMeshServiceRequest>,
+    ) -> Result<Response<proto::UpsertMeshServiceResponse>, Status> {
+        let req = request.into_inner();
+        let ip = parse_ip(&req.ip)?;
+
+        let key = MeshServiceKey {
+            ip: match ip {
+                IpAddr::V4(v4) => u32::from(v4),
+                _ => {
+                    return Err(Status::invalid_argument(
+                        "IPv6 not yet supported for mesh redirect",
+                    ))
+                }
+            },
+            port: req.port,
+        };
+
+        let value = MeshRedirectValue {
+            redirect_port: req.redirect_port,
+        };
+
+        self.maps
+            .upsert_mesh_service(key, value)
+            .map_err(|e| Status::internal(format!("Failed to upsert mesh service: {}", e)))?;
+
+        debug!(
+            ip = %req.ip,
+            port = req.port,
+            redirect_port = req.redirect_port,
+            "Upserted mesh service"
+        );
+
+        Ok(Response::new(proto::UpsertMeshServiceResponse {}))
+    }
+
+    async fn delete_mesh_service(
+        &self,
+        request: Request<proto::DeleteMeshServiceRequest>,
+    ) -> Result<Response<proto::DeleteMeshServiceResponse>, Status> {
+        let req = request.into_inner();
+        let ip = parse_ip(&req.ip)?;
+
+        let key = MeshServiceKey {
+            ip: match ip {
+                IpAddr::V4(v4) => u32::from(v4),
+                _ => {
+                    return Err(Status::invalid_argument(
+                        "IPv6 not yet supported for mesh redirect",
+                    ))
+                }
+            },
+            port: req.port,
+        };
+
+        self.maps
+            .delete_mesh_service(&key)
+            .map_err(|e| Status::internal(format!("Failed to delete mesh service: {}", e)))?;
+
+        debug!(ip = %req.ip, port = req.port, "Deleted mesh service");
+
+        Ok(Response::new(proto::DeleteMeshServiceResponse {}))
+    }
+
+    async fn list_mesh_services(
+        &self,
+        _request: Request<proto::ListInternalMeshServicesRequest>,
+    ) -> Result<Response<proto::ListInternalMeshServicesResponse>, Status> {
+        let entries = self
+            .maps
+            .list_mesh_services()
+            .map_err(|e| Status::internal(format!("Failed to list mesh services: {}", e)))?;
+
+        let proto_entries: Vec<proto::InternalMeshServiceEntry> = entries
+            .iter()
+            .map(|(key, value)| {
+                let ip = std::net::Ipv4Addr::from(key.ip);
+                proto::InternalMeshServiceEntry {
+                    ip: ip.to_string(),
+                    port: key.port,
+                    redirect_port: value.redirect_port,
+                }
+            })
+            .collect();
+
+        Ok(Response::new(proto::ListInternalMeshServicesResponse {
+            entries: proto_entries,
+        }))
+    }
+
+    // -----------------------------------------------------------------------
+    // Rate limiting
+    // -----------------------------------------------------------------------
+
+    async fn update_rate_limit_config(
+        &self,
+        request: Request<proto::UpdateRateLimitConfigRequest>,
+    ) -> Result<Response<proto::UpdateRateLimitConfigResponse>, Status> {
+        let req = request.into_inner();
+
+        let config = RateLimitConfig {
+            rate: req.rate,
+            burst: req.burst,
+            window_ns: req.window_ns,
+        };
+
+        self.maps
+            .update_rate_limit_config(config)
+            .map_err(|e| Status::internal(format!("Failed to update rate limit config: {}", e)))?;
+
+        debug!(
+            rate = req.rate,
+            burst = req.burst,
+            window_ns = req.window_ns,
+            "Updated rate limit config"
+        );
+
+        Ok(Response::new(proto::UpdateRateLimitConfigResponse {}))
+    }
+
+    async fn get_internal_rate_limit_stats(
+        &self,
+        _request: Request<proto::GetInternalRateLimitStatsRequest>,
+    ) -> Result<Response<proto::GetInternalRateLimitStatsResponse>, Status> {
+        let (allowed, denied) = self.maps.get_rate_limit_stats();
+
+        Ok(Response::new(proto::GetInternalRateLimitStatsResponse {
+            allowed,
+            denied,
+        }))
+    }
+
+    // -----------------------------------------------------------------------
+    // Backend health monitoring
+    // -----------------------------------------------------------------------
+
+    async fn get_backend_health_stats(
+        &self,
+        request: Request<proto::GetBackendHealthStatsRequest>,
+    ) -> Result<Response<proto::GetBackendHealthStatsResponse>, Status> {
+        let req = request.into_inner();
+
+        let backends: Vec<proto::InternalBackendHealthInfo> = if !req.ip.is_empty() {
+            // Filter by specific backend.
+            let ip = parse_ip(&req.ip)?;
+            let key = BackendHealthKey {
+                ip: match ip {
+                    IpAddr::V4(v4) => u32::from(v4),
+                    _ => {
+                        return Err(Status::invalid_argument(
+                            "IPv6 not yet supported for backend health",
+                        ))
+                    }
+                },
+                port: req.port,
+            };
+
+            match self.maps.get_backend_health(&key) {
+                Some(counters) => vec![health_counters_to_proto(&req.ip, req.port, &counters)],
+                None => vec![],
+            }
+        } else {
+            // Return all backends.
+            self.maps
+                .get_all_backend_health()
+                .iter()
+                .map(|(key, counters)| {
+                    let ip = std::net::Ipv4Addr::from(key.ip).to_string();
+                    health_counters_to_proto(&ip, key.port, counters)
+                })
+                .collect()
+        };
+
+        Ok(Response::new(proto::GetBackendHealthStatsResponse {
+            backends,
+        }))
     }
 }
