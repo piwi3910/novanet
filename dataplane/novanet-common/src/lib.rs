@@ -793,6 +793,126 @@ pub const IDENTITY_HOST: u32 = 1;
 pub const IDENTITY_WORLD: u32 = 2;
 
 // ---------------------------------------------------------------------------
+// SOCKMAP types
+// ---------------------------------------------------------------------------
+
+/// Key for SOCKMAP socket lookup — identifies a connection by 4-tuple + family.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub struct SockKey {
+    /// Source IPv4 address in network byte order.
+    pub src_ip: u32,
+    /// Destination IPv4 address in network byte order.
+    pub dst_ip: u32,
+    /// Source port in host byte order.
+    pub src_port: u16,
+    /// Destination port in host byte order.
+    pub dst_port: u16,
+    /// Address family (AF_INET=2, AF_INET6=10).
+    pub family: u32,
+}
+
+/// Key for SOCKMAP endpoint registration — identifies a listening socket.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub struct SockmapEndpointKey {
+    /// IPv4 address in network byte order.
+    pub ip: u32,
+    /// Port (stored as u32 for alignment).
+    pub port: u32,
+}
+
+// ---------------------------------------------------------------------------
+// Mesh redirect types
+// ---------------------------------------------------------------------------
+
+/// Key for mesh service redirect map — identifies a service to intercept.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub struct MeshServiceKey {
+    /// Service IPv4 address in network byte order.
+    pub ip: u32,
+    /// Service port (stored as u32 for alignment).
+    pub port: u32,
+}
+
+/// Value for mesh service redirect — where to redirect traffic.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct MeshRedirectValue {
+    /// Port to redirect traffic to (e.g. sidecar proxy port).
+    pub redirect_port: u32,
+}
+
+// ---------------------------------------------------------------------------
+// Rate limiting types
+// ---------------------------------------------------------------------------
+
+/// Key for rate limit map — identifies a source by IPv4-mapped IPv6 address.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub struct RateLimitKey {
+    /// IPv4-mapped IPv6 address (16 bytes).
+    pub addr: [u8; 16],
+}
+
+/// Per-source token bucket state for rate limiting.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct TokenBucketState {
+    /// Current number of tokens available.
+    pub tokens: u64,
+    /// Timestamp (nanoseconds) of last token refill.
+    pub last_refill_ns: u64,
+}
+
+/// Global rate limit configuration.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct RateLimitConfig {
+    /// Tokens added per window.
+    pub rate: u32,
+    /// Maximum burst size.
+    pub burst: u32,
+    /// Window duration in nanoseconds.
+    pub window_ns: u64,
+}
+
+// ---------------------------------------------------------------------------
+// Backend health types
+// ---------------------------------------------------------------------------
+
+/// Key for backend health counters — identifies a backend by IP + port.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub struct BackendHealthKey {
+    /// Backend IPv4 address in network byte order.
+    pub ip: u32,
+    /// Backend port (stored as u32 for alignment).
+    pub port: u32,
+}
+
+/// Per-backend connection health counters maintained in eBPF.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct BackendHealthCounters {
+    /// Total connection attempts.
+    pub total_conns: u64,
+    /// Failed connection attempts.
+    pub failed_conns: u64,
+    /// Timed-out connections.
+    pub timeout_conns: u64,
+    /// Successful connections.
+    pub success_conns: u64,
+    /// Timestamp (ns) of last successful connection.
+    pub last_success_ns: u64,
+    /// Timestamp (ns) of last failed connection.
+    pub last_failure_ns: u64,
+    /// Cumulative RTT in nanoseconds (divide by success_conns for average).
+    pub total_rtt_ns: u64,
+}
+
+// ---------------------------------------------------------------------------
 // IPv4/IPv6 address helpers
 // ---------------------------------------------------------------------------
 
@@ -863,6 +983,15 @@ impl_pod!(
     IPCacheValue,
     HostPolicyKey,
     HostPolicyValue,
+    SockKey,
+    SockmapEndpointKey,
+    MeshServiceKey,
+    MeshRedirectValue,
+    RateLimitKey,
+    TokenBucketState,
+    RateLimitConfig,
+    BackendHealthKey,
+    BackendHealthCounters,
 );
 
 // ---------------------------------------------------------------------------
@@ -1551,5 +1680,61 @@ mod tests {
     #[test]
     fn ipv6_hlen_constant() {
         assert_eq!(IPV6_HLEN, 40);
+    }
+
+    // -- SOCKMAP / mesh / rate-limit / health type size tests --
+
+    #[test]
+    fn sock_key_size() {
+        // src_ip(4) + dst_ip(4) + src_port(2) + dst_port(2) + family(4) = 16
+        assert_eq!(mem::size_of::<SockKey>(), 16);
+    }
+
+    #[test]
+    fn sockmapendpoint_key_size() {
+        // ip(4) + port(4) = 8
+        assert_eq!(mem::size_of::<SockmapEndpointKey>(), 8);
+    }
+
+    #[test]
+    fn mesh_service_key_size() {
+        // ip(4) + port(4) = 8
+        assert_eq!(mem::size_of::<MeshServiceKey>(), 8);
+    }
+
+    #[test]
+    fn mesh_redirect_value_size() {
+        // redirect_port(4) = 4
+        assert_eq!(mem::size_of::<MeshRedirectValue>(), 4);
+    }
+
+    #[test]
+    fn rate_limit_key_size() {
+        // addr([u8;16]) = 16
+        assert_eq!(mem::size_of::<RateLimitKey>(), 16);
+    }
+
+    #[test]
+    fn token_bucket_state_size() {
+        // tokens(8) + last_refill_ns(8) = 16
+        assert_eq!(mem::size_of::<TokenBucketState>(), 16);
+    }
+
+    #[test]
+    fn rate_limit_config_size() {
+        // rate(4) + burst(4) + window_ns(8) = 16
+        assert_eq!(mem::size_of::<RateLimitConfig>(), 16);
+    }
+
+    #[test]
+    fn backend_health_key_size() {
+        // ip(4) + port(4) = 8
+        assert_eq!(mem::size_of::<BackendHealthKey>(), 8);
+    }
+
+    #[test]
+    fn backend_health_counters_size() {
+        // 7 * u64 = 56
+        assert_eq!(mem::size_of::<BackendHealthCounters>(), 56);
     }
 }
