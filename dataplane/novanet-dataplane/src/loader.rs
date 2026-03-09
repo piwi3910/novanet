@@ -365,7 +365,7 @@ pub fn load_ebpf(bpf_object_path: &Path) -> Result<(MapManager, Option<RingBuf<M
             }
         };
 
-    let rl_tokens: Option<aya::maps::LruHashMap<MapData, RateLimitKey, TokenBucketState>> =
+    let rl_tokens: Option<aya::maps::HashMap<MapData, RateLimitKey, TokenBucketState>> =
         match ebpf.take_map("RL_TOKENS") {
             Some(map) => match map.try_into() {
                 Ok(m) => {
