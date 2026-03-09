@@ -1,0 +1,124 @@
+syntax = "proto3";
+
+package novanet.v1;
+
+option go_package = "github.com/azrtydxb/novanet/api/v1";
+
+// EBPFServices is the API that external consumers (e.g. NovaEdge) call
+// to request kernel-level eBPF operations from the NovaNet agent.
+service EBPFServices {
+  // SOCKMAP - same-node pod-to-pod acceleration
+  rpc EnableSockmap(EnableSockmapRequest) returns (EnableSockmapResponse);
+  rpc DisableSockmap(DisableSockmapRequest) returns (DisableSockmapResponse);
+  rpc GetSockmapStats(GetSockmapStatsRequest) returns (GetSockmapStatsResponse);
+
+  // SK_LOOKUP - mesh traffic redirection
+  rpc AddMeshRedirect(AddMeshRedirectRequest) returns (AddMeshRedirectResponse);
+  rpc RemoveMeshRedirect(RemoveMeshRedirectRequest) returns (RemoveMeshRedirectResponse);
+  rpc ListMeshRedirects(ListMeshRedirectsRequest) returns (ListMeshRedirectsResponse);
+
+  // Rate limiting - kernel-level per-source-IP
+  rpc ConfigureRateLimit(ConfigureRateLimitRequest) returns (ConfigureRateLimitResponse);
+  rpc RemoveRateLimit(RemoveRateLimitRequest) returns (RemoveRateLimitResponse);
+  rpc GetRateLimitStats(GetRateLimitStatsRequest) returns (GetRateLimitStatsResponse);
+
+  // Health monitoring - passive TCP counters
+  rpc GetBackendHealth(GetBackendHealthRequest) returns (GetBackendHealthResponse);
+  rpc StreamBackendHealth(StreamBackendHealthRequest) returns (stream BackendHealthEvent);
+}
+
+// --- SOCKMAP messages ---
+
+message EnableSockmapRequest {
+  string pod_namespace = 1;
+  string pod_name = 2;
+}
+message EnableSockmapResponse {}
+
+message DisableSockmapRequest {
+  string pod_namespace = 1;
+  string pod_name = 2;
+}
+message DisableSockmapResponse {}
+
+message GetSockmapStatsRequest {}
+message GetSockmapStatsResponse {
+  uint64 redirected = 1;
+  uint64 fallback = 2;
+  uint32 active_sockets = 3;
+}
+
+// --- Mesh redirect messages ---
+
+message AddMeshRedirectRequest {
+  string ip = 1;
+  uint32 port = 2;
+  uint32 redirect_port = 3;
+}
+message AddMeshRedirectResponse {}
+
+message RemoveMeshRedirectRequest {
+  string ip = 1;
+  uint32 port = 2;
+}
+message RemoveMeshRedirectResponse {}
+
+message ListMeshRedirectsRequest {}
+message ListMeshRedirectsResponse {
+  repeated MeshRedirectEntry entries = 1;
+}
+message MeshRedirectEntry {
+  string ip = 1;
+  uint32 port = 2;
+  uint32 redirect_port = 3;
+}
+
+// --- Rate limiting messages ---
+
+message ConfigureRateLimitRequest {
+  string cidr = 1;
+  uint32 rate = 2;
+  uint32 burst = 3;
+}
+message ConfigureRateLimitResponse {}
+
+message RemoveRateLimitRequest {
+  string cidr = 1;
+}
+message RemoveRateLimitResponse {}
+
+message GetRateLimitStatsRequest {
+  string cidr = 1;
+}
+message GetRateLimitStatsResponse {
+  uint64 allowed = 1;
+  uint64 denied = 2;
+}
+
+// --- Health monitoring messages ---
+
+message GetBackendHealthRequest {
+  string ip = 1;
+  uint32 port = 2;
+}
+message GetBackendHealthResponse {
+  repeated BackendHealthInfo backends = 1;
+}
+message BackendHealthInfo {
+  string ip = 1;
+  uint32 port = 2;
+  uint64 total_conns = 3;
+  uint64 failed_conns = 4;
+  uint64 timeout_conns = 5;
+  uint64 success_conns = 6;
+  uint64 avg_rtt_ns = 7;
+  double failure_rate = 8;
+}
+
+message StreamBackendHealthRequest {
+  uint32 poll_interval_ms = 1;
+}
+message BackendHealthEvent {
+  BackendHealthInfo backend = 1;
+  uint64 timestamp_ns = 2;
+}
