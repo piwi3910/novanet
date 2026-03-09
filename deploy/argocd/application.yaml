@@ -27,10 +27,10 @@ spec:
         image:
           agent:
             repository: ghcr.io/azrtydxb/novanet/novanet-agent
-            tag: v1.12.0
+            tag: v1.13.0
           dataplane:
             repository: ghcr.io/azrtydxb/novanet/novanet-dataplane
-            tag: v1.12.0
+            tag: v1.13.0
         config:
           routingMode: "native"
         routing:
