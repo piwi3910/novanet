@@ -19,30 +19,39 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	DataplaneControl_UpsertEndpoint_FullMethodName     = "/novanet.v1.DataplaneControl/UpsertEndpoint"
-	DataplaneControl_DeleteEndpoint_FullMethodName     = "/novanet.v1.DataplaneControl/DeleteEndpoint"
-	DataplaneControl_UpsertPolicy_FullMethodName       = "/novanet.v1.DataplaneControl/UpsertPolicy"
-	DataplaneControl_DeletePolicy_FullMethodName       = "/novanet.v1.DataplaneControl/DeletePolicy"
-	DataplaneControl_SyncPolicies_FullMethodName       = "/novanet.v1.DataplaneControl/SyncPolicies"
-	DataplaneControl_UpsertTunnel_FullMethodName       = "/novanet.v1.DataplaneControl/UpsertTunnel"
-	DataplaneControl_DeleteTunnel_FullMethodName       = "/novanet.v1.DataplaneControl/DeleteTunnel"
-	DataplaneControl_UpdateConfig_FullMethodName       = "/novanet.v1.DataplaneControl/UpdateConfig"
-	DataplaneControl_AttachProgram_FullMethodName      = "/novanet.v1.DataplaneControl/AttachProgram"
-	DataplaneControl_DetachProgram_FullMethodName      = "/novanet.v1.DataplaneControl/DetachProgram"
-	DataplaneControl_UpsertEgressPolicy_FullMethodName = "/novanet.v1.DataplaneControl/UpsertEgressPolicy"
-	DataplaneControl_DeleteEgressPolicy_FullMethodName = "/novanet.v1.DataplaneControl/DeleteEgressPolicy"
-	DataplaneControl_UpsertService_FullMethodName      = "/novanet.v1.DataplaneControl/UpsertService"
-	DataplaneControl_DeleteService_FullMethodName      = "/novanet.v1.DataplaneControl/DeleteService"
-	DataplaneControl_UpsertBackends_FullMethodName     = "/novanet.v1.DataplaneControl/UpsertBackends"
-	DataplaneControl_SyncServices_FullMethodName       = "/novanet.v1.DataplaneControl/SyncServices"
-	DataplaneControl_UpsertMaglevTable_FullMethodName  = "/novanet.v1.DataplaneControl/UpsertMaglevTable"
-	DataplaneControl_UpsertHostPolicy_FullMethodName   = "/novanet.v1.DataplaneControl/UpsertHostPolicy"
-	DataplaneControl_DeleteHostPolicy_FullMethodName   = "/novanet.v1.DataplaneControl/DeleteHostPolicy"
-	DataplaneControl_SyncHostPolicies_FullMethodName   = "/novanet.v1.DataplaneControl/SyncHostPolicies"
-	DataplaneControl_AttachXDP_FullMethodName          = "/novanet.v1.DataplaneControl/AttachXDP"
-	DataplaneControl_DetachXDP_FullMethodName          = "/novanet.v1.DataplaneControl/DetachXDP"
-	DataplaneControl_StreamFlows_FullMethodName        = "/novanet.v1.DataplaneControl/StreamFlows"
-	DataplaneControl_GetDataplaneStatus_FullMethodName = "/novanet.v1.DataplaneControl/GetDataplaneStatus"
+	DataplaneControl_UpsertEndpoint_FullMethodName            = "/novanet.v1.DataplaneControl/UpsertEndpoint"
+	DataplaneControl_DeleteEndpoint_FullMethodName            = "/novanet.v1.DataplaneControl/DeleteEndpoint"
+	DataplaneControl_UpsertPolicy_FullMethodName              = "/novanet.v1.DataplaneControl/UpsertPolicy"
+	DataplaneControl_DeletePolicy_FullMethodName              = "/novanet.v1.DataplaneControl/DeletePolicy"
+	DataplaneControl_SyncPolicies_FullMethodName              = "/novanet.v1.DataplaneControl/SyncPolicies"
+	DataplaneControl_UpsertTunnel_FullMethodName              = "/novanet.v1.DataplaneControl/UpsertTunnel"
+	DataplaneControl_DeleteTunnel_FullMethodName              = "/novanet.v1.DataplaneControl/DeleteTunnel"
+	DataplaneControl_UpdateConfig_FullMethodName              = "/novanet.v1.DataplaneControl/UpdateConfig"
+	DataplaneControl_AttachProgram_FullMethodName             = "/novanet.v1.DataplaneControl/AttachProgram"
+	DataplaneControl_DetachProgram_FullMethodName             = "/novanet.v1.DataplaneControl/DetachProgram"
+	DataplaneControl_UpsertEgressPolicy_FullMethodName        = "/novanet.v1.DataplaneControl/UpsertEgressPolicy"
+	DataplaneControl_DeleteEgressPolicy_FullMethodName        = "/novanet.v1.DataplaneControl/DeleteEgressPolicy"
+	DataplaneControl_UpsertService_FullMethodName             = "/novanet.v1.DataplaneControl/UpsertService"
+	DataplaneControl_DeleteService_FullMethodName             = "/novanet.v1.DataplaneControl/DeleteService"
+	DataplaneControl_UpsertBackends_FullMethodName            = "/novanet.v1.DataplaneControl/UpsertBackends"
+	DataplaneControl_SyncServices_FullMethodName              = "/novanet.v1.DataplaneControl/SyncServices"
+	DataplaneControl_UpsertMaglevTable_FullMethodName         = "/novanet.v1.DataplaneControl/UpsertMaglevTable"
+	DataplaneControl_UpsertHostPolicy_FullMethodName          = "/novanet.v1.DataplaneControl/UpsertHostPolicy"
+	DataplaneControl_DeleteHostPolicy_FullMethodName          = "/novanet.v1.DataplaneControl/DeleteHostPolicy"
+	DataplaneControl_SyncHostPolicies_FullMethodName          = "/novanet.v1.DataplaneControl/SyncHostPolicies"
+	DataplaneControl_AttachXDP_FullMethodName                 = "/novanet.v1.DataplaneControl/AttachXDP"
+	DataplaneControl_DetachXDP_FullMethodName                 = "/novanet.v1.DataplaneControl/DetachXDP"
+	DataplaneControl_UpsertSockmapEndpoint_FullMethodName     = "/novanet.v1.DataplaneControl/UpsertSockmapEndpoint"
+	DataplaneControl_DeleteSockmapEndpoint_FullMethodName     = "/novanet.v1.DataplaneControl/DeleteSockmapEndpoint"
+	DataplaneControl_GetSockmapStats_FullMethodName           = "/novanet.v1.DataplaneControl/GetSockmapStats"
+	DataplaneControl_UpsertMeshService_FullMethodName         = "/novanet.v1.DataplaneControl/UpsertMeshService"
+	DataplaneControl_DeleteMeshService_FullMethodName         = "/novanet.v1.DataplaneControl/DeleteMeshService"
+	DataplaneControl_ListMeshServices_FullMethodName          = "/novanet.v1.DataplaneControl/ListMeshServices"
+	DataplaneControl_UpdateRateLimitConfig_FullMethodName     = "/novanet.v1.DataplaneControl/UpdateRateLimitConfig"
+	DataplaneControl_GetInternalRateLimitStats_FullMethodName = "/novanet.v1.DataplaneControl/GetInternalRateLimitStats"
+	DataplaneControl_GetBackendHealthStats_FullMethodName     = "/novanet.v1.DataplaneControl/GetBackendHealthStats"
+	DataplaneControl_StreamFlows_FullMethodName               = "/novanet.v1.DataplaneControl/StreamFlows"
+	DataplaneControl_GetDataplaneStatus_FullMethodName        = "/novanet.v1.DataplaneControl/GetDataplaneStatus"
 )
 
 // DataplaneControlClient is the client API for DataplaneControl service.
@@ -84,6 +93,19 @@ type DataplaneControlClient interface {
 	// XDP management
 	AttachXDP(ctx context.Context, in *AttachXDPRequest, opts ...grpc.CallOption) (*AttachXDPResponse, error)
 	DetachXDP(ctx context.Context, in *DetachXDPRequest, opts ...grpc.CallOption) (*DetachXDPResponse, error)
+	// SOCKMAP endpoints
+	UpsertSockmapEndpoint(ctx context.Context, in *UpsertSockmapEndpointRequest, opts ...grpc.CallOption) (*UpsertSockmapEndpointResponse, error)
+	DeleteSockmapEndpoint(ctx context.Context, in *DeleteSockmapEndpointRequest, opts ...grpc.CallOption) (*DeleteSockmapEndpointResponse, error)
+	GetSockmapStats(ctx context.Context, in *GetInternalSockmapStatsRequest, opts ...grpc.CallOption) (*GetInternalSockmapStatsResponse, error)
+	// Mesh redirect
+	UpsertMeshService(ctx context.Context, in *UpsertMeshServiceRequest, opts ...grpc.CallOption) (*UpsertMeshServiceResponse, error)
+	DeleteMeshService(ctx context.Context, in *DeleteMeshServiceRequest, opts ...grpc.CallOption) (*DeleteMeshServiceResponse, error)
+	ListMeshServices(ctx context.Context, in *ListInternalMeshServicesRequest, opts ...grpc.CallOption) (*ListInternalMeshServicesResponse, error)
+	// Rate limiting
+	UpdateRateLimitConfig(ctx context.Context, in *UpdateRateLimitConfigRequest, opts ...grpc.CallOption) (*UpdateRateLimitConfigResponse, error)
+	GetInternalRateLimitStats(ctx context.Context, in *GetInternalRateLimitStatsRequest, opts ...grpc.CallOption) (*GetInternalRateLimitStatsResponse, error)
+	// Health monitoring
+	GetBackendHealthStats(ctx context.Context, in *GetBackendHealthStatsRequest, opts ...grpc.CallOption) (*GetBackendHealthStatsResponse, error)
 	// Observability
 	StreamFlows(ctx context.Context, in *StreamFlowsRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[FlowEvent], error)
 	GetDataplaneStatus(ctx context.Context, in *GetDataplaneStatusRequest, opts ...grpc.CallOption) (*GetDataplaneStatusResponse, error)
@@ -317,6 +339,96 @@ func (c *dataplaneControlClient) DetachXDP(ctx context.Context, in *DetachXDPReq
 	return out, nil
 }
 
+func (c *dataplaneControlClient) UpsertSockmapEndpoint(ctx context.Context, in *UpsertSockmapEndpointRequest, opts ...grpc.CallOption) (*UpsertSockmapEndpointResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(UpsertSockmapEndpointResponse)
+	err := c.cc.Invoke(ctx, DataplaneControl_UpsertSockmapEndpoint_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dataplaneControlClient) DeleteSockmapEndpoint(ctx context.Context, in *DeleteSockmapEndpointRequest, opts ...grpc.CallOption) (*DeleteSockmapEndpointResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DeleteSockmapEndpointResponse)
+	err := c.cc.Invoke(ctx, DataplaneControl_DeleteSockmapEndpoint_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dataplaneControlClient) GetSockmapStats(ctx context.Context, in *GetInternalSockmapStatsRequest, opts ...grpc.CallOption) (*GetInternalSockmapStatsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetInternalSockmapStatsResponse)
+	err := c.cc.Invoke(ctx, DataplaneControl_GetSockmapStats_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dataplaneControlClient) UpsertMeshService(ctx context.Context, in *UpsertMeshServiceRequest, opts ...grpc.CallOption) (*UpsertMeshServiceResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(UpsertMeshServiceResponse)
+	err := c.cc.Invoke(ctx, DataplaneControl_UpsertMeshService_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dataplaneControlClient) DeleteMeshService(ctx context.Context, in *DeleteMeshServiceRequest, opts ...grpc.CallOption) (*DeleteMeshServiceResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DeleteMeshServiceResponse)
+	err := c.cc.Invoke(ctx, DataplaneControl_DeleteMeshService_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dataplaneControlClient) ListMeshServices(ctx context.Context, in *ListInternalMeshServicesRequest, opts ...grpc.CallOption) (*ListInternalMeshServicesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListInternalMeshServicesResponse)
+	err := c.cc.Invoke(ctx, DataplaneControl_ListMeshServices_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dataplaneControlClient) UpdateRateLimitConfig(ctx context.Context, in *UpdateRateLimitConfigRequest, opts ...grpc.CallOption) (*UpdateRateLimitConfigResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(UpdateRateLimitConfigResponse)
+	err := c.cc.Invoke(ctx, DataplaneControl_UpdateRateLimitConfig_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dataplaneControlClient) GetInternalRateLimitStats(ctx context.Context, in *GetInternalRateLimitStatsRequest, opts ...grpc.CallOption) (*GetInternalRateLimitStatsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetInternalRateLimitStatsResponse)
+	err := c.cc.Invoke(ctx, DataplaneControl_GetInternalRateLimitStats_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dataplaneControlClient) GetBackendHealthStats(ctx context.Context, in *GetBackendHealthStatsRequest, opts ...grpc.CallOption) (*GetBackendHealthStatsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetBackendHealthStatsResponse)
+	err := c.cc.Invoke(ctx, DataplaneControl_GetBackendHealthStats_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *dataplaneControlClient) StreamFlows(ctx context.Context, in *StreamFlowsRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[FlowEvent], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	stream, err := c.cc.NewStream(ctx, &DataplaneControl_ServiceDesc.Streams[0], DataplaneControl_StreamFlows_FullMethodName, cOpts...)
@@ -385,6 +497,19 @@ type DataplaneControlServer interface {
 	// XDP management
 	AttachXDP(context.Context, *AttachXDPRequest) (*AttachXDPResponse, error)
 	DetachXDP(context.Context, *DetachXDPRequest) (*DetachXDPResponse, error)
+	// SOCKMAP endpoints
+	UpsertSockmapEndpoint(context.Context, *UpsertSockmapEndpointRequest) (*UpsertSockmapEndpointResponse, error)
+	DeleteSockmapEndpoint(context.Context, *DeleteSockmapEndpointRequest) (*DeleteSockmapEndpointResponse, error)
+	GetSockmapStats(context.Context, *GetInternalSockmapStatsRequest) (*GetInternalSockmapStatsResponse, error)
+	// Mesh redirect
+	UpsertMeshService(context.Context, *UpsertMeshServiceRequest) (*UpsertMeshServiceResponse, error)
+	DeleteMeshService(context.Context, *DeleteMeshServiceRequest) (*DeleteMeshServiceResponse, error)
+	ListMeshServices(context.Context, *ListInternalMeshServicesRequest) (*ListInternalMeshServicesResponse, error)
+	// Rate limiting
+	UpdateRateLimitConfig(context.Context, *UpdateRateLimitConfigRequest) (*UpdateRateLimitConfigResponse, error)
+	GetInternalRateLimitStats(context.Context, *GetInternalRateLimitStatsRequest) (*GetInternalRateLimitStatsResponse, error)
+	// Health monitoring
+	GetBackendHealthStats(context.Context, *GetBackendHealthStatsRequest) (*GetBackendHealthStatsResponse, error)
 	// Observability
 	StreamFlows(*StreamFlowsRequest, grpc.ServerStreamingServer[FlowEvent]) error
 	GetDataplaneStatus(context.Context, *GetDataplaneStatusRequest) (*GetDataplaneStatusResponse, error)
@@ -463,6 +588,33 @@ func (UnimplementedDataplaneControlServer) AttachXDP(context.Context, *AttachXDP
 }
 func (UnimplementedDataplaneControlServer) DetachXDP(context.Context, *DetachXDPRequest) (*DetachXDPResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method DetachXDP not implemented")
+}
+func (UnimplementedDataplaneControlServer) UpsertSockmapEndpoint(context.Context, *UpsertSockmapEndpointRequest) (*UpsertSockmapEndpointResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method UpsertSockmapEndpoint not implemented")
+}
+func (UnimplementedDataplaneControlServer) DeleteSockmapEndpoint(context.Context, *DeleteSockmapEndpointRequest) (*DeleteSockmapEndpointResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method DeleteSockmapEndpoint not implemented")
+}
+func (UnimplementedDataplaneControlServer) GetSockmapStats(context.Context, *GetInternalSockmapStatsRequest) (*GetInternalSockmapStatsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetSockmapStats not implemented")
+}
+func (UnimplementedDataplaneControlServer) UpsertMeshService(context.Context, *UpsertMeshServiceRequest) (*UpsertMeshServiceResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method UpsertMeshService not implemented")
+}
+func (UnimplementedDataplaneControlServer) DeleteMeshService(context.Context, *DeleteMeshServiceRequest) (*DeleteMeshServiceResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method DeleteMeshService not implemented")
+}
+func (UnimplementedDataplaneControlServer) ListMeshServices(context.Context, *ListInternalMeshServicesRequest) (*ListInternalMeshServicesResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListMeshServices not implemented")
+}
+func (UnimplementedDataplaneControlServer) UpdateRateLimitConfig(context.Context, *UpdateRateLimitConfigRequest) (*UpdateRateLimitConfigResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method UpdateRateLimitConfig not implemented")
+}
+func (UnimplementedDataplaneControlServer) GetInternalRateLimitStats(context.Context, *GetInternalRateLimitStatsRequest) (*GetInternalRateLimitStatsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetInternalRateLimitStats not implemented")
+}
+func (UnimplementedDataplaneControlServer) GetBackendHealthStats(context.Context, *GetBackendHealthStatsRequest) (*GetBackendHealthStatsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetBackendHealthStats not implemented")
 }
 func (UnimplementedDataplaneControlServer) StreamFlows(*StreamFlowsRequest, grpc.ServerStreamingServer[FlowEvent]) error {
 	return status.Error(codes.Unimplemented, "method StreamFlows not implemented")
@@ -887,6 +1039,168 @@ func _DataplaneControl_DetachXDP_Handler(srv interface{}, ctx context.Context, d
 	return interceptor(ctx, in, info, handler)
 }
 
+func _DataplaneControl_UpsertSockmapEndpoint_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UpsertSockmapEndpointRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DataplaneControlServer).UpsertSockmapEndpoint(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DataplaneControl_UpsertSockmapEndpoint_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DataplaneControlServer).UpsertSockmapEndpoint(ctx, req.(*UpsertSockmapEndpointRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DataplaneControl_DeleteSockmapEndpoint_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeleteSockmapEndpointRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DataplaneControlServer).DeleteSockmapEndpoint(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DataplaneControl_DeleteSockmapEndpoint_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DataplaneControlServer).DeleteSockmapEndpoint(ctx, req.(*DeleteSockmapEndpointRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DataplaneControl_GetSockmapStats_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetInternalSockmapStatsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DataplaneControlServer).GetSockmapStats(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DataplaneControl_GetSockmapStats_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DataplaneControlServer).GetSockmapStats(ctx, req.(*GetInternalSockmapStatsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DataplaneControl_UpsertMeshService_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UpsertMeshServiceRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DataplaneControlServer).UpsertMeshService(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DataplaneControl_UpsertMeshService_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DataplaneControlServer).UpsertMeshService(ctx, req.(*UpsertMeshServiceRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DataplaneControl_DeleteMeshService_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeleteMeshServiceRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DataplaneControlServer).DeleteMeshService(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DataplaneControl_DeleteMeshService_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DataplaneControlServer).DeleteMeshService(ctx, req.(*DeleteMeshServiceRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DataplaneControl_ListMeshServices_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListInternalMeshServicesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DataplaneControlServer).ListMeshServices(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DataplaneControl_ListMeshServices_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DataplaneControlServer).ListMeshServices(ctx, req.(*ListInternalMeshServicesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DataplaneControl_UpdateRateLimitConfig_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UpdateRateLimitConfigRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DataplaneControlServer).UpdateRateLimitConfig(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DataplaneControl_UpdateRateLimitConfig_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DataplaneControlServer).UpdateRateLimitConfig(ctx, req.(*UpdateRateLimitConfigRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DataplaneControl_GetInternalRateLimitStats_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetInternalRateLimitStatsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DataplaneControlServer).GetInternalRateLimitStats(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DataplaneControl_GetInternalRateLimitStats_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DataplaneControlServer).GetInternalRateLimitStats(ctx, req.(*GetInternalRateLimitStatsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DataplaneControl_GetBackendHealthStats_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetBackendHealthStatsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DataplaneControlServer).GetBackendHealthStats(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DataplaneControl_GetBackendHealthStats_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DataplaneControlServer).GetBackendHealthStats(ctx, req.(*GetBackendHealthStatsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _DataplaneControl_StreamFlows_Handler(srv interface{}, stream grpc.ServerStream) error {
 	m := new(StreamFlowsRequest)
 	if err := stream.RecvMsg(m); err != nil {
@@ -1010,6 +1324,42 @@ var DataplaneControl_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "DetachXDP",
 			Handler:    _DataplaneControl_DetachXDP_Handler,
+		},
+		{
+			MethodName: "UpsertSockmapEndpoint",
+			Handler:    _DataplaneControl_UpsertSockmapEndpoint_Handler,
+		},
+		{
+			MethodName: "DeleteSockmapEndpoint",
+			Handler:    _DataplaneControl_DeleteSockmapEndpoint_Handler,
+		},
+		{
+			MethodName: "GetSockmapStats",
+			Handler:    _DataplaneControl_GetSockmapStats_Handler,
+		},
+		{
+			MethodName: "UpsertMeshService",
+			Handler:    _DataplaneControl_UpsertMeshService_Handler,
+		},
+		{
+			MethodName: "DeleteMeshService",
+			Handler:    _DataplaneControl_DeleteMeshService_Handler,
+		},
+		{
+			MethodName: "ListMeshServices",
+			Handler:    _DataplaneControl_ListMeshServices_Handler,
+		},
+		{
+			MethodName: "UpdateRateLimitConfig",
+			Handler:    _DataplaneControl_UpdateRateLimitConfig_Handler,
+		},
+		{
+			MethodName: "GetInternalRateLimitStats",
+			Handler:    _DataplaneControl_GetInternalRateLimitStats_Handler,
+		},
+		{
+			MethodName: "GetBackendHealthStats",
+			Handler:    _DataplaneControl_GetBackendHealthStats_Handler,
 		},
 		{
 			MethodName: "GetDataplaneStatus",

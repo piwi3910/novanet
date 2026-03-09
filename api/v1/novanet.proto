@@ -48,6 +48,23 @@ service DataplaneControl {
   rpc AttachXDP(AttachXDPRequest) returns (AttachXDPResponse);
   rpc DetachXDP(DetachXDPRequest) returns (DetachXDPResponse);
 
+  // SOCKMAP endpoints
+  rpc UpsertSockmapEndpoint(UpsertSockmapEndpointRequest) returns (UpsertSockmapEndpointResponse);
+  rpc DeleteSockmapEndpoint(DeleteSockmapEndpointRequest) returns (DeleteSockmapEndpointResponse);
+  rpc GetSockmapStats(GetInternalSockmapStatsRequest) returns (GetInternalSockmapStatsResponse);
+
+  // Mesh redirect
+  rpc UpsertMeshService(UpsertMeshServiceRequest) returns (UpsertMeshServiceResponse);
+  rpc DeleteMeshService(DeleteMeshServiceRequest) returns (DeleteMeshServiceResponse);
+  rpc ListMeshServices(ListInternalMeshServicesRequest) returns (ListInternalMeshServicesResponse);
+
+  // Rate limiting
+  rpc UpdateRateLimitConfig(UpdateRateLimitConfigRequest) returns (UpdateRateLimitConfigResponse);
+  rpc GetInternalRateLimitStats(GetInternalRateLimitStatsRequest) returns (GetInternalRateLimitStatsResponse);
+
+  // Health monitoring
+  rpc GetBackendHealthStats(GetBackendHealthStatsRequest) returns (GetBackendHealthStatsResponse);
+
   // Observability
   rpc StreamFlows(StreamFlowsRequest) returns (stream FlowEvent);
   rpc GetDataplaneStatus(GetDataplaneStatusRequest) returns (GetDataplaneStatusResponse);
@@ -595,4 +612,85 @@ message RoutingEvent {
   string owner = 3;
   string detail = 4;
   map<string, string> metadata = 5;
+}
+
+// --- SOCKMAP Endpoints ---
+
+message UpsertSockmapEndpointRequest {
+  string ip = 1;                    // "10.0.0.1"
+  uint32 port = 2;
+}
+message UpsertSockmapEndpointResponse {}
+
+message DeleteSockmapEndpointRequest {
+  string ip = 1;                    // "10.0.0.1"
+  uint32 port = 2;
+}
+message DeleteSockmapEndpointResponse {}
+
+message GetInternalSockmapStatsRequest {}
+message GetInternalSockmapStatsResponse {
+  uint64 redirected = 1;
+  uint64 fallback = 2;
+  uint32 active_endpoints = 3;
+}
+
+// --- Mesh Redirect ---
+
+message UpsertMeshServiceRequest {
+  string ip = 1;                    // "10.0.0.1"
+  uint32 port = 2;
+  uint32 redirect_port = 3;
+}
+message UpsertMeshServiceResponse {}
+
+message DeleteMeshServiceRequest {
+  string ip = 1;                    // "10.0.0.1"
+  uint32 port = 2;
+}
+message DeleteMeshServiceResponse {}
+
+message ListInternalMeshServicesRequest {}
+message ListInternalMeshServicesResponse {
+  repeated InternalMeshServiceEntry entries = 1;
+}
+message InternalMeshServiceEntry {
+  string ip = 1;
+  uint32 port = 2;
+  uint32 redirect_port = 3;
+}
+
+// --- Rate Limiting ---
+
+message UpdateRateLimitConfigRequest {
+  uint32 rate = 1;
+  uint32 burst = 2;
+  uint64 window_ns = 3;
+}
+message UpdateRateLimitConfigResponse {}
+
+message GetInternalRateLimitStatsRequest {}
+message GetInternalRateLimitStatsResponse {
+  uint64 allowed = 1;
+  uint64 denied = 2;
+}
+
+// --- Backend Health ---
+
+message GetBackendHealthStatsRequest {
+  string ip = 1;                    // "10.0.0.1" — optional filter; empty = all.
+  uint32 port = 2;
+}
+message GetBackendHealthStatsResponse {
+  repeated InternalBackendHealthInfo backends = 1;
+}
+message InternalBackendHealthInfo {
+  string ip = 1;
+  uint32 port = 2;
+  uint64 total_conns = 3;
+  uint64 failed_conns = 4;
+  uint64 timeout_conns = 5;
+  uint64 success_conns = 6;
+  uint64 avg_rtt_ns = 7;
+  double failure_rate = 8;
 }
