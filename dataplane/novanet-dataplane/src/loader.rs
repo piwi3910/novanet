@@ -8,7 +8,9 @@ use crate::maps::{MapManager, RealMaps};
 #[cfg(target_os = "linux")]
 use anyhow::{Context, Result};
 #[cfg(target_os = "linux")]
-use aya::maps::{lpm_trie::LpmTrie, Array, HashMap, MapData, PerCpuArray, RingBuf};
+use aya::maps::{
+    lpm_trie::LpmTrie, Array, HashMap, MapData, PerCpuArray, PerCpuHashMap, RingBuf, SockHash,
+};
 #[cfg(target_os = "linux")]
 use aya::programs::SchedClassifier;
 #[cfg(target_os = "linux")]
@@ -285,6 +287,175 @@ pub fn load_ebpf(bpf_object_path: &Path) -> Result<(MapManager, Option<RingBuf<M
         }
     };
 
+    // -- New eBPF Services API maps (optional — not all eBPF objects contain them) --
+
+    let sock_hash: Option<SockHash<MapData, SockKey>> = match ebpf.take_map("SOCK_HASH") {
+        Some(map) => match map.try_into() {
+            Ok(m) => {
+                info!("Loaded SOCK_HASH map");
+                Some(m)
+            }
+            Err(e) => {
+                warn!(
+                    "Failed to convert SOCK_HASH: {} — SOCKMAP bypass disabled",
+                    e
+                );
+                None
+            }
+        },
+        None => {
+            warn!("SOCK_HASH not found — SOCKMAP bypass disabled");
+            None
+        }
+    };
+
+    let sockmap_endpoints: Option<HashMap<MapData, SockmapEndpointKey, u32>> =
+        match ebpf.take_map("SOCKMAP_ENDPOINTS") {
+            Some(map) => match map.try_into() {
+                Ok(m) => {
+                    info!("Loaded SOCKMAP_ENDPOINTS map");
+                    Some(m)
+                }
+                Err(e) => {
+                    warn!(
+                        "Failed to convert SOCKMAP_ENDPOINTS: {} — SOCKMAP bypass disabled",
+                        e
+                    );
+                    None
+                }
+            },
+            None => {
+                warn!("SOCKMAP_ENDPOINTS not found — SOCKMAP bypass disabled");
+                None
+            }
+        };
+
+    let sockmap_stats: Option<PerCpuArray<MapData, u64>> = match ebpf.take_map("SOCKMAP_STATS") {
+        Some(map) => match map.try_into() {
+            Ok(m) => {
+                info!("Loaded SOCKMAP_STATS map");
+                Some(m)
+            }
+            Err(e) => {
+                warn!("Failed to convert SOCKMAP_STATS: {}", e);
+                None
+            }
+        },
+        None => None,
+    };
+
+    let mesh_services: Option<HashMap<MapData, MeshServiceKey, MeshRedirectValue>> =
+        match ebpf.take_map("MESH_SERVICES") {
+            Some(map) => match map.try_into() {
+                Ok(m) => {
+                    info!("Loaded MESH_SERVICES map");
+                    Some(m)
+                }
+                Err(e) => {
+                    warn!(
+                        "Failed to convert MESH_SERVICES: {} — mesh redirect disabled",
+                        e
+                    );
+                    None
+                }
+            },
+            None => {
+                warn!("MESH_SERVICES not found — mesh redirect disabled");
+                None
+            }
+        };
+
+    let rl_tokens: Option<aya::maps::LruHashMap<MapData, RateLimitKey, TokenBucketState>> =
+        match ebpf.take_map("RL_TOKENS") {
+            Some(map) => match map.try_into() {
+                Ok(m) => {
+                    info!("Loaded RL_TOKENS map");
+                    Some(m)
+                }
+                Err(e) => {
+                    warn!(
+                        "Failed to convert RL_TOKENS: {} — rate limiting disabled",
+                        e
+                    );
+                    None
+                }
+            },
+            None => {
+                warn!("RL_TOKENS not found — rate limiting disabled");
+                None
+            }
+        };
+
+    let rl_config: Option<Array<MapData, RateLimitConfig>> = match ebpf.take_map("RL_CONFIG") {
+        Some(map) => match map.try_into() {
+            Ok(m) => {
+                info!("Loaded RL_CONFIG map");
+                Some(m)
+            }
+            Err(e) => {
+                warn!(
+                    "Failed to convert RL_CONFIG: {} — rate limiting disabled",
+                    e
+                );
+                None
+            }
+        },
+        None => {
+            warn!("RL_CONFIG not found — rate limiting disabled");
+            None
+        }
+    };
+
+    let backend_health: Option<PerCpuHashMap<MapData, BackendHealthKey, BackendHealthCounters>> =
+        match ebpf.take_map("BACKEND_HEALTH") {
+            Some(map) => match map.try_into() {
+                Ok(m) => {
+                    info!("Loaded BACKEND_HEALTH map");
+                    Some(m)
+                }
+                Err(e) => {
+                    warn!(
+                        "Failed to convert BACKEND_HEALTH: {} — health monitoring disabled",
+                        e
+                    );
+                    None
+                }
+            },
+            None => {
+                warn!("BACKEND_HEALTH not found — health monitoring disabled");
+                None
+            }
+        };
+
+    // Load sock_ops and sk_msg programs if present (SOCKMAP bypass).
+    for prog_name in &["sockops_sockmap", "sk_msg_sockmap"] {
+        if let Some(prog) = ebpf.program_mut(prog_name) {
+            match prog_name {
+                &"sockops_sockmap" => match <&mut aya::programs::SockOps>::try_from(prog) {
+                    Ok(p) => match p.load() {
+                        Ok(()) => info!(program = *prog_name, "Loaded sock_ops program"),
+                        Err(e) => warn!(
+                            "Failed to load {}: {} — SOCKMAP bypass disabled",
+                            prog_name, e
+                        ),
+                    },
+                    Err(e) => warn!("{} is not a SockOps program: {}", prog_name, e),
+                },
+                &"sk_msg_sockmap" => match <&mut aya::programs::SkMsg>::try_from(prog) {
+                    Ok(p) => match p.load() {
+                        Ok(()) => info!(program = *prog_name, "Loaded sk_msg program"),
+                        Err(e) => warn!(
+                            "Failed to load {}: {} — SOCKMAP bypass disabled",
+                            prog_name, e
+                        ),
+                    },
+                    Err(e) => warn!("{} is not a SkMsg program: {}", prog_name, e),
+                },
+                _ => {}
+            }
+        }
+    }
+
     // Optional XDP program — load but don't attach (attachment is via gRPC).
     if let Some(prog) = ebpf.program_mut("xdp_pass") {
         match <&mut aya::programs::Xdp>::try_from(prog) {
@@ -321,6 +492,13 @@ pub fn load_ebpf(bpf_object_path: &Path) -> Result<(MapManager, Option<RingBuf<M
         drop_counters,
         ipcache,
         host_policies,
+        sock_hash,
+        sockmap_endpoints,
+        sockmap_stats,
+        mesh_services,
+        rl_tokens,
+        rl_config,
+        backend_health,
         ebpf,
     );
 

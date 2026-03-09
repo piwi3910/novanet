@@ -558,6 +558,7 @@ impl MapManager {
         }
     }
 
+    #[allow(dead_code)]
     pub fn count_mesh_services(&self) -> anyhow::Result<usize> {
         match &self.inner {
             MapManagerInner::Mock(m) => Ok(m.count_mesh_services()),
@@ -576,6 +577,7 @@ impl MapManager {
         }
     }
 
+    #[allow(dead_code)]
     pub fn get_rate_limit_config(&self) -> Option<RateLimitConfig> {
         match &self.inner {
             MapManagerInner::Mock(m) => m.get_rate_limit_config(),
@@ -610,6 +612,7 @@ impl MapManager {
         }
     }
 
+    #[allow(dead_code)]
     pub fn count_backend_health(&self) -> usize {
         match &self.inner {
             MapManagerInner::Mock(m) => m.count_backend_health(),
@@ -2174,6 +2177,23 @@ pub struct RealMaps {
     host_policies: Option<
         RwLock<aya::maps::lpm_trie::LpmTrie<aya::maps::MapData, HostPolicyKey, HostPolicyValue>>,
     >,
+    // -- eBPF Services API maps --
+    #[allow(dead_code)]
+    sock_hash: Option<aya::maps::SockHash<aya::maps::MapData, SockKey>>,
+    sockmap_endpoints:
+        Option<RwLock<aya::maps::HashMap<aya::maps::MapData, SockmapEndpointKey, u32>>>,
+    sockmap_stats: Option<RwLock<aya::maps::PerCpuArray<aya::maps::MapData, u64>>>,
+    mesh_services:
+        Option<RwLock<aya::maps::HashMap<aya::maps::MapData, MeshServiceKey, MeshRedirectValue>>>,
+    rl_tokens:
+        Option<RwLock<aya::maps::LruHashMap<aya::maps::MapData, RateLimitKey, TokenBucketState>>>,
+    rl_config: Option<RwLock<aya::maps::Array<aya::maps::MapData, RateLimitConfig>>>,
+    backend_health: Option<
+        RwLock<
+            aya::maps::PerCpuHashMap<aya::maps::MapData, BackendHealthKey, BackendHealthCounters>,
+        >,
+    >,
+    // -- infrastructure --
     attached: RwLock<Vec<AttachedProgramInfo>>,
     /// Holds TC program links so they stay attached (aya auto-detaches on drop).
     /// Tuples of (interface_name, attach_type, link) for targeted detach.
@@ -2211,6 +2231,19 @@ impl RealMaps {
         host_policies: Option<
             aya::maps::lpm_trie::LpmTrie<aya::maps::MapData, HostPolicyKey, HostPolicyValue>,
         >,
+        sock_hash: Option<aya::maps::SockHash<aya::maps::MapData, SockKey>>,
+        sockmap_endpoints: Option<aya::maps::HashMap<aya::maps::MapData, SockmapEndpointKey, u32>>,
+        sockmap_stats: Option<aya::maps::PerCpuArray<aya::maps::MapData, u64>>,
+        mesh_services: Option<
+            aya::maps::HashMap<aya::maps::MapData, MeshServiceKey, MeshRedirectValue>,
+        >,
+        rl_tokens: Option<
+            aya::maps::LruHashMap<aya::maps::MapData, RateLimitKey, TokenBucketState>,
+        >,
+        rl_config: Option<aya::maps::Array<aya::maps::MapData, RateLimitConfig>>,
+        backend_health: Option<
+            aya::maps::PerCpuHashMap<aya::maps::MapData, BackendHealthKey, BackendHealthCounters>,
+        >,
         ebpf: aya::Ebpf,
     ) -> Self {
         Self {
@@ -2230,6 +2263,13 @@ impl RealMaps {
             drop_counters: RwLock::new(drop_counters),
             ipcache: ipcache.map(RwLock::new),
             host_policies: host_policies.map(RwLock::new),
+            sock_hash,
+            sockmap_endpoints: sockmap_endpoints.map(RwLock::new),
+            sockmap_stats: sockmap_stats.map(RwLock::new),
+            mesh_services: mesh_services.map(RwLock::new),
+            rl_tokens: rl_tokens.map(RwLock::new),
+            rl_config: rl_config.map(RwLock::new),
+            backend_health: backend_health.map(RwLock::new),
             attached: RwLock::new(Vec::new()),
             _tc_links: std::sync::Mutex::new(Vec::new()),
             _cgroup_links: std::sync::Mutex::new(Vec::new()),
@@ -2948,74 +2988,205 @@ impl RealMaps {
     }
 
     // -- SOCKMAP endpoint operations --
-    // TODO: implement with aya map handles (Task 17)
 
-    fn upsert_sockmap_endpoint(&self, _key: SockmapEndpointKey, _value: u32) -> anyhow::Result<()> {
-        anyhow::bail!("sockmap endpoint maps not yet implemented")
+    fn upsert_sockmap_endpoint(&self, key: SockmapEndpointKey, value: u32) -> anyhow::Result<()> {
+        let map_lock = self
+            .sockmap_endpoints
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("SOCKMAP_ENDPOINTS map not loaded"))?;
+        let mut map = map_lock.write().expect("sockmap_endpoints lock poisoned");
+        map.insert(key, value, 0)?;
+        debug!(ip = key.ip, port = key.port, "upsert sockmap endpoint");
+        Ok(())
     }
 
-    fn delete_sockmap_endpoint(&self, _key: &SockmapEndpointKey) -> anyhow::Result<()> {
-        anyhow::bail!("sockmap endpoint maps not yet implemented")
+    fn delete_sockmap_endpoint(&self, key: &SockmapEndpointKey) -> anyhow::Result<()> {
+        let map_lock = self
+            .sockmap_endpoints
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("SOCKMAP_ENDPOINTS map not loaded"))?;
+        let mut map = map_lock.write().expect("sockmap_endpoints lock poisoned");
+        map.remove(key)?;
+        debug!(ip = key.ip, port = key.port, "delete sockmap endpoint");
+        Ok(())
     }
 
     fn count_sockmap_endpoints(&self) -> anyhow::Result<usize> {
-        anyhow::bail!("sockmap endpoint maps not yet implemented")
+        let map_lock = self
+            .sockmap_endpoints
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("SOCKMAP_ENDPOINTS map not loaded"))?;
+        let map = map_lock.read().expect("sockmap_endpoints lock poisoned");
+        Ok(map.iter().count())
     }
 
     fn get_sockmap_stats(&self) -> (u64, u64) {
-        (0, 0)
+        let map_lock = match self.sockmap_stats.as_ref() {
+            Some(m) => m,
+            None => return (0, 0),
+        };
+        let map = map_lock.read().expect("sockmap_stats lock poisoned");
+        let redirected = map
+            .get(&0, 0)
+            .ok()
+            .map(|vals| vals.iter().copied().sum::<u64>())
+            .unwrap_or(0);
+        let fallback = map
+            .get(&1, 0)
+            .ok()
+            .map(|vals| vals.iter().copied().sum::<u64>())
+            .unwrap_or(0);
+        (redirected, fallback)
     }
 
     // -- Mesh service operations --
-    // TODO: implement with aya map handles (Task 17)
 
     fn upsert_mesh_service(
         &self,
-        _key: MeshServiceKey,
-        _value: MeshRedirectValue,
+        key: MeshServiceKey,
+        value: MeshRedirectValue,
     ) -> anyhow::Result<()> {
-        anyhow::bail!("mesh service maps not yet implemented")
+        let map_lock = self
+            .mesh_services
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("MESH_SERVICES map not loaded"))?;
+        let mut map = map_lock.write().expect("mesh_services lock poisoned");
+        map.insert(key, value, 0)?;
+        debug!(
+            ip = key.ip,
+            port = key.port,
+            redirect_port = value.redirect_port,
+            "upsert mesh service"
+        );
+        Ok(())
     }
 
-    fn delete_mesh_service(&self, _key: &MeshServiceKey) -> anyhow::Result<()> {
-        anyhow::bail!("mesh service maps not yet implemented")
+    fn delete_mesh_service(&self, key: &MeshServiceKey) -> anyhow::Result<()> {
+        let map_lock = self
+            .mesh_services
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("MESH_SERVICES map not loaded"))?;
+        let mut map = map_lock.write().expect("mesh_services lock poisoned");
+        map.remove(key)?;
+        debug!(ip = key.ip, port = key.port, "delete mesh service");
+        Ok(())
     }
 
     fn list_mesh_services(&self) -> anyhow::Result<Vec<(MeshServiceKey, MeshRedirectValue)>> {
-        anyhow::bail!("mesh service maps not yet implemented")
+        let map_lock = self
+            .mesh_services
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("MESH_SERVICES map not loaded"))?;
+        let map = map_lock.read().expect("mesh_services lock poisoned");
+        Ok(map
+            .iter()
+            .filter_map(|res| res.ok())
+            .map(|(k, v)| (k, v))
+            .collect())
     }
 
     fn count_mesh_services(&self) -> anyhow::Result<usize> {
-        anyhow::bail!("mesh service maps not yet implemented")
+        let map_lock = self
+            .mesh_services
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("MESH_SERVICES map not loaded"))?;
+        let map = map_lock.read().expect("mesh_services lock poisoned");
+        Ok(map.iter().count())
     }
 
     // -- Rate limit operations --
-    // TODO: implement with aya map handles (Task 17)
 
-    fn update_rate_limit_config(&self, _config: RateLimitConfig) -> anyhow::Result<()> {
-        anyhow::bail!("rate limit maps not yet implemented")
+    fn update_rate_limit_config(&self, config: RateLimitConfig) -> anyhow::Result<()> {
+        let map_lock = self
+            .rl_config
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("RL_CONFIG map not loaded"))?;
+        let mut map = map_lock.write().expect("rl_config lock poisoned");
+        map.set(0, config, 0)?;
+        debug!(
+            rate = config.rate,
+            burst = config.burst,
+            window_ns = config.window_ns,
+            "updated rate limit config"
+        );
+        Ok(())
     }
 
     fn get_rate_limit_config(&self) -> Option<RateLimitConfig> {
-        None
+        let map_lock = self.rl_config.as_ref()?;
+        let map = map_lock.read().expect("rl_config lock poisoned");
+        map.get(&0, 0).ok()
     }
 
     fn get_rate_limit_stats(&self) -> (u64, u64) {
+        // Rate limit stats are not tracked in a dedicated map in eBPF;
+        // they would need a separate per-CPU array. Return zeros for now.
+        // TODO: Add RL_STATS per-CPU array to eBPF programs for allowed/denied counts.
         (0, 0)
     }
 
     // -- Backend health operations --
-    // TODO: implement with aya map handles (Task 17)
 
-    fn get_backend_health(&self, _key: &BackendHealthKey) -> Option<BackendHealthCounters> {
-        None
+    fn get_backend_health(&self, key: &BackendHealthKey) -> Option<BackendHealthCounters> {
+        let map_lock = self.backend_health.as_ref()?;
+        let map = map_lock.read().expect("backend_health lock poisoned");
+        match map.get(key, 0) {
+            Ok(per_cpu_vals) => {
+                // Sum counters across all CPUs.
+                let mut combined = BackendHealthCounters::default();
+                for v in per_cpu_vals.iter() {
+                    combined.total_conns += v.total_conns;
+                    combined.failed_conns += v.failed_conns;
+                    combined.timeout_conns += v.timeout_conns;
+                    combined.success_conns += v.success_conns;
+                    if v.last_success_ns > combined.last_success_ns {
+                        combined.last_success_ns = v.last_success_ns;
+                    }
+                    if v.last_failure_ns > combined.last_failure_ns {
+                        combined.last_failure_ns = v.last_failure_ns;
+                    }
+                    combined.total_rtt_ns += v.total_rtt_ns;
+                }
+                Some(combined)
+            }
+            Err(_) => None,
+        }
     }
 
     fn get_all_backend_health(&self) -> Vec<(BackendHealthKey, BackendHealthCounters)> {
-        Vec::new()
+        let map_lock = match self.backend_health.as_ref() {
+            Some(m) => m,
+            None => return Vec::new(),
+        };
+        let map = map_lock.read().expect("backend_health lock poisoned");
+        map.iter()
+            .filter_map(|res| {
+                let (key, per_cpu_vals) = res.ok()?;
+                let mut combined = BackendHealthCounters::default();
+                for v in per_cpu_vals.iter() {
+                    combined.total_conns += v.total_conns;
+                    combined.failed_conns += v.failed_conns;
+                    combined.timeout_conns += v.timeout_conns;
+                    combined.success_conns += v.success_conns;
+                    if v.last_success_ns > combined.last_success_ns {
+                        combined.last_success_ns = v.last_success_ns;
+                    }
+                    if v.last_failure_ns > combined.last_failure_ns {
+                        combined.last_failure_ns = v.last_failure_ns;
+                    }
+                    combined.total_rtt_ns += v.total_rtt_ns;
+                }
+                Some((key, combined))
+            })
+            .collect()
     }
 
     fn count_backend_health(&self) -> usize {
-        0
+        let map_lock = match self.backend_health.as_ref() {
+            Some(m) => m,
+            None => return 0,
+        };
+        let map = map_lock.read().expect("backend_health lock poisoned");
+        map.iter().count()
     }
 }

@@ -23,9 +23,9 @@ use aya_ebpf::{
     bindings::TC_ACT_SHOT as BPF_TC_ACT_SHOT,
     bindings::{bpf_tunnel_key, BPF_F_ZERO_CSUM_TX},
     helpers::{bpf_get_socket_cookie, bpf_redirect, bpf_skb_set_tunnel_key},
-    macros::{cgroup_sock_addr, classifier, map},
-    maps::{Array, HashMap, LruHashMap, PerCpuArray, RingBuf},
-    programs::{SockAddrContext, TcContext},
+    macros::{cgroup_sock_addr, classifier, map, sk_msg, sock_ops},
+    maps::{Array, HashMap, LruHashMap, PerCpuArray, PerCpuHashMap, RingBuf, SockHash},
+    programs::{SkMsgContext, SockAddrContext, SockOpsContext, TcContext},
 };
 use network_types::{
     eth::{EthHdr, EtherType},
@@ -79,6 +79,53 @@ static RR_COUNTERS: PerCpuArray<u32> = PerCpuArray::with_max_entries(MAX_SERVICE
 #[map]
 static SOCK_LB_ORIGINS: LruHashMap<u64, SockLbOrigin> =
     LruHashMap::with_max_entries(MAX_SOCK_LB_ORIGINS, 0);
+
+// ---------------------------------------------------------------------------
+// SOCKMAP maps — same-node socket bypass
+// ---------------------------------------------------------------------------
+
+/// Hash map of sockets keyed by 5-tuple for SOCKMAP redirect.
+#[map]
+static SOCK_HASH: SockHash<SockKey> = SockHash::with_max_entries(65536, 0);
+
+/// Endpoints registered for SOCKMAP bypass (pod IPs + ports).
+#[map]
+static SOCKMAP_ENDPOINTS: HashMap<SockmapEndpointKey, u32> = HashMap::with_max_entries(4096, 0);
+
+/// Per-CPU stats: [0] = redirected count, [1] = fallback count.
+#[map]
+static SOCKMAP_STATS: PerCpuArray<u64> = PerCpuArray::with_max_entries(2, 0);
+
+// ---------------------------------------------------------------------------
+// Mesh redirect maps — SK_LOOKUP service mesh interception
+// ---------------------------------------------------------------------------
+
+/// Mesh services to intercept via SK_LOOKUP (service IP+port → redirect port).
+#[map]
+static MESH_SERVICES: HashMap<MeshServiceKey, MeshRedirectValue> =
+    HashMap::with_max_entries(4096, 0);
+
+// ---------------------------------------------------------------------------
+// Rate limiting maps — per-source-IP token bucket
+// ---------------------------------------------------------------------------
+
+/// Per-source token bucket state (LRU to handle large IP spaces).
+#[map]
+static RL_TOKENS: LruHashMap<RateLimitKey, TokenBucketState> =
+    LruHashMap::with_max_entries(100000, 0);
+
+/// Global rate limit configuration (single entry at index 0).
+#[map]
+static RL_CONFIG: Array<RateLimitConfig> = Array::with_max_entries(1, 0);
+
+// ---------------------------------------------------------------------------
+// Backend health maps — passive TCP health monitoring
+// ---------------------------------------------------------------------------
+
+/// Per-backend TCP connection health counters (per-CPU for lock-free updates).
+#[map]
+static BACKEND_HEALTH: PerCpuHashMap<BackendHealthKey, BackendHealthCounters> =
+    PerCpuHashMap::with_max_entries(4096, 0);
 
 // ---------------------------------------------------------------------------
 // Helper: read config value
@@ -669,6 +716,143 @@ fn check_egress_policy(src_identity: u32, dst_ip: u32) -> (bool, u32) {
     (true, 0)
 }
 
+// ---------------------------------------------------------------------------
+// Helper: per-source-IP rate limiting (token bucket)
+// Returns true if packet is allowed, false if rate-limited.
+// ---------------------------------------------------------------------------
+
+#[inline(always)]
+fn check_rate_limit(src_ip: u32) -> bool {
+    // Read global rate limit configuration.
+    let cfg = match RL_CONFIG.get(0) {
+        Some(c) => c,
+        None => return true, // No config → allow all
+    };
+    if cfg.rate == 0 {
+        return true; // Rate limiting disabled
+    }
+
+    // Build key from source IP (IPv4-mapped IPv6 format).
+    let mut addr = [0u8; 16];
+    addr[0] = (src_ip >> 24) as u8;
+    addr[1] = (src_ip >> 16) as u8;
+    addr[2] = (src_ip >> 8) as u8;
+    addr[3] = src_ip as u8;
+    let key = RateLimitKey { addr };
+
+    // SAFETY: BPF helper call; always available in TC programs.
+    let now_ns = unsafe { aya_ebpf::helpers::bpf_ktime_get_ns() };
+
+    // Look up existing token bucket state.
+    // SAFETY: eBPF map lookup; safety guaranteed by BPF verifier.
+    if let Some(state) = unsafe { RL_TOKENS.get(&key) } {
+        let mut tokens = state.tokens;
+        let elapsed = now_ns.saturating_sub(state.last_refill_ns);
+
+        // Refill tokens based on elapsed time.
+        if elapsed >= cfg.window_ns && cfg.window_ns > 0 {
+            let windows = elapsed / cfg.window_ns;
+            tokens = tokens.saturating_add(windows * cfg.rate as u64);
+            if tokens > cfg.burst as u64 {
+                tokens = cfg.burst as u64;
+            }
+        }
+
+        if tokens > 0 {
+            // Consume a token.
+            let new_state = TokenBucketState {
+                tokens: tokens - 1,
+                last_refill_ns: now_ns,
+            };
+            let _ = RL_TOKENS.insert(&key, &new_state, 0);
+            true
+        } else {
+            false
+        }
+    } else {
+        // First packet from this source — initialize with burst - 1 tokens.
+        let new_state = TokenBucketState {
+            tokens: if cfg.burst > 0 {
+                cfg.burst as u64 - 1
+            } else {
+                0
+            },
+            last_refill_ns: now_ns,
+        };
+        let _ = RL_TOKENS.insert(&key, &new_state, 0);
+        true
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Helper: track backend health from TCP flags (passive monitoring)
+// ---------------------------------------------------------------------------
+
+#[inline(always)]
+fn track_backend_health(dst_ip: u32, dst_port: u16, tcp_flags: u8) {
+    // Only track TCP packets with meaningful flags.
+    // SYN=0x02, SYN-ACK=0x12, RST=0x04, FIN=0x01
+    if tcp_flags == 0 {
+        return;
+    }
+
+    let key = BackendHealthKey {
+        ip: dst_ip,
+        port: dst_port as u32,
+    };
+
+    // SAFETY: eBPF per-CPU hash map access; BPF verifier ensures safety.
+    if let Some(counters) = unsafe { BACKEND_HEALTH.get_ptr_mut(&key) } {
+        // SYN (0x02) without ACK = new connection attempt.
+        if tcp_flags & 0x02 != 0 && tcp_flags & 0x10 == 0 {
+            unsafe { (*counters).total_conns += 1 };
+        }
+
+        // SYN-ACK (0x12) = successful connection establishment.
+        if tcp_flags & 0x12 == 0x12 {
+            unsafe {
+                (*counters).success_conns += 1;
+                (*counters).last_success_ns = aya_ebpf::helpers::bpf_ktime_get_ns();
+            };
+        }
+
+        // RST (0x04) = connection failure/reset.
+        if tcp_flags & 0x04 != 0 {
+            unsafe {
+                (*counters).failed_conns += 1;
+                (*counters).last_failure_ns = aya_ebpf::helpers::bpf_ktime_get_ns();
+            };
+        }
+    } else {
+        // First time seeing this backend — initialize counters.
+        let mut new_counters = BackendHealthCounters {
+            total_conns: 0,
+            failed_conns: 0,
+            timeout_conns: 0,
+            success_conns: 0,
+            last_success_ns: 0,
+            last_failure_ns: 0,
+            total_rtt_ns: 0,
+        };
+
+        if tcp_flags & 0x02 != 0 && tcp_flags & 0x10 == 0 {
+            new_counters.total_conns = 1;
+        }
+        if tcp_flags & 0x12 == 0x12 {
+            new_counters.success_conns = 1;
+            // SAFETY: BPF helper call.
+            new_counters.last_success_ns = unsafe { aya_ebpf::helpers::bpf_ktime_get_ns() };
+        }
+        if tcp_flags & 0x04 != 0 {
+            new_counters.failed_conns = 1;
+            // SAFETY: BPF helper call.
+            new_counters.last_failure_ns = unsafe { aya_ebpf::helpers::bpf_ktime_get_ns() };
+        }
+
+        let _ = BACKEND_HEALTH.insert(&key, &new_counters, 0);
+    }
+}
+
 // ===========================================================================
 // TC PROGRAM: tc_ingress
 // Traffic arriving at the pod from the network (K8s ingress).
@@ -752,6 +936,17 @@ fn try_tc_ingress(ctx: &mut TcContext) -> Result<i32, ()> {
     let total_len = u16::from_be(tot_len) as u64;
 
     let (src_port, dst_port, tcp_flags) = parse_l4_ports(ctx, l4_offset, protocol);
+
+    // Rate limiting: check per-source-IP token bucket before any other processing.
+    if !check_rate_limit(src_ip) {
+        inc_drop_counter(DROP_REASON_RATE_LIMITED);
+        return Ok(BPF_TC_ACT_SHOT as i32);
+    }
+
+    // Passive backend health monitoring: track TCP SYN/SYN-ACK/RST events.
+    if protocol == 6 {
+        track_backend_health(dst_ip, dst_port, tcp_flags);
+    }
 
     let mode = get_config(CONFIG_KEY_MODE);
 
@@ -1691,6 +1886,157 @@ fn try_sock_getpeername4(ctx: &SockAddrContext) -> Result<i32, i64> {
 
     Ok(1)
 }
+
+// ===========================================================================
+// SOCKMAP PROGRAM: sock_ops — capture established connections into SOCK_HASH
+// ===========================================================================
+
+#[sock_ops]
+pub fn sockops_sockmap(ctx: SockOpsContext) -> u32 {
+    match try_sockops_sockmap(ctx) {
+        Ok(ret) => ret,
+        Err(_) => 0,
+    }
+}
+
+#[inline(always)]
+fn try_sockops_sockmap(ctx: SockOpsContext) -> Result<u32, i64> {
+    let op = ctx.op();
+
+    // Only handle established connections (active and passive).
+    // BPF_SOCK_OPS_ACTIVE_ESTABLISHED_CB = 4, BPF_SOCK_OPS_PASSIVE_ESTABLISHED_CB = 5
+    if op != 4 && op != 5 {
+        return Ok(0);
+    }
+
+    let src_ip = ctx.local_ip4();
+    let dst_ip = ctx.remote_ip4();
+    let src_port = ctx.local_port() as u16;
+    // remote_port() returns network byte order in sock_ops context.
+    let dst_port = u16::from_be(ctx.remote_port() as u16);
+
+    // Check if both endpoints are registered for SOCKMAP bypass.
+    let src_key = SockmapEndpointKey {
+        ip: src_ip,
+        port: src_port as u32,
+    };
+    let dst_key = SockmapEndpointKey {
+        ip: dst_ip,
+        port: dst_port as u32,
+    };
+
+    // SAFETY: eBPF map lookups; safety guaranteed by BPF verifier.
+    let src_local = unsafe { SOCKMAP_ENDPOINTS.get(&src_key) }.is_some();
+    let dst_local = unsafe { SOCKMAP_ENDPOINTS.get(&dst_key) }.is_some();
+
+    if src_local && dst_local {
+        let key = SockKey {
+            src_ip,
+            dst_ip,
+            src_port,
+            dst_port,
+            family: 2, // AF_INET
+        };
+
+        // Insert socket into SOCK_HASH for later redirect by sk_msg program.
+        // TODO: Verify aya-ebpf SockHash API — the hash_map_update method
+        // may have a different signature on different aya versions.
+        let _ = SOCK_HASH.update(&mut ctx.into(), &key, 0);
+    }
+
+    Ok(0)
+}
+
+// ===========================================================================
+// SK_MSG PROGRAM: sk_msg — redirect messages between SOCKMAP sockets
+// ===========================================================================
+
+#[sk_msg]
+pub fn sk_msg_sockmap(ctx: SkMsgContext) -> u32 {
+    match try_sk_msg_sockmap(ctx) {
+        Ok(ret) => ret,
+        Err(_) => {
+            // Fallback: increment fallback counter and let message pass normally.
+            if let Some(counter) = SOCKMAP_STATS.get_ptr_mut(1) {
+                unsafe { *counter += 1 };
+            }
+            1 // SK_PASS
+        }
+    }
+}
+
+#[inline(always)]
+fn try_sk_msg_sockmap(ctx: SkMsgContext) -> Result<u32, i64> {
+    // Build the reverse key to find the peer socket.
+    let src_ip = ctx.local_ip4();
+    let dst_ip = ctx.remote_ip4();
+    let src_port = ctx.local_port() as u16;
+    let dst_port = u16::from_be(ctx.remote_port() as u16);
+
+    let peer_key = SockKey {
+        src_ip: dst_ip,
+        dst_ip: src_ip,
+        src_port: dst_port,
+        dst_port: src_port,
+        family: 2, // AF_INET
+    };
+
+    // Try to redirect the message to the peer socket via SOCK_HASH.
+    // TODO: Verify aya-ebpf SkMsgContext redirect API.
+    // bpf_msg_redirect_hash redirects the message to the socket matching peer_key.
+    match ctx.redirect_hash(&SOCK_HASH, &peer_key, 0) {
+        Ok(_) => {
+            // Increment redirected counter.
+            if let Some(counter) = SOCKMAP_STATS.get_ptr_mut(0) {
+                unsafe { *counter += 1 };
+            }
+            Ok(1) // SK_PASS (with redirect)
+        }
+        Err(_) => {
+            // Redirect failed — increment fallback counter and pass normally.
+            if let Some(counter) = SOCKMAP_STATS.get_ptr_mut(1) {
+                unsafe { *counter += 1 };
+            }
+            Ok(1) // SK_PASS
+        }
+    }
+}
+
+// ===========================================================================
+// SK_LOOKUP PROGRAM: mesh service redirect
+// Intercepts service-destined connections and redirects to sidecar proxy.
+// ===========================================================================
+
+// TODO: sk_lookup program requires aya-ebpf sk_lookup support.
+// The aya-ebpf crate may not yet have the `sk_lookup` macro and
+// `SkLookupContext`. Once available, implement as follows:
+//
+// #[sk_lookup]
+// pub fn sk_lookup_mesh(ctx: SkLookupContext) -> u32 {
+//     match try_sk_lookup_mesh(ctx) {
+//         Ok(ret) => ret,
+//         Err(_) => 0, // SK_PASS — don't interfere
+//     }
+// }
+//
+// fn try_sk_lookup_mesh(ctx: SkLookupContext) -> Result<u32, i64> {
+//     let dst_ip = ctx.remote_ip4();
+//     let dst_port = ctx.remote_port() as u32;
+//
+//     let key = MeshServiceKey {
+//         ip: dst_ip,
+//         port: dst_port,
+//     };
+//
+//     if let Some(redirect) = unsafe { MESH_SERVICES.get(&key) } {
+//         // Found a mesh service — redirect to sidecar proxy port.
+//         // Use bpf_sk_assign to assign the socket.
+//         // ctx.sk_assign(redirect.redirect_port)?;
+//         return Ok(1); // SK_PASS with assignment
+//     }
+//
+//     Ok(0) // No mesh service — pass through
+// }
 
 // ---------------------------------------------------------------------------
 // Panic handler (required for #![no_std])

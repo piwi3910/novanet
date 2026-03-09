@@ -681,6 +681,8 @@ pub const DROP_REASON_NO_ROUTE: u8 = 3;
 pub const DROP_REASON_NO_TUNNEL: u8 = 4;
 /// Dropped because IP TTL reached zero.
 pub const DROP_REASON_TTL_EXCEEDED: u8 = 5;
+/// Dropped by per-source-IP rate limiter.
+pub const DROP_REASON_RATE_LIMITED: u8 = 6;
 /// Total number of drop reasons (array size).
 pub const DROP_REASON_MAX: u32 = 16;
 
@@ -1366,6 +1368,7 @@ mod tests {
         assert!(DROP_REASON_NO_ROUTE < DROP_REASON_MAX as u8);
         assert!(DROP_REASON_NO_TUNNEL < DROP_REASON_MAX as u8);
         assert!(DROP_REASON_TTL_EXCEEDED < DROP_REASON_MAX as u8);
+        assert!(DROP_REASON_RATE_LIMITED < DROP_REASON_MAX as u8);
     }
 
     #[test]
