@@ -30,7 +30,7 @@ const (
 )
 
 // WildcardIdentity matches any identity in a rule (used for open selectors).
-const WildcardIdentity uint32 = 0
+const WildcardIdentity uint64 = 0
 
 // PortResolver resolves a named port to numeric port numbers for pods
 // matching the given selector in the given namespace. Returns nil if
@@ -45,9 +45,9 @@ type NamespaceResolver func(selector metav1.LabelSelector) []string
 // CompiledRule represents a single policy rule ready for the dataplane.
 type CompiledRule struct {
 	// SrcIdentity is the source identity ID (0 = wildcard/any).
-	SrcIdentity uint32
+	SrcIdentity uint64
 	// DstIdentity is the destination identity ID (0 = wildcard/any).
-	DstIdentity uint32
+	DstIdentity uint64
 	// Protocol is the IP protocol number (0 = any).
 	Protocol uint8
 	// DstPort is the destination port (0 = any).
@@ -162,7 +162,7 @@ func (c *Compiler) CompileAll(policies []*networkingv1.NetworkPolicy) []*Compile
 }
 
 // compileIngressRule compiles a single ingress rule for the target identity.
-func (c *Compiler) compileIngressRule(rule networkingv1.NetworkPolicyIngressRule, dstIdentity uint32, namespace string, podSelector metav1.LabelSelector) []*CompiledRule {
+func (c *Compiler) compileIngressRule(rule networkingv1.NetworkPolicyIngressRule, dstIdentity uint64, namespace string, podSelector metav1.LabelSelector) []*CompiledRule {
 	// Resolve source identities from peers.
 	srcIdentities := c.resolvePeers(rule.From, namespace)
 	// Resolve IPBlock CIDRs.
@@ -175,7 +175,7 @@ func (c *Compiler) compileIngressRule(rule networkingv1.NetworkPolicyIngressRule
 
 	// If no peers specified, allow from any source.
 	if len(rule.From) == 0 {
-		srcIdentities = []uint32{WildcardIdentity}
+		srcIdentities = []uint64{WildcardIdentity}
 	}
 
 	// If no ports specified, allow all ports.
@@ -184,39 +184,16 @@ func (c *Compiler) compileIngressRule(rule networkingv1.NetworkPolicyIngressRule
 	}
 
 	// Create cartesian product of sources x ports (identity-based).
-	for _, srcID := range srcIdentities {
-		for _, pp := range ports {
-			rules = append(rules, &CompiledRule{
-				SrcIdentity: srcID,
-				DstIdentity: dstIdentity,
-				Protocol:    pp.protocol,
-				DstPort:     pp.port,
-				Action:      ActionAllow,
-				Namespace:   namespace,
-			})
-		}
-	}
+	rules = append(rules, buildIdentityRules(srcIdentities, dstIdentity, ports, false, namespace)...)
 
 	// Create CIDR-based rules for IPBlock peers (including Except deny rules).
-	for _, entry := range srcCIDRs {
-		for _, pp := range ports {
-			rules = append(rules, &CompiledRule{
-				SrcIdentity: WildcardIdentity,
-				DstIdentity: dstIdentity,
-				Protocol:    pp.protocol,
-				DstPort:     pp.port,
-				Action:      entry.action,
-				CIDR:        entry.cidr,
-				Namespace:   namespace,
-			})
-		}
-	}
+	rules = append(rules, buildCIDRRules(srcCIDRs, dstIdentity, ports, false, namespace)...)
 
 	return rules
 }
 
 // compileEgressRule compiles a single egress rule for the source identity.
-func (c *Compiler) compileEgressRule(rule networkingv1.NetworkPolicyEgressRule, srcIdentity uint32, namespace string) []*CompiledRule {
+func (c *Compiler) compileEgressRule(rule networkingv1.NetworkPolicyEgressRule, srcIdentity uint64, namespace string) []*CompiledRule {
 	// Resolve destination identities from peers.
 	dstIdentities := c.resolvePeers(rule.To, namespace)
 	// Resolve IPBlock CIDRs.
@@ -230,7 +207,7 @@ func (c *Compiler) compileEgressRule(rule networkingv1.NetworkPolicyEgressRule, 
 
 	// If no peers specified, allow to any destination.
 	if len(rule.To) == 0 {
-		dstIdentities = []uint32{WildcardIdentity}
+		dstIdentities = []uint64{WildcardIdentity}
 	}
 
 	// If no ports specified, allow all ports.
@@ -239,35 +216,10 @@ func (c *Compiler) compileEgressRule(rule networkingv1.NetworkPolicyEgressRule, 
 	}
 
 	// Create cartesian product of destinations x ports (identity-based).
-	for _, dstID := range dstIdentities {
-		for _, pp := range ports {
-			rules = append(rules, &CompiledRule{
-				SrcIdentity: srcIdentity,
-				DstIdentity: dstID,
-				Protocol:    pp.protocol,
-				DstPort:     pp.port,
-				Action:      ActionAllow,
-				IsEgress:    true,
-				Namespace:   namespace,
-			})
-		}
-	}
+	rules = append(rules, buildIdentityRules(dstIdentities, srcIdentity, ports, true, namespace)...)
 
 	// Create CIDR-based rules for IPBlock peers (including Except deny rules).
-	for _, entry := range dstCIDRs {
-		for _, pp := range ports {
-			rules = append(rules, &CompiledRule{
-				SrcIdentity: srcIdentity,
-				DstIdentity: WildcardIdentity,
-				Protocol:    pp.protocol,
-				DstPort:     pp.port,
-				Action:      entry.action,
-				CIDR:        entry.cidr,
-				IsEgress:    true,
-				Namespace:   namespace,
-			})
-		}
-	}
+	rules = append(rules, buildCIDRRules(dstCIDRs, srcIdentity, ports, true, namespace)...)
 
 	return rules
 }
@@ -289,8 +241,8 @@ type portProto struct {
 // Supports both MatchLabels and MatchExpressions for pod and namespace selectors.
 // It matches against actually allocated identities when possible, falling
 // back to hashing the selector labels when no matching identities exist yet.
-func (c *Compiler) resolvePeers(peers []networkingv1.NetworkPolicyPeer, namespace string) []uint32 {
-	var identities []uint32
+func (c *Compiler) resolvePeers(peers []networkingv1.NetworkPolicyPeer, namespace string) []uint64 {
+	var identities []uint64
 
 	for _, peer := range peers {
 		if peer.IPBlock != nil {

@@ -118,6 +118,28 @@ type BackendHealthInfo struct {
 	FailureRate  float64
 }
 
+// Backend represents an L4 LB backend entry.
+type Backend struct {
+	Index  uint32
+	IP     string
+	Port   uint32
+	NodeIP string
+}
+
+// ServiceConfig represents an L4 LB service entry.
+type ServiceConfig struct {
+	IP              string
+	Port            uint32
+	Protocol        uint32
+	Scope           uint32
+	BackendCount    uint32
+	BackendOffset   uint32
+	Algorithm       uint32
+	Flags           uint32
+	AffinityTimeout uint32
+	MaglevOffset    uint32
+}
+
 // ClientInterface defines the interface for the dataplane client.
 // Used for testing with mock implementations.
 type ClientInterface interface {
@@ -151,6 +173,10 @@ type ClientInterface interface {
 
 	// Health monitoring
 	GetBackendHealthStats(ctx context.Context, ip string, port uint32) ([]*BackendHealthInfo, error)
+
+	// L4 LB service management
+	UpsertBackends(ctx context.Context, backends []*Backend) error
+	UpsertServiceEntry(ctx context.Context, svc *ServiceConfig) error
 
 	Close() error
 }
@@ -736,6 +762,63 @@ func (c *Client) GetBackendHealthStats(ctx context.Context, ip string, port uint
 		}
 	}
 	return backends, nil
+}
+
+// UpsertBackends registers or updates L4 LB backends in the dataplane.
+func (c *Client) UpsertBackends(ctx context.Context, backends []*Backend) error {
+	c.mu.RLock()
+	client := c.client
+	c.mu.RUnlock()
+
+	if client == nil {
+		return ErrNotConnected
+	}
+
+	entries := make([]*pb.BackendEntry, len(backends))
+	for i, b := range backends {
+		entries[i] = &pb.BackendEntry{
+			Index:  b.Index,
+			Ip:     b.IP,
+			Port:   b.Port,
+			NodeIp: b.NodeIP,
+		}
+	}
+
+	_, err := client.UpsertBackends(ctx, &pb.UpsertBackendsRequest{
+		Backends: entries,
+	})
+	if err != nil {
+		return fmt.Errorf("upserting backends: %w", err)
+	}
+	return nil
+}
+
+// UpsertServiceEntry registers or updates an L4 LB service in the dataplane.
+func (c *Client) UpsertServiceEntry(ctx context.Context, svc *ServiceConfig) error {
+	c.mu.RLock()
+	client := c.client
+	c.mu.RUnlock()
+
+	if client == nil {
+		return ErrNotConnected
+	}
+
+	_, err := client.UpsertService(ctx, &pb.UpsertServiceRequest{
+		Ip:              svc.IP,
+		Port:            svc.Port,
+		Protocol:        svc.Protocol,
+		Scope:           svc.Scope,
+		BackendCount:    svc.BackendCount,
+		BackendOffset:   svc.BackendOffset,
+		Algorithm:       svc.Algorithm,
+		Flags:           svc.Flags,
+		AffinityTimeout: svc.AffinityTimeout,
+		MaglevOffset:    svc.MaglevOffset,
+	})
+	if err != nil {
+		return fmt.Errorf("upserting service: %w", err)
+	}
+	return nil
 }
 
 // Close closes the gRPC connection to the dataplane.

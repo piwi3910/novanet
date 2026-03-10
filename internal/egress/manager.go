@@ -22,7 +22,7 @@ type Rule struct {
 	// Name is a unique identifier for this rule within a namespace.
 	Name string
 	// SrcIdentity is the identity ID of the source pods.
-	SrcIdentity uint32
+	SrcIdentity uint64
 	// DstCIDR is the destination CIDR to match.
 	DstCIDR string
 	// Protocol is the IP protocol number (6=TCP, 17=UDP, 0=any).
@@ -40,7 +40,7 @@ type CompiledEgressRule struct {
 	// Name is the rule name within the namespace.
 	Name string
 	// SrcIdentity is the identity ID of the source pods.
-	SrcIdentity uint32
+	SrcIdentity uint64
 	// DstCIDR is the parsed destination CIDR.
 	DstCIDR net.IPNet
 	// Protocol is the IP protocol number (0=any).
@@ -119,7 +119,7 @@ func (m *Manager) AddEgressRule(namespace string, rule Rule) error {
 	m.logger.Debug("added egress rule",
 		zap.String("namespace", namespace),
 		zap.String("name", rule.Name),
-		zap.Uint32("src_identity", rule.SrcIdentity),
+		zap.Uint64("src_identity", rule.SrcIdentity),
 		zap.String("dst_cidr", rule.DstCIDR),
 		zap.Uint8("action", rule.Action),
 	)

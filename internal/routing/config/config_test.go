@@ -370,7 +370,9 @@ func TestExpandEnvVars_ReplacesTokens(t *testing.T) {
 		AllowedPrefixes: PrefixPolicy{Type: "any"},
 	}
 
-	ExpandEnvVars(cfg)
+	if err := ExpandEnvVars(cfg); err != nil {
+		t.Fatalf("ExpandEnvVars: %v", err)
+	}
 
 	owner := cfg.Owners["novaedge"]
 	if owner.Token != "expanded-secret" {
@@ -389,7 +391,9 @@ func TestExpandEnvVars_UnsetVarBecomesEmpty(t *testing.T) {
 		AllowedPrefixes: PrefixPolicy{Type: "any"},
 	}
 
-	ExpandEnvVars(cfg)
+	if err := ExpandEnvVars(cfg); err != nil {
+		t.Fatalf("ExpandEnvVars: %v", err)
+	}
 
 	owner := cfg.Owners["novaedge"]
 	if owner.Token != "" {
@@ -404,7 +408,9 @@ func TestExpandEnvVars_LiteralTokenUnchanged(t *testing.T) {
 		AllowedPrefixes: PrefixPolicy{Type: "any"},
 	}
 
-	ExpandEnvVars(cfg)
+	if err := ExpandEnvVars(cfg); err != nil {
+		t.Fatalf("ExpandEnvVars: %v", err)
+	}
 
 	owner := cfg.Owners["novaedge"]
 	if owner.Token != "literal-token-no-vars" {
@@ -428,7 +434,9 @@ func TestExpandEnvVars_MultipleOwners(t *testing.T) {
 		},
 	}
 
-	ExpandEnvVars(cfg)
+	if err := ExpandEnvVars(cfg); err != nil {
+		t.Fatalf("ExpandEnvVars: %v", err)
+	}
 
 	if cfg.Owners["a"].Token != "alpha" {
 		t.Errorf("owner 'a' token = %q, want %q", cfg.Owners["a"].Token, "alpha")
@@ -447,7 +455,9 @@ func TestExpandEnvVars_MixedLiteralAndVar(t *testing.T) {
 		AllowedPrefixes: PrefixPolicy{Type: "any"},
 	}
 
-	ExpandEnvVars(cfg)
+	if err := ExpandEnvVars(cfg); err != nil {
+		t.Fatalf("ExpandEnvVars: %v", err)
+	}
 
 	owner := cfg.Owners["novaedge"]
 	if owner.Token != "hello-world-suffix" {
@@ -461,7 +471,9 @@ func TestExpandEnvVars_AsBase(t *testing.T) {
 	cfg := validConfig()
 	cfg.BGP.AsBase = 65000
 
-	ExpandEnvVars(cfg)
+	if err := ExpandEnvVars(cfg); err != nil {
+		t.Fatalf("ExpandEnvVars: %v", err)
+	}
 
 	if cfg.BGP.LocalAS != 65011 {
 		t.Errorf("LocalAS = %d, want 65011", cfg.BGP.LocalAS)
@@ -475,7 +487,9 @@ func TestExpandEnvVars_AsBaseOverridesLocalAS(t *testing.T) {
 	cfg.BGP.LocalAS = 99999
 	cfg.BGP.AsBase = 65000
 
-	ExpandEnvVars(cfg)
+	if err := ExpandEnvVars(cfg); err != nil {
+		t.Fatalf("ExpandEnvVars: %v", err)
+	}
 
 	if cfg.BGP.LocalAS != 65025 {
 		t.Errorf("LocalAS = %d, want 65025 (as_base should override local_as)", cfg.BGP.LocalAS)
@@ -489,11 +503,9 @@ func TestExpandEnvVars_AsBaseNoNodeIP(t *testing.T) {
 	cfg.BGP.LocalAS = 12345
 	cfg.BGP.AsBase = 65000
 
-	ExpandEnvVars(cfg)
-
-	// Without NODE_IP, as_base can't compute, LocalAS stays as-is
-	if cfg.BGP.LocalAS != 12345 {
-		t.Errorf("LocalAS = %d, want 12345 (should keep original when NODE_IP is empty)", cfg.BGP.LocalAS)
+	err := ExpandEnvVars(cfg)
+	if err == nil {
+		t.Fatal("expected error when as_base is set but NODE_IP is empty")
 	}
 }
 
@@ -504,7 +516,9 @@ func TestExpandEnvVars_AutoRouterID(t *testing.T) {
 	cfg.BGP.AutoRouterID = true
 	cfg.BGP.RouterID = "" // clear so auto takes effect
 
-	ExpandEnvVars(cfg)
+	if err := ExpandEnvVars(cfg); err != nil {
+		t.Fatalf("ExpandEnvVars: %v", err)
+	}
 
 	if cfg.BGP.RouterID != "192.168.100.13" {
 		t.Errorf("RouterID = %q, want %q", cfg.BGP.RouterID, "192.168.100.13")
@@ -518,7 +532,9 @@ func TestExpandEnvVars_AutoRouterIDDoesNotOverrideExplicit(t *testing.T) {
 	cfg.BGP.AutoRouterID = true
 	cfg.BGP.RouterID = testRouterID
 
-	ExpandEnvVars(cfg)
+	if err := ExpandEnvVars(cfg); err != nil {
+		t.Fatalf("ExpandEnvVars: %v", err)
+	}
 
 	if cfg.BGP.RouterID != testRouterID {
 		t.Errorf("RouterID = %q, want %q (explicit should not be overridden)", cfg.BGP.RouterID, testRouterID)
@@ -532,7 +548,9 @@ func TestExpandEnvVars_EnvOverridesTakePrecedenceOverAsBase(t *testing.T) {
 	cfg := validConfig()
 	cfg.BGP.AsBase = 65000
 
-	ExpandEnvVars(cfg)
+	if err := ExpandEnvVars(cfg); err != nil {
+		t.Fatalf("ExpandEnvVars: %v", err)
+	}
 
 	if cfg.BGP.LocalAS != 99999 {
 		t.Errorf("LocalAS = %d, want 99999 (env override takes precedence)", cfg.BGP.LocalAS)

@@ -108,7 +108,7 @@ func upsertRemoteEndpoint(ctx context.Context, logger *zap.Logger,
 		Ip:         podIP.String(),
 		Ifindex:    0,
 		Mac:        []byte{0, 0, 0, 0, 0, 0},
-		IdentityId: identityID,
+		IdentityId: uint32(identityID), //nolint:gosec // truncated to uint32 for proto wire format
 		PodName:    pod.Name,
 		Namespace:  pod.Namespace,
 		NodeIp:     hostIP.String(),
@@ -128,7 +128,7 @@ func upsertRemoteEndpoint(ctx context.Context, logger *zap.Logger,
 	logger.Debug("synced remote endpoint",
 		zap.String("pod", pod.Namespace+"/"+pod.Name),
 		zap.String("pod_ip", pod.Status.PodIP),
-		zap.Uint32("identity_id", identityID),
+		zap.Uint64("identity_id", identityID),
 	)
 	return true
 }

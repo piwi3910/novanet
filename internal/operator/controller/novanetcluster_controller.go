@@ -101,35 +101,51 @@ func (r *NovaNetClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		}
 	}
 
-	// Reconcile all components
+	// Reconcile all components and update status.
+	if result, err := r.reconcileComponents(ctx, cluster); err != nil || result.RequeueAfter > 0 {
+		return result, err
+	}
+
+	logger.Info("NovaNetCluster reconciled successfully")
+
+	// Only requeue periodically when the DaemonSet rollout is still in progress.
+	// Once all pods are up-to-date and ready, rely on watch-based reconciliation.
+	if cluster.Status.Agent != nil &&
+		(cluster.Status.Agent.UpdatedNodes < cluster.Status.Agent.DesiredNodes ||
+			cluster.Status.Agent.ReadyNodes < cluster.Status.Agent.DesiredNodes) {
+		logger.Info("DaemonSet rollout in progress, requeuing",
+			"desired", cluster.Status.Agent.DesiredNodes,
+			"updated", cluster.Status.Agent.UpdatedNodes,
+			"ready", cluster.Status.Agent.ReadyNodes)
+		return ctrl.Result{RequeueAfter: 15 * time.Second}, nil
+	}
+
+	return ctrl.Result{}, nil
+}
+
+// reconcileComponents reconciles all sub-resources (RBAC, ConfigMap, DaemonSet,
+// Service, PDB) and updates the cluster status. It returns a requeue result if
+// there were reconciliation errors.
+func (r *NovaNetClusterReconciler) reconcileComponents(ctx context.Context, cluster *novanetv1alpha1.NovaNetCluster) (ctrl.Result, error) {
+	logger := log.FromContext(ctx)
 	var reconcileErrors []error
 
-	// 1. RBAC
 	if err := r.reconcileRBAC(ctx, cluster); err != nil {
 		reconcileErrors = append(reconcileErrors, fmt.Errorf("RBAC: %w", err))
 	}
-
-	// 2. ConfigMap
 	if err := r.reconcileConfigMap(ctx, cluster); err != nil {
 		reconcileErrors = append(reconcileErrors, fmt.Errorf("ConfigMap: %w", err))
 	}
-
-	// 3. DaemonSet
 	if err := r.reconcileDaemonSet(ctx, cluster); err != nil {
 		reconcileErrors = append(reconcileErrors, fmt.Errorf("DaemonSet: %w", err))
 	}
-
-	// 4. Metrics Service
 	if err := r.reconcileMetricsService(ctx, cluster); err != nil {
 		reconcileErrors = append(reconcileErrors, fmt.Errorf("MetricsService: %w", err))
 	}
-
-	// 5. PodDisruptionBudget
 	if err := r.reconcilePDB(ctx, cluster); err != nil {
 		reconcileErrors = append(reconcileErrors, fmt.Errorf("PDB: %w", err))
 	}
 
-	// Update status
 	if err := r.updateStatus(ctx, cluster); err != nil {
 		return ctrl.Result{}, fmt.Errorf("updating status: %w", err)
 	}
@@ -139,8 +155,7 @@ func (r *NovaNetClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 	}
 
-	logger.Info("NovaNetCluster reconciled successfully")
-	return ctrl.Result{RequeueAfter: 60 * time.Second}, nil
+	return ctrl.Result{}, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -276,27 +291,28 @@ func (r *NovaNetClusterReconciler) reconcileClusterRoleBinding(ctx context.Conte
 // ---------------------------------------------------------------------------
 
 // novanetConfig mirrors the JSON config the agent reads at /etc/novanet/novanet.json.
+// This must stay in sync with internal/config.Config.
 type novanetConfig struct {
-	ListenSocket    string              `json:"listen_socket"`
-	CNISocket       string              `json:"cni_socket"`
-	DataplaneSocket string              `json:"dataplane_socket"`
-	ClusterCIDR     string              `json:"cluster_cidr"`
-	NodeCIDRMask    int                 `json:"node_cidr_mask_size"`
-	TunnelProtocol  string              `json:"tunnel_protocol"`
-	RoutingMode     string              `json:"routing_mode"`
-	NovaRoute       novanetNovaRouteCfg `json:"novaroute"`
-	Egress          novanetEgressCfg    `json:"egress"`
-	Policy          novanetPolicyCfg    `json:"policy"`
-	LogLevel        string              `json:"log_level"`
-	MetricsAddress  string              `json:"metrics_address"`
+	ListenSocket    string            `json:"listen_socket"`
+	CNISocket       string            `json:"cni_socket"`
+	DataplaneSocket string            `json:"dataplane_socket"`
+	ClusterCIDR     string            `json:"cluster_cidr"`
+	NodeCIDRMask    int               `json:"node_cidr_mask_size"`
+	TunnelProtocol  string            `json:"tunnel_protocol"`
+	RoutingMode     string            `json:"routing_mode"`
+	Routing         novanetRoutingCfg `json:"routing"`
+	Egress          novanetEgressCfg  `json:"egress"`
+	Policy          novanetPolicyCfg  `json:"policy"`
+	LogLevel        string            `json:"log_level"`
+	MetricsAddress  string            `json:"metrics_address"`
 }
 
-type novanetNovaRouteCfg struct {
-	Socket                        string `json:"socket"`
-	Token                         string `json:"token"`
+type novanetRoutingCfg struct {
 	Protocol                      string `json:"protocol"`
+	FRRSocketDir                  string `json:"frr_socket_dir,omitempty"`
 	ControlPlaneVIP               string `json:"control_plane_vip,omitempty"`
 	ControlPlaneVIPHealthInterval int    `json:"control_plane_vip_health_interval,omitempty"`
+	BFDEnabled                    bool   `json:"bfd_enabled,omitempty"`
 }
 
 type novanetEgressCfg struct {
@@ -327,15 +343,11 @@ func (r *NovaNetClusterReconciler) reconcileConfigMap(ctx context.Context, clust
 		MetricsAddress:  fmt.Sprintf("127.0.0.1:%d", metricsPort),
 	}
 
+	// Populate integrated routing config (FRR sidecar).
 	if cluster.Spec.NovaRouteIntegration != nil && cluster.Spec.NovaRouteIntegration.Enabled {
-		socketPath := "/run/novaroute/novaroute.sock"
-		if cluster.Spec.NovaRouteIntegration.SocketPath != "" {
-			socketPath = cluster.Spec.NovaRouteIntegration.SocketPath
-		}
-		cfg.NovaRoute = novanetNovaRouteCfg{
-			Socket:          socketPath,
-			Token:           cluster.Spec.NovaRouteIntegration.OwnerToken,
+		cfg.Routing = novanetRoutingCfg{
 			Protocol:        "bgp",
+			FRRSocketDir:    "/run/frr",
 			ControlPlaneVIP: cluster.Spec.Networking.ControlPlaneVIP,
 		}
 	}
@@ -498,10 +510,11 @@ echo "CNI binary installed."`,
 	}
 
 	// Add NovaRoute volume mount to agent if enabled
+	// Add FRR socket directory mount when routing integration is enabled.
 	if cluster.Spec.NovaRouteIntegration != nil && cluster.Spec.NovaRouteIntegration.Enabled {
 		agentContainer.VolumeMounts = append(agentContainer.VolumeMounts, corev1.VolumeMount{
-			Name:      "run-novaroute",
-			MountPath: "/run/novaroute",
+			Name:      "run-frr",
+			MountPath: "/run/frr",
 			ReadOnly:  true,
 		})
 	}
@@ -595,11 +608,11 @@ echo "CNI binary installed."`,
 		},
 	}
 
-	// Add NovaRoute volume if enabled
+	// Add FRR socket directory volume when routing integration is enabled.
 	if cluster.Spec.NovaRouteIntegration != nil && cluster.Spec.NovaRouteIntegration.Enabled {
 		volumes = append(volumes, corev1.Volume{
-			Name:         "run-novaroute",
-			VolumeSource: corev1.VolumeSource{HostPath: &corev1.HostPathVolumeSource{Path: "/run/novaroute", Type: &hostPathDirectoryOrCreate}},
+			Name:         "run-frr",
+			VolumeSource: corev1.VolumeSource{HostPath: &corev1.HostPathVolumeSource{Path: "/run/frr", Type: &hostPathDirectoryOrCreate}},
 		})
 	}
 

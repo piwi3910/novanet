@@ -25,6 +25,9 @@ var (
 	ErrEmptyRoutingProto    = errors.New("routing.protocol must not be empty when routing_mode is native")
 	ErrInvalidRoutingProto  = errors.New("routing.protocol must be bgp or ospf")
 	ErrInvalidLogLevel      = errors.New("log_level must be debug, info, warn, or error")
+	ErrEmptyClusterCIDRv6   = errors.New("ipv6.cluster_cidr_v6 must not be empty when ipv6 is enabled")
+	ErrInvalidClusterCIDRv6 = errors.New("ipv6.cluster_cidr_v6 is not a valid IPv6 CIDR")
+	ErrInvalidNodeCIDRv6    = errors.New("ipv6.node_cidr_v6_mask_size must be between 48 and 120")
 )
 
 // Config holds the complete NovaNet agent configuration.
@@ -361,14 +364,47 @@ func Validate(cfg *Config) error {
 		return fmt.Errorf("%w: got %q", ErrInvalidLogLevel, cfg.LogLevel)
 	}
 
+	// IPv6 validation: when enabled, ClusterCIDRv6 must be set and valid,
+	// and NodeCIDRv6MaskSize must be in a reasonable range.
+	if cfg.IPv6.Enabled {
+		if cfg.IPv6.ClusterCIDRv6 == "" {
+			return ErrEmptyClusterCIDRv6
+		}
+		ip, _, err := net.ParseCIDR(cfg.IPv6.ClusterCIDRv6)
+		if err != nil {
+			return fmt.Errorf("%w: %q: %v", ErrInvalidClusterCIDRv6, cfg.IPv6.ClusterCIDRv6, err)
+		}
+		if ip.To4() != nil {
+			return fmt.Errorf("%w: %q is an IPv4 CIDR", ErrInvalidClusterCIDRv6, cfg.IPv6.ClusterCIDRv6)
+		}
+		if cfg.IPv6.NodeCIDRv6MaskSize < 48 || cfg.IPv6.NodeCIDRv6MaskSize > 120 {
+			return fmt.Errorf("%w: got %d", ErrInvalidNodeCIDRv6, cfg.IPv6.NodeCIDRv6MaskSize)
+		}
+	}
+
 	return nil
 }
 
-// envTrue is the string representation of boolean true used for environment variable comparisons.
-const envTrue = "true"
+// parseBoolEnv parses an environment variable as a boolean.
+// "true" and "1" enable the feature; "false" and "0" disable it.
+// An empty or unset variable returns the current value unchanged.
+func parseBoolEnv(envVar string, current bool) bool {
+	v := os.Getenv(envVar)
+	switch strings.ToLower(v) {
+	case "true", "1":
+		return true
+	case "false", "0":
+		return false
+	default:
+		return current
+	}
+}
 
 // ExpandEnvVars replaces ${VAR} placeholders in configuration strings with
 // the corresponding environment variable values.
+//
+// Boolean environment variables support "true"/"1" to enable and
+// "false"/"0" to disable features.
 //
 // The following environment variables override config values:
 //   - NOVANET_CLUSTER_CIDR → cluster_cidr
@@ -386,30 +422,18 @@ func ExpandEnvVars(cfg *Config) {
 	if v := os.Getenv("NOVANET_TUNNEL_PROTOCOL"); v != "" {
 		cfg.TunnelProtocol = v
 	}
-	if v := os.Getenv("NOVANET_L4LB_ENABLED"); v == envTrue || v == "1" {
-		cfg.L4LB.Enabled = true
-	}
+	cfg.L4LB.Enabled = parseBoolEnv("NOVANET_L4LB_ENABLED", cfg.L4LB.Enabled)
 	if v := os.Getenv("NOVANET_ENCRYPTION_TYPE"); v != "" {
 		cfg.Encryption.Type = v
 	}
-	if v := os.Getenv("NOVANET_HOST_FIREWALL_ENABLED"); v == envTrue || v == "1" {
-		cfg.HostFirewall.Enabled = true
-	}
-	if v := os.Getenv("NOVANET_BANDWIDTH_ENABLED"); v == envTrue || v == "1" {
-		cfg.Bandwidth.Enabled = true
-	}
-	if v := os.Getenv("NOVANET_LBIPAM_ENABLED"); v == envTrue || v == "1" {
-		cfg.LBIPAM.Enabled = true
-	}
-	if v := os.Getenv("NOVANET_IPV6_ENABLED"); v == envTrue || v == "1" {
-		cfg.IPv6.Enabled = true
-	}
+	cfg.HostFirewall.Enabled = parseBoolEnv("NOVANET_HOST_FIREWALL_ENABLED", cfg.HostFirewall.Enabled)
+	cfg.Bandwidth.Enabled = parseBoolEnv("NOVANET_BANDWIDTH_ENABLED", cfg.Bandwidth.Enabled)
+	cfg.LBIPAM.Enabled = parseBoolEnv("NOVANET_LBIPAM_ENABLED", cfg.LBIPAM.Enabled)
+	cfg.IPv6.Enabled = parseBoolEnv("NOVANET_IPV6_ENABLED", cfg.IPv6.Enabled)
 	if v := os.Getenv("NOVANET_CLUSTER_CIDR_V6"); v != "" {
 		cfg.IPv6.ClusterCIDRv6 = v
 	}
-	if v := os.Getenv("NOVANET_DSR_ENABLED"); v == envTrue || v == "1" {
-		cfg.DSR = true
-	}
+	cfg.DSR = parseBoolEnv("NOVANET_DSR_ENABLED", cfg.DSR)
 	if v := os.Getenv("NOVANET_XDP_ACCELERATION"); v != "" {
 		cfg.XDPAcceleration = v
 	}

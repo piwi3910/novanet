@@ -29,36 +29,36 @@ const (
 	DataplaneRetryInterval = 5 * time.Second
 
 	// ConfigKeyMode identifies the routing mode (overlay vs native).
-	ConfigKeyMode uint32 = 0
+	ConfigKeyMode = uint32(pb.ConfigKey_CONFIG_KEY_MODE)
 	// ConfigKeyTunnelType selects tunnel protocol.
-	ConfigKeyTunnelType uint32 = 1
+	ConfigKeyTunnelType = uint32(pb.ConfigKey_CONFIG_KEY_TUNNEL_TYPE)
 	// ConfigKeyNodeIP stores the node's IP address.
-	ConfigKeyNodeIP uint32 = 2
+	ConfigKeyNodeIP = uint32(pb.ConfigKey_CONFIG_KEY_NODE_IP)
 	// ConfigKeyClusterCIDRIP stores the cluster CIDR IP.
-	ConfigKeyClusterCIDRIP uint32 = 3
+	ConfigKeyClusterCIDRIP = uint32(pb.ConfigKey_CONFIG_KEY_CLUSTER_CIDR_IP)
 	// ConfigKeyClusterCIDRPL stores the cluster CIDR prefix length.
-	ConfigKeyClusterCIDRPL uint32 = 4
+	ConfigKeyClusterCIDRPL = uint32(pb.ConfigKey_CONFIG_KEY_CLUSTER_CIDR_PL)
 	// ConfigKeyDefaultDeny enables default-deny policy.
-	ConfigKeyDefaultDeny uint32 = 5
+	ConfigKeyDefaultDeny = uint32(pb.ConfigKey_CONFIG_KEY_DEFAULT_DENY)
 	// ConfigKeyMasqueradeEnable enables masquerade.
-	ConfigKeyMasqueradeEnable uint32 = 6
+	ConfigKeyMasqueradeEnable = uint32(pb.ConfigKey_CONFIG_KEY_MASQUERADE_ENABLE)
 	// ConfigKeySNATIP is reserved for eBPF-level SNAT (currently using iptables fallback).
-	ConfigKeySNATIP uint32 = 7
+	ConfigKeySNATIP = uint32(pb.ConfigKey_CONFIG_KEY_SNAT_IP) //nolint:unused // Reserved for eBPF-level SNAT (currently using iptables fallback).
 	// ConfigKeyPodCIDRIP stores the pod CIDR IP.
-	ConfigKeyPodCIDRIP uint32 = 8
+	ConfigKeyPodCIDRIP = uint32(pb.ConfigKey_CONFIG_KEY_POD_CIDR_IP)
 	// ConfigKeyPodCIDRPL stores the pod CIDR prefix length.
-	ConfigKeyPodCIDRPL uint32 = 9
+	ConfigKeyPodCIDRPL = uint32(pb.ConfigKey_CONFIG_KEY_POD_CIDR_PL)
 	// ConfigKeyL4LBEnabled enables L4 load balancing.
-	ConfigKeyL4LBEnabled uint32 = 10
+	ConfigKeyL4LBEnabled = uint32(pb.ConfigKey_CONFIG_KEY_L4LB_ENABLED)
 
 	// ModeOverlay selects overlay routing mode.
-	ModeOverlay uint64 = 0
+	ModeOverlay = uint64(pb.ConfigMode_CONFIG_MODE_OVERLAY)
 	// ModeNative selects native routing mode.
-	ModeNative uint64 = 1
+	ModeNative = uint64(pb.ConfigMode_CONFIG_MODE_NATIVE)
 	// TunnelGEV selects Geneve tunnel encapsulation.
-	TunnelGEV uint64 = 0
+	TunnelGEV = uint64(pb.ConfigTunnelType_CONFIG_TUNNEL_GENEVE)
 	// TunnelVXL selects VXLAN tunnel encapsulation.
-	TunnelVXL uint64 = 1
+	TunnelVXL = uint64(pb.ConfigTunnelType_CONFIG_TUNNEL_VXLAN)
 )
 
 // Endpoint tracks a pod's network state.
@@ -69,7 +69,7 @@ type Endpoint struct {
 	IP           net.IP
 	MAC          net.HardwareAddr
 	IfIndex      uint32
-	IdentityID   uint32
+	IdentityID   uint64
 	Netns        string
 	IfName       string
 	HostVeth     string
@@ -77,7 +77,7 @@ type Endpoint struct {
 
 // EgressMapKey identifies an entry in the eBPF EGRESS_POLICIES map.
 type EgressMapKey struct {
-	SrcIdentity  uint32
+	SrcIdentity  uint64
 	DstCidr      string // CIDR string, e.g. "10.0.0.0/24" or "fd00::/64"
 	DstPrefixLen uint32
 }

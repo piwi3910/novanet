@@ -160,6 +160,7 @@ func CreateIPAM(logger *zap.Logger, podCIDR string) *ipam.Allocator {
 	if err != nil {
 		logger.Fatal("failed to create IPAM allocator", zap.Error(err))
 	}
+	ipAlloc.SetLogger(logger)
 	logger.Info("IPAM allocator created", zap.String("pod_cidr", podCIDR), zap.Int("available", ipAlloc.Available()))
 	return ipAlloc
 }
@@ -563,7 +564,7 @@ func InitRoutingMode(ctx context.Context, logger *zap.Logger, cfg *config.Config
 	case "overlay":
 		InitOverlayMode(ctx, logger, cfg, k8sClient, agentSrv, dpClient, nodeIP, nodeName, bgWg)
 	case "native":
-		return InitNativeMode(ctx, logger, cfg, k8sClient, agentSrv, dpClient, nodeIP, podCIDR, nodeName, bgWg)
+		return InitNativeMode(ctx, logger, cfg, k8sClient, agentSrv, nodeIP, podCIDR, nodeName, bgWg)
 	}
 	return nil
 }
@@ -590,7 +591,7 @@ func InitOverlayMode(ctx context.Context, logger *zap.Logger, cfg *config.Config
 
 // InitNativeMode sets up native routing mode with eBGP via FRR.
 func InitNativeMode(ctx context.Context, logger *zap.Logger, cfg *config.Config,
-	k8sClient *kubernetes.Clientset, agentSrv *Server, dpClient pb.DataplaneControlClient,
+	k8sClient *kubernetes.Clientset, agentSrv *Server,
 	nodeIP net.IP, podCIDR, nodeName string, bgWg *sync.WaitGroup) *routing.Manager {
 	logger.Info("running in native routing mode (eBGP)")
 	if k8sClient == nil {
@@ -628,10 +629,28 @@ func InitNativeMode(ctx context.Context, logger *zap.Logger, cfg *config.Config,
 		if cfg.Routing.ControlPlaneVIPHealthInterval > 0 {
 			healthInterval = time.Duration(cfg.Routing.ControlPlaneVIPHealthInterval) * time.Second
 		}
+
+		// Create a dedicated dataplane client for the cp-vip manager
+		// using the dataplane.ClientInterface abstraction.
+		cpvipDPClient, cpvipDPErr := dataplane.NewClient(cfg.DataplaneSocket, logger.Named("cpvip-dp"))
+		if cpvipDPErr != nil {
+			logger.Error("failed to create cpvip dataplane client", zap.Error(cpvipDPErr))
+		}
+		var cpvipDP dataplane.ClientInterface
+		if cpvipDPErr == nil {
+			connCtx, connCancel := context.WithTimeout(ctx, 5*time.Second)
+			if connErr := cpvipDPClient.Connect(connCtx); connErr != nil {
+				logger.Error("failed to connect cpvip dataplane client", zap.Error(connErr))
+			} else {
+				cpvipDP = cpvipDPClient
+			}
+			connCancel()
+		}
+
 		cpvipMgr := cpvip.NewManager(cpvip.Config{
 			VIP: vip, HealthInterval: healthInterval, NodeName: nodeName,
 			IsControlPlane: IsControlPlaneNode(ctx, k8sClient, nodeName, logger),
-		}, dpClient, routingMgr, k8sClient, logger)
+		}, cpvipDP, routingMgr, k8sClient, logger)
 		bgWg.Add(1)
 		go func() {
 			defer bgWg.Done()

@@ -9,6 +9,8 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+
+	"go.uber.org/zap"
 )
 
 // Sentinel errors for the IPAM allocator.
@@ -53,6 +55,8 @@ type Allocator struct {
 	// stateDir is the directory for persisting IP allocations.
 	// Empty string means in-memory only.
 	stateDir string
+	// logger is the structured logger for this allocator.
+	logger *zap.Logger
 }
 
 // NewAllocator creates a new IPAM allocator for the given PodCIDR.
@@ -108,6 +112,7 @@ func NewAllocatorWithStateDir(podCIDR, stateDir string) (*Allocator, error) {
 		ipLen:     ipLen,
 		isIPv4:    isIPv4,
 		stateDir:  stateDir,
+		logger:    zap.NewNop(),
 	}
 
 	if isIPv4 {
@@ -313,14 +318,22 @@ func (a *Allocator) saveIP(ip net.IP) error {
 	return os.WriteFile(path, nil, 0o600)
 }
 
+// SetLogger sets the structured logger for this allocator.
+func (a *Allocator) SetLogger(logger *zap.Logger) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.logger = logger
+}
+
 // removeIP deletes the file for the given IP from the state directory.
 // Errors are logged but not returned since the bitmap is already updated.
 func (a *Allocator) removeIP(ip net.IP) {
 	path := filepath.Join(a.stateDir, ip.String())
 	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
-		// Log to stderr since we don't have a structured logger here.
-		// This is best-effort cleanup; the bitmap is already updated.
-		_, _ = fmt.Fprintf(os.Stderr, "ipam: failed to remove state file %s: %v\n", path, err)
+		a.logger.Warn("failed to remove IPAM state file",
+			zap.String("path", path),
+			zap.Error(err),
+		)
 	}
 }
 

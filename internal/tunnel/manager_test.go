@@ -94,6 +94,11 @@ func (m *mockDPClient) GetBackendHealthStats(_ context.Context, _ string, _ uint
 	return nil, nil
 }
 
+func (m *mockDPClient) UpsertBackends(_ context.Context, _ []*dataplane.Backend) error { return nil }
+func (m *mockDPClient) UpsertServiceEntry(_ context.Context, _ *dataplane.ServiceConfig) error {
+	return nil
+}
+
 func (m *mockDPClient) UpsertTunnel(ctx context.Context, nodeIP string, ifindex, vni uint32) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()

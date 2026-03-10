@@ -104,6 +104,11 @@ func (m *mockDataplane) GetBackendHealthStats(_ context.Context, _ string, _ uin
 	return m.healthStats, m.healthStatsErr
 }
 
+func (m *mockDataplane) UpsertBackends(_ context.Context, _ []*dataplane.Backend) error { return nil }
+func (m *mockDataplane) UpsertServiceEntry(_ context.Context, _ *dataplane.ServiceConfig) error {
+	return nil
+}
+
 // Verify the mock satisfies the interface at compile time.
 var _ dataplane.ClientInterface = (*mockDataplane)(nil)
 

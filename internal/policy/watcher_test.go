@@ -4,8 +4,6 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 	networkingv1 "k8s.io/api/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -21,9 +19,15 @@ func TestNewWatcher(t *testing.T) {
 
 	watcher := NewWatcher(nil, compiler, logger)
 
-	require.NotNil(t, watcher)
-	assert.Equal(t, compiler, watcher.compiler)
-	assert.Equal(t, logger, watcher.logger)
+	if watcher == nil {
+		t.Fatal("NewWatcher returned nil")
+	}
+	if watcher.compiler != compiler {
+		t.Error("watcher.compiler does not match")
+	}
+	if watcher.logger != logger {
+		t.Error("watcher.logger does not match")
+	}
 }
 
 func TestWatcher_OnChange(t *testing.T) {
@@ -37,7 +41,9 @@ func TestWatcher_OnChange(t *testing.T) {
 	watcher.mu.RLock()
 	cb := watcher.onChange
 	watcher.mu.RUnlock()
-	assert.Nil(t, cb)
+	if cb != nil {
+		t.Error("onChange should be nil initially")
+	}
 
 	// Set callback
 	called := false
@@ -49,11 +55,15 @@ func TestWatcher_OnChange(t *testing.T) {
 	watcher.mu.RLock()
 	cb = watcher.onChange
 	watcher.mu.RUnlock()
-	assert.NotNil(t, cb)
+	if cb == nil {
+		t.Fatal("onChange should not be nil after OnChange")
+	}
 
 	// Call the callback
 	cb([]*CompiledRule{})
-	assert.True(t, called)
+	if !called {
+		t.Error("callback was not called")
+	}
 }
 
 func TestWatcher_OnChange_Multiple(t *testing.T) {
@@ -78,8 +88,12 @@ func TestWatcher_OnChange_Multiple(t *testing.T) {
 	watcher.recompileAll()
 
 	// Only second callback should be called
-	assert.Equal(t, 0, callCount)
-	assert.Equal(t, 0, callCount2) // No store, so no callback
+	if callCount != 0 {
+		t.Errorf("first callback callCount = %d, want 0", callCount)
+	}
+	if callCount2 != 0 {
+		t.Errorf("second callback callCount = %d, want 0 (no store)", callCount2)
+	}
 }
 
 func TestWatcher_Recompile(t *testing.T) {
@@ -90,9 +104,12 @@ func TestWatcher_Recompile(t *testing.T) {
 	watcher := NewWatcher(nil, compiler, logger)
 
 	// Recompile should not panic with nil store
-	assert.NotPanics(t, func() {
-		watcher.Recompile()
-	})
+	defer func() {
+		if r := recover(); r != nil {
+			t.Errorf("Recompile panicked: %v", r)
+		}
+	}()
+	watcher.Recompile()
 }
 
 func TestWatcher_recompileAll_NilStore(t *testing.T) {
@@ -103,9 +120,12 @@ func TestWatcher_recompileAll_NilStore(t *testing.T) {
 	watcher := NewWatcher(nil, compiler, logger)
 
 	// Should return early with nil store
-	assert.NotPanics(t, func() {
-		watcher.recompileAll()
-	})
+	defer func() {
+		if r := recover(); r != nil {
+			t.Errorf("recompileAll panicked: %v", r)
+		}
+	}()
+	watcher.recompileAll()
 }
 
 func TestWatcher_recompileAll_WithCallback(t *testing.T) {
@@ -138,8 +158,9 @@ func TestWatcher_recompileAll_WithCallback(t *testing.T) {
 			},
 		},
 	}
-	err := store.Add(np)
-	require.NoError(t, err)
+	if err := store.Add(np); err != nil {
+		t.Fatalf("store.Add: %v", err)
+	}
 
 	watcher.store = store
 
@@ -147,7 +168,9 @@ func TestWatcher_recompileAll_WithCallback(t *testing.T) {
 	watcher.recompileAll()
 
 	// Should have received rules (even if empty due to no identities)
-	assert.NotNil(t, receivedRules)
+	if receivedRules == nil {
+		t.Error("receivedRules should not be nil")
+	}
 }
 
 func TestWatcher_recompileAll_MultiplePolicies(t *testing.T) {
@@ -181,8 +204,9 @@ func TestWatcher_recompileAll_MultiplePolicies(t *testing.T) {
 				},
 			},
 		}
-		err := store.Add(np)
-		require.NoError(t, err)
+		if err := store.Add(np); err != nil {
+			t.Fatalf("store.Add[%d]: %v", i, err)
+		}
 	}
 
 	watcher.store = store
@@ -191,7 +215,9 @@ func TestWatcher_recompileAll_MultiplePolicies(t *testing.T) {
 	watcher.recompileAll()
 
 	// Should have received rules
-	assert.NotNil(t, receivedRules)
+	if receivedRules == nil {
+		t.Error("receivedRules should not be nil")
+	}
 }
 
 func TestObjectKey(t *testing.T) {
@@ -234,7 +260,9 @@ func TestObjectKey(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			key := objectKey(tt.obj)
-			assert.Equal(t, tt.expected, key)
+			if key != tt.expected {
+				t.Errorf("objectKey() = %q, want %q", key, tt.expected)
+			}
 		})
 	}
 }
@@ -264,7 +292,9 @@ func TestWatcher_ConcurrentOnChange(t *testing.T) {
 	watcher.mu.RLock()
 	cb := watcher.onChange
 	watcher.mu.RUnlock()
-	assert.NotNil(t, cb)
+	if cb == nil {
+		t.Error("onChange should not be nil after concurrent OnChange calls")
+	}
 }
 
 func TestWatcher_recompileAll_EmptyStore(t *testing.T) {
@@ -287,8 +317,12 @@ func TestWatcher_recompileAll_EmptyStore(t *testing.T) {
 	watcher.recompileAll()
 
 	// Should have received empty rules
-	assert.NotNil(t, receivedRules)
-	assert.Empty(t, receivedRules)
+	if receivedRules == nil {
+		t.Error("receivedRules should not be nil")
+	}
+	if len(receivedRules) != 0 {
+		t.Errorf("receivedRules length = %d, want 0", len(receivedRules))
+	}
 }
 
 func TestWatcher_recompileAll_NonNetworkPolicyItems(t *testing.T) {
@@ -310,19 +344,27 @@ func TestWatcher_recompileAll_NonNetworkPolicyItems(t *testing.T) {
 	})
 
 	// Add a non-NetworkPolicy item (should be skipped)
-	err := store.Add("not-a-network-policy")
-	require.NoError(t, err)
+	if err := store.Add("not-a-network-policy"); err != nil {
+		t.Fatalf("store.Add: %v", err)
+	}
 
 	watcher.store = store
 
 	// Recompile should not panic
-	assert.NotPanics(t, func() {
-		watcher.recompileAll()
-	})
+	defer func() {
+		if r := recover(); r != nil {
+			t.Errorf("recompileAll panicked: %v", r)
+		}
+	}()
+	watcher.recompileAll()
 
 	// Should have received empty rules (non-NP items skipped)
-	assert.NotNil(t, receivedRules)
-	assert.Empty(t, receivedRules)
+	if receivedRules == nil {
+		t.Error("receivedRules should not be nil")
+	}
+	if len(receivedRules) != 0 {
+		t.Errorf("receivedRules length = %d, want 0", len(receivedRules))
+	}
 }
 
 func TestWatcher_recompileAll_CallbackNil(t *testing.T) {
@@ -337,9 +379,12 @@ func TestWatcher_recompileAll_CallbackNil(t *testing.T) {
 	watcher.store = store
 
 	// No callback set - should not panic
-	assert.NotPanics(t, func() {
-		watcher.recompileAll()
-	})
+	defer func() {
+		if r := recover(); r != nil {
+			t.Errorf("recompileAll panicked: %v", r)
+		}
+	}()
+	watcher.recompileAll()
 }
 
 // Benchmark tests

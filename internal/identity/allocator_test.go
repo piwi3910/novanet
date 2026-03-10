@@ -203,7 +203,7 @@ func TestConcurrentAllocations(t *testing.T) {
 	a := NewAllocator(testLogger())
 
 	var wg sync.WaitGroup
-	results := make(chan uint32, 100)
+	results := make(chan uint64, 100)
 
 	// Many goroutines allocating the same identity.
 	for i := 0; i < 100; i++ {
@@ -219,7 +219,7 @@ func TestConcurrentAllocations(t *testing.T) {
 	close(results)
 
 	// All should be the same.
-	var first uint32
+	var first uint64
 	firstSet := false
 	for id := range results {
 		if !firstSet {
@@ -248,5 +248,83 @@ func TestHashLabelsNil(t *testing.T) {
 	id2 := HashLabels(nil)
 	if id1 != id2 {
 		t.Fatalf("expected same hash for nil labels, got %d and %d", id1, id2)
+	}
+}
+
+func TestHashLabelsReturns64Bit(t *testing.T) {
+	// Verify that HashLabels returns a 64-bit value and is deterministic.
+	labels := map[string]string{
+		"app":       "web",
+		"component": "frontend",
+		"version":   "v2.1.0",
+	}
+	id := HashLabels(labels)
+	if id == 0 {
+		t.Fatal("expected non-zero hash")
+	}
+	id2 := HashLabels(labels)
+	if id != id2 {
+		t.Fatalf("expected deterministic hash, got %d and %d", id, id2)
+	}
+}
+
+func TestCollisionDetection(t *testing.T) {
+	a := NewAllocator(testLogger())
+
+	labels1 := map[string]string{"app": "web"}
+	labels2 := map[string]string{"app": "api"}
+
+	id1 := a.AllocateIdentity(labels1)
+	id2 := a.AllocateIdentity(labels2)
+
+	// Both should be allocated with distinct IDs even if hash happens to collide.
+	if id1 == id2 {
+		t.Fatalf("expected different IDs, both got %d", id1)
+	}
+
+	// Verify both can be retrieved.
+	got1, ok := a.GetLabels(id1)
+	if !ok {
+		t.Fatal("expected to find labels for id1")
+	}
+	if got1["app"] != "web" {
+		t.Fatalf("expected app=web for id1, got %s", got1["app"])
+	}
+
+	got2, ok := a.GetLabels(id2)
+	if !ok {
+		t.Fatal("expected to find labels for id2")
+	}
+	if got2["app"] != "api" {
+		t.Fatalf("expected app=api for id2, got %s", got2["app"])
+	}
+}
+
+func TestGetIdentityAfterRemove(t *testing.T) {
+	a := NewAllocator(testLogger())
+
+	labels := map[string]string{"app": "web"}
+	id := a.AllocateIdentity(labels)
+
+	a.RemoveIdentity(id)
+
+	_, ok := a.GetIdentity(labels)
+	if ok {
+		t.Fatal("expected identity to be gone after removal")
+	}
+}
+
+func TestRemoveIdentityCleansUpLabelsToID(t *testing.T) {
+	a := NewAllocator(testLogger())
+
+	labels := map[string]string{"app": "web"}
+	id := a.AllocateIdentity(labels)
+
+	a.RemoveIdentity(id)
+
+	// Re-allocate should work and produce the same ID (no stale mapping).
+	id2 := a.AllocateIdentity(labels)
+	if id != id2 {
+		t.Fatalf("expected same ID after re-allocation, got %d and %d", id, id2)
 	}
 }

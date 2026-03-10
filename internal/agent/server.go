@@ -88,12 +88,39 @@ type Server struct {
 	Endpoints map[string]*Endpoint // key: namespace/name
 }
 
+// validateAddPodRequest checks that all required fields are present in a CNI ADD request.
+func validateAddPodRequest(req *pb.AddPodRequest) error {
+	if req.PodName == "" {
+		return grpcstatus.Error(codes.InvalidArgument, "PodName is required")
+	}
+	if req.PodNamespace == "" {
+		return grpcstatus.Error(codes.InvalidArgument, "PodNamespace is required")
+	}
+	if req.ContainerId == "" {
+		return grpcstatus.Error(codes.InvalidArgument, "ContainerId is required")
+	}
+	if req.Netns == "" {
+		return grpcstatus.Error(codes.InvalidArgument, "Netns is required")
+	}
+	if req.IfName == "" {
+		return grpcstatus.Error(codes.InvalidArgument, "IfName is required")
+	}
+	if len(req.ContainerId) < 11 {
+		return grpcstatus.Errorf(codes.InvalidArgument, "ContainerId too short: must be at least 11 characters, got %d", len(req.ContainerId))
+	}
+	return nil
+}
+
 // AddPod handles CNI ADD requests.
 func (s *Server) AddPod(ctx context.Context, req *pb.AddPodRequest) (*pb.AddPodResponse, error) {
 	start := time.Now()
 	defer func() {
 		MetricCNIAddLatency.Observe(time.Since(start).Seconds())
 	}()
+
+	if err := validateAddPodRequest(req); err != nil {
+		return nil, err
+	}
 
 	key := req.PodNamespace + "/" + req.PodName
 	s.Logger.Info("AddPod request",
@@ -168,7 +195,7 @@ func (s *Server) AddPod(ctx context.Context, req *pb.AddPodRequest) (*pb.AddPodR
 			Ip:         podIP.String(),
 			Ifindex:    uint32(ifindex), //nolint:gosec // ifindex from kernel, always small positive
 			Mac:        mac,
-			IdentityId: identityID,
+			IdentityId: uint32(identityID), //nolint:gosec // truncated to uint32 for proto wire format
 			PodName:    req.PodName,
 			Namespace:  req.PodNamespace,
 			NodeIp:     s.NodeIP.String(),
@@ -200,7 +227,7 @@ func (s *Server) AddPod(ctx context.Context, req *pb.AddPodRequest) (*pb.AddPodR
 		zap.String("gateway", gateway.String()),
 		zap.String("host_veth", hostVethName),
 		zap.Int("ifindex", ifindex),
-		zap.Uint32("identity_id", identityID),
+		zap.Uint64("identity_id", identityID),
 	)
 
 	if s.PolicyWatcher != nil {
@@ -359,8 +386,8 @@ func (s *Server) ListPolicies(_ context.Context, _ *pb.ListPoliciesRequest) (*pb
 			action = pb.PolicyAction_POLICY_ACTION_ALLOW
 		}
 		resp.Rules = append(resp.Rules, &pb.PolicyRuleInfo{
-			SrcIdentity: r.SrcIdentity,
-			DstIdentity: r.DstIdentity,
+			SrcIdentity: uint32(r.SrcIdentity), //nolint:gosec // truncated to uint32 for proto wire format
+			DstIdentity: uint32(r.DstIdentity), //nolint:gosec // truncated to uint32 for proto wire format
 			Protocol:    uint32(r.Protocol),
 			DstPort:     uint32(r.DstPort),
 			Action:      action,
@@ -377,7 +404,7 @@ func (s *Server) ListIdentities(_ context.Context, _ *pb.ListIdentitiesRequest) 
 	}
 	for _, e := range entries {
 		resp.Identities = append(resp.Identities, &pb.IdentityInfo{
-			IdentityId: e.ID,
+			IdentityId: uint32(e.ID), //nolint:gosec // truncated to uint32 for proto wire format
 			Labels:     e.Labels,
 			RefCount:   uint32(e.RefCount), //nolint:gosec // bounded count
 		})
@@ -425,7 +452,7 @@ func (s *Server) ListEgressPolicies(_ context.Context, _ *pb.ListEgressPoliciesR
 		resp.Rules = append(resp.Rules, &pb.EgressPolicyInfo{
 			Namespace:   r.Namespace,
 			Name:        r.Name,
-			SrcIdentity: r.SrcIdentity,
+			SrcIdentity: uint32(r.SrcIdentity), //nolint:gosec // truncated to uint32 for proto wire format
 			DstCidr:     r.DstCIDR.String(),
 			Protocol:    uint32(r.Protocol),
 			DstPort:     uint32(r.DstPort),
@@ -470,8 +497,8 @@ func (s *Server) OnPolicyChange(rules []*policy.CompiledRule) {
 			action = pb.PolicyAction_POLICY_ACTION_ALLOW
 		}
 		entries = append(entries, &pb.PolicyEntry{
-			SrcIdentity: r.SrcIdentity,
-			DstIdentity: r.DstIdentity,
+			SrcIdentity: uint32(r.SrcIdentity), //nolint:gosec // truncated to uint32 for proto wire format
+			DstIdentity: uint32(r.DstIdentity), //nolint:gosec // truncated to uint32 for proto wire format
 			Protocol:    uint32(r.Protocol),
 			DstPort:     uint32(r.DstPort),
 			Action:      action,
@@ -556,7 +583,7 @@ func (s *Server) SyncEgressRules(rules []*policy.CompiledRule) {
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		_, err = s.DpClient.UpsertEgressPolicy(ctx, &pb.UpsertEgressPolicyRequest{
-			SrcIdentity:      r.SrcIdentity,
+			SrcIdentity:      uint32(r.SrcIdentity), //nolint:gosec // truncated to uint32 for proto wire format
 			DstCidr:          cidrStr,
 			DstCidrPrefixLen: uint32(ones), //nolint:gosec // CIDR prefix 0-128
 			Protocol:         uint32(r.Protocol),
@@ -576,14 +603,14 @@ func (s *Server) SyncEgressRules(rules []*policy.CompiledRule) {
 			if !newKeys[oldKey] {
 				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 				_, err := s.DpClient.DeleteEgressPolicy(ctx, &pb.DeleteEgressPolicyRequest{
-					SrcIdentity:      oldKey.SrcIdentity,
+					SrcIdentity:      uint32(oldKey.SrcIdentity), //nolint:gosec // truncated to uint32 for proto wire format
 					DstCidr:          oldKey.DstCidr,
 					DstCidrPrefixLen: oldKey.DstPrefixLen,
 				})
 				cancel()
 				if err != nil {
 					s.Logger.Warn("failed to delete stale egress policy from dataplane",
-						zap.Uint32("src_identity", oldKey.SrcIdentity),
+						zap.Uint64("src_identity", oldKey.SrcIdentity),
 						zap.String("dst_cidr", oldKey.DstCidr), zap.Error(err))
 				}
 			}
