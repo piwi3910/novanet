@@ -212,6 +212,60 @@ Pod A eth0 -> tc_egress -> ENDPOINTS lookup (Pod B is local)
 
 No tunnel involved. The eBPF program returns TC_ACT_OK and lets the kernel route between veth pairs.
 
+#### SOCKMAP Acceleration
+
+When SOCKMAP acceleration is enabled for a pod, same-node pod-to-pod TCP traffic
+bypasses the entire kernel TCP/IP stack. Instead of traversing veth pairs, TC
+hooks, and netfilter, data is redirected directly between sockets in the kernel
+using `bpf_msg_redirect_hash()`.
+
+**How it works:**
+
+Two eBPF programs cooperate to achieve the bypass:
+
+1. **`sockops_sockmap`** (SOCK_OPS, attached to root cgroup) -- intercepts TCP
+   connection events. When a new connection is established, the program checks
+   whether both the source and destination IPs are in the `SOCKMAP_ENDPOINTS`
+   map. If so, it inserts the socket into a `sock_hash` map keyed by the
+   4-tuple.
+
+2. **`sk_msg_sockmap`** (SK_MSG, attached to the `sock_hash` map) -- intercepts
+   `sendmsg()` calls on tracked sockets and redirects the data directly to the
+   peer socket, skipping the TCP/IP stack entirely.
+
+```
+Without SOCKMAP (normal path):
+  Pod A -> veth -> tc_egress -> kernel routing -> tc_ingress -> veth -> Pod B
+
+With SOCKMAP (accelerated path):
+  Pod A sendmsg() -> sk_msg program -> bpf_msg_redirect_hash() -> Pod B recvmsg()
+```
+
+The acceleration is transparent to applications and falls back to the normal path
+for connections that are not eligible (e.g., cross-node traffic, UDP, or pods not
+enrolled in SOCKMAP).
+
+**EnableSockmap / DisableSockmap flow:**
+
+NovaEdge calls the EBPFServices gRPC API to manage SOCKMAP enrollment per pod:
+
+1. NovaEdge sends `EnableSockmap(pod_namespace, pod_name)` over
+   `/run/novanet/ebpf-services.sock`.
+2. The EBPFServices server resolves the pod IP using its `EndpointResolver`,
+   which looks up the pod in the agent's endpoint store by namespace and name.
+3. The server calls `UpsertSockmapEndpoint(ip, 0)` on the Rust dataplane via
+   the `DataplaneControl` gRPC service.
+4. The dataplane inserts the IP into the `SOCKMAP_ENDPOINTS` eBPF map.
+5. New TCP connections involving that IP are now eligible for SOCKMAP redirection.
+
+Disabling follows the reverse path: `DisableSockmap` resolves the pod IP and
+calls `DeleteSockmapEndpoint` to remove it from the eBPF map. Existing
+connections continue until they close; only new connections are affected.
+
+This design keeps NovaEdge free of any direct eBPF interactions -- it simply
+tells NovaNet which pods should have acceleration, and NovaNet's dataplane
+manages all eBPF programs and maps.
+
 ### Cross-Node (Overlay/Geneve)
 
 ```

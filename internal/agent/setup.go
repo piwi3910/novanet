@@ -497,7 +497,7 @@ func StartIPAMServer(logger *zap.Logger, ipamMgr *ipam.Manager) *grpc.Server {
 }
 
 // StartEBPFServicesServer starts the EBPFServices gRPC server if enabled.
-func StartEBPFServicesServer(logger *zap.Logger, cfg *config.Config, dpConnected bool) *grpc.Server {
+func StartEBPFServicesServer(logger *zap.Logger, cfg *config.Config, dpConnected bool, resolver ebpfservices.EndpointResolver) *grpc.Server {
 	if !cfg.EBPFServices.Enabled {
 		logger.Info("EBPFServices gRPC server disabled")
 		return nil
@@ -517,7 +517,7 @@ func StartEBPFServicesServer(logger *zap.Logger, cfg *config.Config, dpConnected
 			logger.Warn("EBPFServices: failed to create dataplane client", zap.Error(err))
 		}
 	}
-	ebpfSrv := ebpfservices.NewServer(logger, dpClient)
+	ebpfSrv := ebpfservices.NewServer(logger, dpClient, resolver)
 	ebpfListener, ebpfGRPC, err := StartGRPCServer(logger, cfg.EBPFServices.SocketPath, "EBPFServices", func(s *grpc.Server) {
 		pb.RegisterEBPFServicesServer(s, ebpfSrv)
 	})

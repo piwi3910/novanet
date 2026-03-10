@@ -147,7 +147,7 @@ func main() {
 	cniGRPC := agent.StartCNIServer(logger, cfg, agentSrv)
 	agentGRPC := agent.StartAgentGRPCServer(logger, cfg, agentSrv)
 	ipamGRPC := agent.StartIPAMServer(logger, ipamMgr)
-	ebpfServicesGRPC := agent.StartEBPFServicesServer(logger, cfg, dpConnected)
+	ebpfServicesGRPC := agent.StartEBPFServicesServer(logger, cfg, dpConnected, agentSrv)
 	metricsServer := agent.StartMetricsServer(logger, cfg, agentSrv)
 
 	nrClient := agent.InitRoutingMode(ctx, logger, cfg, k8sClient, agentSrv,

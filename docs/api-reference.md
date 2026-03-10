@@ -299,6 +299,15 @@ The EBPFServices API exposes kernel-level eBPF operations to external consumers 
 
 #### SOCKMAP Acceleration
 
+SOCKMAP accelerates same-node pod-to-pod TCP traffic by bypassing the kernel
+TCP/IP stack. When enabled for a pod, the dataplane's `sock_ops` and `sk_msg`
+eBPF programs redirect data directly between sockets using
+`bpf_msg_redirect_hash()`.
+
+Callers (typically NovaEdge) identify pods by namespace and name. The server
+resolves the pod IP internally using its `EndpointResolver` (backed by the
+agent's endpoint store) and forwards the resolved IP to the Rust dataplane.
+
 | RPC | Description |
 |-----|-------------|
 | `EnableSockmap` | Enable SOCKMAP acceleration for a pod (same-node pod-to-pod bypass) |
@@ -309,8 +318,30 @@ The EBPFServices API exposes kernel-level eBPF operations to external consumers 
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `pod_namespace` | `string` | Pod namespace |
-| `pod_name` | `string` | Pod name |
+| `pod_namespace` | `string` | Pod namespace (required) |
+| `pod_name` | `string` | Pod name (required) |
+
+Both RPCs validate that the fields are non-empty and return `InvalidArgument` if
+they are missing. If the pod is not found in the endpoint store, the RPC returns
+`NotFound`. If the endpoint resolver or dataplane client is unavailable, the RPC
+returns `Unavailable`.
+
+**Implementation flow (EnableSockmap):**
+
+1. Validate `pod_namespace` and `pod_name` are non-empty.
+2. Look up the pod IP via `EndpointResolver.LookupEndpoint(namespace, name)`.
+3. Call `dataplane.UpsertSockmapEndpoint(ctx, podIP, 0)` to register the IP
+   in the `SOCKMAP_ENDPOINTS` eBPF map.
+4. Return success. New TCP connections involving this IP are now eligible for
+   kernel-level socket redirection.
+
+**Implementation flow (DisableSockmap):**
+
+1. Same validation and IP resolution as `EnableSockmap`.
+2. Call `dataplane.DeleteSockmapEndpoint(ctx, podIP, 0)` to remove the IP from
+   the `SOCKMAP_ENDPOINTS` eBPF map.
+3. Existing accelerated connections are unaffected; only new connections fall
+   back to the normal TCP/IP path.
 
 **GetSockmapStatsResponse:**
 

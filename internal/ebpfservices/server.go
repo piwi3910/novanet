@@ -9,16 +9,26 @@ import (
 	"go.uber.org/zap"
 )
 
+// EndpointResolver looks up pod IPs from the agent's endpoint store.
+type EndpointResolver interface {
+	// LookupEndpoint returns the pod IP for the given namespace/name.
+	// Returns empty string and false if the endpoint is not found.
+	LookupEndpoint(namespace, name string) (ip string, found bool)
+}
+
 // Server implements the EBPFServices gRPC service.
 type Server struct {
 	pb.UnimplementedEBPFServicesServer
 	logger    *zap.Logger
 	dataplane dataplane.ClientInterface
+	resolver  EndpointResolver
 }
 
 // NewServer creates a new EBPFServices server.
 // The dataplane client may be nil if the dataplane is not connected;
 // RPCs that require it will return codes.Unavailable.
-func NewServer(logger *zap.Logger, dp dataplane.ClientInterface) *Server {
-	return &Server{logger: logger, dataplane: dp}
+// The resolver may be nil; RPCs that require endpoint lookup will return
+// codes.Unavailable.
+func NewServer(logger *zap.Logger, dp dataplane.ClientInterface, resolver EndpointResolver) *Server {
+	return &Server{logger: logger, dataplane: dp, resolver: resolver}
 }

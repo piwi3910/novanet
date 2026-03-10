@@ -526,6 +526,19 @@ func (s *Server) OnPolicyChange(rules []*policy.CompiledRule) {
 	s.SyncEgressRules(rules)
 }
 
+// LookupEndpoint returns the IP address of the pod identified by namespace/name.
+// It satisfies the ebpfservices.EndpointResolver interface.
+func (s *Server) LookupEndpoint(namespace, name string) (ip string, found bool) {
+	key := namespace + "/" + name
+	s.Mu.RLock()
+	ep, ok := s.Endpoints[key]
+	s.Mu.RUnlock()
+	if !ok || ep.IP == nil {
+		return "", false
+	}
+	return ep.IP.String(), true
+}
+
 // SyncEgressRules extracts egress CIDR rules from the compiled policy set
 // and pushes them to the egress manager and eBPF dataplane.
 func (s *Server) SyncEgressRules(rules []*policy.CompiledRule) {
