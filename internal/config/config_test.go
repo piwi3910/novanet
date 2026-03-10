@@ -22,7 +22,7 @@ func TestDefaultConfig(t *testing.T) {
 	if cfg.NodeCIDRMaskSize != 24 {
 		t.Errorf("unexpected node_cidr_mask_size: %d", cfg.NodeCIDRMaskSize)
 	}
-	if cfg.MetricsAddress != ":9103" {
+	if cfg.MetricsAddress != "127.0.0.1:9103" {
 		t.Errorf("unexpected metrics_address: %s", cfg.MetricsAddress)
 	}
 	if !cfg.Egress.MasqueradeEnabled {

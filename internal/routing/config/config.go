@@ -142,11 +142,26 @@ type PeerConfig struct {
 	// EBGPMultihop is the eBGP multihop TTL (0 = disabled).
 	EBGPMultihop uint32 `json:"ebgp_multihop"`
 
-	// Password is the BGP session password.
+	// Password is the BGP session password (plaintext, prefer PasswordSecretRef).
 	Password string `json:"password"` //nolint:gosec // BGP session password, not a credential
+
+	// PasswordSecretRef references a Kubernetes Secret containing the BGP
+	// session password. When set, it takes precedence over the plaintext
+	// Password field. The secret must contain a key named "password".
+	PasswordSecretRef *SecretRef `json:"password_secret_ref,omitempty"`
 
 	// MaxPrefixes is the maximum prefix limit (0 = default 1000).
 	MaxPrefixes uint32 `json:"max_prefixes"`
+}
+
+// SecretRef references a Kubernetes Secret by name and namespace.
+type SecretRef struct {
+	// Name is the name of the Kubernetes Secret.
+	Name string `json:"name"`
+
+	// Namespace is the namespace of the Kubernetes Secret.
+	// If empty, the agent's own namespace is used.
+	Namespace string `json:"namespace,omitempty"`
 }
 
 // OwnerConfig defines the authentication and prefix policy for a single owner.

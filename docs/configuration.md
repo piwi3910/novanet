@@ -137,7 +137,7 @@ The Helm chart generates a ConfigMap that is mounted as `/etc/novanet/novanet.js
     "socket_path": "/run/novanet/ebpf-services.sock"
   },
   "log_level": "info",
-  "metrics_address": ":9103"
+  "metrics_address": "127.0.0.1:9103"
 }
 ```
 
@@ -159,7 +159,7 @@ The Helm chart generates a ConfigMap that is mounted as `/etc/novanet/novanet.js
 | `log_level` | string | One of `"debug"`, `"info"`, `"warn"`, `"error"`. |
 | `ebpf_services.enabled` | bool | Enable the eBPF Services gRPC API. |
 | `ebpf_services.socket_path` | string | Unix socket path for the EBPFServices gRPC server. |
-| `metrics_address` | string | Address for the Prometheus metrics HTTP endpoint. |
+| `metrics_address` | string | Address for the Prometheus metrics HTTP endpoint (default: `127.0.0.1:9103`, localhost only). |
 
 ### Validation Rules
 

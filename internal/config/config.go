@@ -280,7 +280,7 @@ func DefaultConfig() *Config {
 		DSR:             false,
 		XDPAcceleration: "disabled",
 		LogLevel:        "info",
-		MetricsAddress:  ":9103",
+		MetricsAddress:  "127.0.0.1:9103",
 	}
 }
 
