@@ -52,10 +52,11 @@ internal/
   ipam/                  Bitmap IP allocator with disk persistence
   k8s/                   Kubernetes API helpers
   masquerade/            iptables SNAT rules
-  metrics/               Prometheus metric definitions
+  agentmetrics/          Prometheus metric definitions (novanet_* namespace)
   node/                  Node management
   policy/                NetworkPolicy compiler and watcher
   routing/               Integrated routing manager (BGP/OSPF via FRR)
+    metrics/             Routing Prometheus metrics (novanet_routing_* namespace)
   tunnel/                Geneve/VXLAN tunnel creation
 dataplane/
   novanet-common/        Shared types between eBPF and userspace (Rust)

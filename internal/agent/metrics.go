@@ -2,6 +2,7 @@ package agent
 
 import (
 	"github.com/azrtydxb/novanet/internal/agentmetrics"
+	routingmetrics "github.com/azrtydxb/novanet/internal/routing/metrics"
 	"github.com/prometheus/client_golang/prometheus"
 )
 
@@ -66,4 +67,6 @@ func RegisterMetrics() {
 	)
 	// Register shared dataplane metrics (flow counters, TCP latency histogram, etc.).
 	agentmetrics.Register()
+	// Register routing subsystem metrics (FRR transactions, BGP peers, etc.).
+	routingmetrics.Register()
 }

@@ -1,4 +1,4 @@
-package routemetrics
+package routingmetrics
 
 import (
 	"testing"
@@ -7,15 +7,19 @@ import (
 	"github.com/prometheus/client_golang/prometheus/testutil"
 )
 
-// resetMetrics resets all counter/gauge/histogram metrics so tests are isolated.
-// promauto-registered metrics share the default registry, so we reset
-// them between tests to avoid cross-contamination.
+// resetCounterVec resets a counter vec so tests are isolated.
 func resetCounterVec(cv *prometheus.CounterVec) {
 	cv.Reset()
 }
 
 func resetGaugeVec(gv *prometheus.GaugeVec) {
 	gv.Reset()
+}
+
+func init() {
+	// Register metrics once for the test binary. This mirrors what
+	// production code does by calling Register() at startup.
+	Register()
 }
 
 func TestRecordIntent(t *testing.T) {
@@ -74,7 +78,7 @@ func TestRecordFRRTransaction(t *testing.T) {
 	}
 	found := false
 	for _, fam := range families {
-		if fam.GetName() == "novaroute_frr_transaction_duration_seconds" {
+		if fam.GetName() == "novanet_routing_frr_transaction_duration_seconds" {
 			found = true
 			for _, m := range fam.GetMetric() {
 				if m.GetHistogram().GetSampleCount() == 0 {
@@ -84,7 +88,7 @@ func TestRecordFRRTransaction(t *testing.T) {
 		}
 	}
 	if !found {
-		t.Error("expected novaroute_frr_transaction_duration_seconds metric family to exist")
+		t.Error("expected novanet_routing_frr_transaction_duration_seconds metric family to exist")
 	}
 }
 
@@ -225,7 +229,7 @@ func TestObserveGRPCDuration(t *testing.T) {
 	}
 	found := false
 	for _, fam := range families {
-		if fam.GetName() == "novaroute_grpc_request_duration_seconds" {
+		if fam.GetName() == "novanet_routing_grpc_request_duration_seconds" {
 			found = true
 			if len(fam.GetMetric()) == 0 {
 				t.Error("expected at least one metric in gRPC duration histogram")
@@ -233,7 +237,7 @@ func TestObserveGRPCDuration(t *testing.T) {
 		}
 	}
 	if !found {
-		t.Error("expected novaroute_grpc_request_duration_seconds metric family to exist")
+		t.Error("expected novanet_routing_grpc_request_duration_seconds metric family to exist")
 	}
 }
 
@@ -248,7 +252,7 @@ func TestRecordReconcileCycleDuration(t *testing.T) {
 	}
 	found := false
 	for _, fam := range families {
-		if fam.GetName() == "novaroute_reconcile_cycle_duration_seconds" {
+		if fam.GetName() == "novanet_routing_reconcile_cycle_duration_seconds" {
 			found = true
 			if len(fam.GetMetric()) == 0 {
 				t.Error("expected at least one metric in reconcile cycle duration histogram")
@@ -256,7 +260,7 @@ func TestRecordReconcileCycleDuration(t *testing.T) {
 		}
 	}
 	if !found {
-		t.Error("expected novaroute_reconcile_cycle_duration_seconds metric family to exist")
+		t.Error("expected novanet_routing_reconcile_cycle_duration_seconds metric family to exist")
 	}
 }
 

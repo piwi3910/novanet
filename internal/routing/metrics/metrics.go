@@ -1,149 +1,166 @@
-// Package routemetrics provides Prometheus metrics for NovaRoute.
-package routemetrics
+// Package routingmetrics provides Prometheus metrics for NovaNet routing.
+// It follows the same registration pattern as agentmetrics: metrics are
+// created with prometheus.New* and explicitly registered via Register().
+package routingmetrics
 
 import (
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promauto"
+)
+
+const (
+	namespace = "novanet"
+	subsystem = "routing"
 )
 
 // Counters
 
 // IntentsTotal tracks total intent operations (set, remove) by owner and type.
-var IntentsTotal = promauto.NewCounterVec(
-	prometheus.CounterOpts{
-		Name: "novaroute_intents_total",
-		Help: "Total intent operations (set, remove).",
-	},
-	[]string{"owner", "type", "operation"},
-)
+var IntentsTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
+	Namespace: namespace,
+	Subsystem: subsystem,
+	Name:      "intents_total",
+	Help:      "Total intent operations (set, remove).",
+}, []string{"owner", "type", "operation"})
 
 // FRRTransactionsTotal tracks FRR candidate/commit operations by result (success, failure).
-var FRRTransactionsTotal = promauto.NewCounterVec(
-	prometheus.CounterOpts{
-		Name: "novaroute_frr_transactions_total",
-		Help: "FRR candidate/commit operations (success, failure).",
-	},
-	[]string{"result"},
-)
+var FRRTransactionsTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
+	Namespace: namespace,
+	Subsystem: subsystem,
+	Name:      "frr_transactions_total",
+	Help:      "FRR candidate/commit operations (success, failure).",
+}, []string{"result"})
 
 // PolicyViolationsTotal tracks policy check failures by owner and reason.
-var PolicyViolationsTotal = promauto.NewCounterVec(
-	prometheus.CounterOpts{
-		Name: "novaroute_policy_violations_total",
-		Help: "Policy check failures.",
-	},
-	[]string{"owner", "reason"},
-)
+var PolicyViolationsTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
+	Namespace: namespace,
+	Subsystem: subsystem,
+	Name:      "policy_violations_total",
+	Help:      "Policy check failures.",
+}, []string{"owner", "reason"})
 
 // EventsTotal tracks events emitted by type.
-var EventsTotal = promauto.NewCounterVec(
-	prometheus.CounterOpts{
-		Name: "novaroute_events_total",
-		Help: "Events emitted.",
-	},
-	[]string{"type"},
-)
+var EventsTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
+	Namespace: namespace,
+	Subsystem: subsystem,
+	Name:      "events_total",
+	Help:      "Events emitted.",
+}, []string{"type"})
+
+// EventsDropped tracks events dropped due to slow subscribers.
+var EventsDropped = prometheus.NewCounter(prometheus.CounterOpts{
+	Namespace: namespace,
+	Subsystem: subsystem,
+	Name:      "events_dropped_total",
+	Help:      "Total events dropped due to slow subscribers.",
+})
+
+// MonitoringErrors tracks errors encountered during FRR state monitoring by protocol.
+var MonitoringErrors = prometheus.NewCounterVec(prometheus.CounterOpts{
+	Namespace: namespace,
+	Subsystem: subsystem,
+	Name:      "monitoring_errors_total",
+	Help:      "Errors encountered during FRR state monitoring.",
+}, []string{"protocol"})
 
 // Gauges
 
 // ActivePeers tracks the current number of active BGP peers by owner.
-var ActivePeers = promauto.NewGaugeVec(
-	prometheus.GaugeOpts{
-		Name: "novaroute_active_peers",
-		Help: "Current active BGP peers by owner.",
-	},
-	[]string{"owner"},
-)
+var ActivePeers = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+	Namespace: namespace,
+	Subsystem: subsystem,
+	Name:      "active_peers",
+	Help:      "Current active BGP peers by owner.",
+}, []string{"owner"})
 
 // ActivePrefixes tracks the current number of advertised prefixes by owner and protocol.
-var ActivePrefixes = promauto.NewGaugeVec(
-	prometheus.GaugeOpts{
-		Name: "novaroute_active_prefixes",
-		Help: "Current advertised prefixes.",
-	},
-	[]string{"owner", "protocol"},
-)
+var ActivePrefixes = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+	Namespace: namespace,
+	Subsystem: subsystem,
+	Name:      "active_prefixes",
+	Help:      "Current advertised prefixes.",
+}, []string{"owner", "protocol"})
 
 // ActiveBFDSessions tracks the current number of BFD sessions by owner.
-var ActiveBFDSessions = promauto.NewGaugeVec(
-	prometheus.GaugeOpts{
-		Name: "novaroute_active_bfd_sessions",
-		Help: "Current BFD sessions.",
-	},
-	[]string{"owner"},
-)
+var ActiveBFDSessions = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+	Namespace: namespace,
+	Subsystem: subsystem,
+	Name:      "active_bfd_sessions",
+	Help:      "Current BFD sessions.",
+}, []string{"owner"})
 
 // ActiveOSPFInterfaces tracks the current number of OSPF interfaces by owner.
-var ActiveOSPFInterfaces = promauto.NewGaugeVec(
-	prometheus.GaugeOpts{
-		Name: "novaroute_active_ospf_interfaces",
-		Help: "Current OSPF interfaces.",
-	},
-	[]string{"owner"},
-)
+var ActiveOSPFInterfaces = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+	Namespace: namespace,
+	Subsystem: subsystem,
+	Name:      "active_ospf_interfaces",
+	Help:      "Current OSPF interfaces.",
+}, []string{"owner"})
 
 // RegisteredOwners tracks the number of registered owners.
-var RegisteredOwners = promauto.NewGauge(
-	prometheus.GaugeOpts{
-		Name: "novaroute_registered_owners",
-		Help: "Number of registered owners.",
-	},
-)
+var RegisteredOwners = prometheus.NewGauge(prometheus.GaugeOpts{
+	Namespace: namespace,
+	Subsystem: subsystem,
+	Name:      "registered_owners",
+	Help:      "Number of registered owners.",
+})
 
 // FRRConnected indicates whether the system is connected to FRR (1 = connected, 0 = disconnected).
-var FRRConnected = promauto.NewGauge(
-	prometheus.GaugeOpts{
-		Name: "novaroute_frr_connected",
-		Help: "1 if connected to FRR, 0 otherwise.",
-	},
-)
+var FRRConnected = prometheus.NewGauge(prometheus.GaugeOpts{
+	Namespace: namespace,
+	Subsystem: subsystem,
+	Name:      "frr_connected",
+	Help:      "1 if connected to FRR, 0 otherwise.",
+})
 
 // Histograms
 
 // FRRTransactionDuration observes FRR transaction latency in seconds.
-var FRRTransactionDuration = promauto.NewHistogram(
-	prometheus.HistogramOpts{
-		Name:    "novaroute_frr_transaction_duration_seconds",
-		Help:    "FRR transaction latency.",
-		Buckets: prometheus.DefBuckets,
-	},
-)
+var FRRTransactionDuration = prometheus.NewHistogram(prometheus.HistogramOpts{
+	Namespace: namespace,
+	Subsystem: subsystem,
+	Name:      "frr_transaction_duration_seconds",
+	Help:      "FRR transaction latency.",
+	Buckets:   prometheus.DefBuckets,
+})
 
 // GRPCRequestDuration observes gRPC request latency in seconds by method.
-var GRPCRequestDuration = promauto.NewHistogramVec(
-	prometheus.HistogramOpts{
-		Name:    "novaroute_grpc_request_duration_seconds",
-		Help:    "gRPC request latency.",
-		Buckets: prometheus.DefBuckets,
-	},
-	[]string{"method"},
-)
+var GRPCRequestDuration = prometheus.NewHistogramVec(prometheus.HistogramOpts{
+	Namespace: namespace,
+	Subsystem: subsystem,
+	Name:      "grpc_request_duration_seconds",
+	Help:      "gRPC request latency.",
+	Buckets:   prometheus.DefBuckets,
+}, []string{"method"})
 
 // ReconcileCycleDuration observes the duration of each reconciliation cycle in seconds.
-var ReconcileCycleDuration = promauto.NewHistogram(
-	prometheus.HistogramOpts{
-		Name:    "novaroute_reconcile_cycle_duration_seconds",
-		Help:    "Reconciliation cycle latency.",
-		Buckets: prometheus.DefBuckets,
-	},
-)
+var ReconcileCycleDuration = prometheus.NewHistogram(prometheus.HistogramOpts{
+	Namespace: namespace,
+	Subsystem: subsystem,
+	Name:      "reconcile_cycle_duration_seconds",
+	Help:      "Reconciliation cycle latency.",
+	Buckets:   prometheus.DefBuckets,
+})
 
-// EventsDropped tracks events dropped due to slow subscribers.
-var EventsDropped = promauto.NewCounter(
-	prometheus.CounterOpts{
-		Name: "novaroute_events_dropped_total",
-		Help: "Total events dropped due to slow subscribers.",
-	},
-)
-
-// MonitoringErrors tracks errors encountered during FRR state monitoring by protocol.
-var MonitoringErrors = promauto.NewCounterVec(
-	prometheus.CounterOpts{
-		Name: "novaroute_monitoring_errors_total",
-		Help: "Errors encountered during FRR state monitoring.",
-	},
-	[]string{"protocol"},
-)
+// Register registers all NovaNet routing metrics with the default Prometheus registerer.
+func Register() {
+	prometheus.MustRegister(
+		IntentsTotal,
+		FRRTransactionsTotal,
+		PolicyViolationsTotal,
+		EventsTotal,
+		EventsDropped,
+		MonitoringErrors,
+		ActivePeers,
+		ActivePrefixes,
+		ActiveBFDSessions,
+		ActiveOSPFInterfaces,
+		RegisteredOwners,
+		FRRConnected,
+		FRRTransactionDuration,
+		GRPCRequestDuration,
+		ReconcileCycleDuration,
+	)
+}
 
 // Helper functions
 

@@ -1,5 +1,5 @@
 // Package agentmetrics defines and registers Prometheus metrics for NovaNet.
-// It follows the same patterns as NovaRoute's metrics package.
+// It follows the same explicit-registration pattern as routingmetrics.
 package agentmetrics
 
 import (
