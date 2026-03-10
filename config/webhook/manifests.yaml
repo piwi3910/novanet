@@ -1,0 +1,69 @@
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingWebhookConfiguration
+metadata:
+  name: novanet-validating-webhook-configuration
+  labels:
+    app.kubernetes.io/name: novanet-operator
+    app.kubernetes.io/component: webhook
+webhooks:
+  - name: vhostendpointpolicy.kb.io
+    admissionReviewVersions:
+      - v1
+    clientConfig:
+      service:
+        name: novanet-operator-webhook-service
+        namespace: novanet-system
+        path: /validate-novanet-io-v1alpha1-hostendpointpolicy
+    failurePolicy: Fail
+    rules:
+      - apiGroups:
+          - novanet.io
+        apiVersions:
+          - v1alpha1
+        operations:
+          - CREATE
+          - UPDATE
+        resources:
+          - hostendpointpolicies
+    sideEffects: None
+  - name: vnovanetworkpolicy.kb.io
+    admissionReviewVersions:
+      - v1
+    clientConfig:
+      service:
+        name: novanet-operator-webhook-service
+        namespace: novanet-system
+        path: /validate-novanet-io-v1alpha1-novanetworkpolicy
+    failurePolicy: Fail
+    rules:
+      - apiGroups:
+          - novanet.io
+        apiVersions:
+          - v1alpha1
+        operations:
+          - CREATE
+          - UPDATE
+        resources:
+          - novanetworkpolicies
+    sideEffects: None
+  - name: vippool.kb.io
+    admissionReviewVersions:
+      - v1
+    clientConfig:
+      service:
+        name: novanet-operator-webhook-service
+        namespace: novanet-system
+        path: /validate-novanet-io-v1alpha1-ippool
+    failurePolicy: Fail
+    rules:
+      - apiGroups:
+          - novanet.io
+        apiVersions:
+          - v1alpha1
+        operations:
+          - CREATE
+          - UPDATE
+        resources:
+          - ippools
+    sideEffects: None

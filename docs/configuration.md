@@ -396,6 +396,20 @@ spec:
 
 ---
 
+## Admission Webhooks
+
+The NovaNet operator registers validating admission webhooks for the following CRDs. These webhooks reject malformed resources at creation/update time rather than letting them fail silently at runtime.
+
+| CRD | Webhook | Validations |
+|-----|---------|-------------|
+| `HostEndpointPolicy` | `vhostendpointpolicy.kb.io` | Action must be `Allow` or `Deny`; CIDRs must be valid and canonical; ports must be in range 1-65535; endPort must be >= port; protocol must be TCP, UDP, or SCTP |
+| `NovaNetworkPolicy` | `vnovanetworkpolicy.kb.io` | PolicyTypes must be `Ingress` or `Egress`; IPBlock CIDRs and exceptions must be valid; port numbers in range; endPort requires port; protocol must be TCP, UDP, or SCTP |
+| `IPPool` | `vippool.kb.io` | Type must be a valid IPPoolType; CIDRs must be valid and non-overlapping; addresses must be valid IPs; at least one CIDR or address is required |
+
+The webhook manifests are located at `config/webhook/manifests.yaml`. The operator wires them up automatically via controller-runtime's webhook builder.
+
+---
+
 ## Socket Paths
 
 NovaNet uses Unix domain sockets for all inter-component communication:
