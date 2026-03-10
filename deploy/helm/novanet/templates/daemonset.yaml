@@ -111,7 +111,17 @@ spec:
           resources:
             {{- toYaml .Values.resources.agent | nindent 12 }}
           securityContext:
-            privileged: true
+            privileged: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              add:
+                - NET_ADMIN
+                - SYS_ADMIN
+                - BPF
+                - NET_RAW
+                - SYS_RESOURCE
+              drop:
+                - ALL
           volumeMounts:
             - name: config
               mountPath: /etc/novanet
@@ -164,7 +174,18 @@ spec:
           resources:
             {{- toYaml .Values.resources.dataplane | nindent 12 }}
           securityContext:
-            privileged: true
+            privileged: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              add:
+                - NET_ADMIN
+                - SYS_ADMIN
+                - BPF
+                - NET_RAW
+                - SYS_RESOURCE
+                - PERFMON
+              drop:
+                - ALL
           volumeMounts:
             - name: run-novanet
               mountPath: /run/novanet
@@ -180,7 +201,14 @@ spec:
           image: "{{ .Values.image.frr.repository }}:{{ .Values.image.frr.tag }}"
           imagePullPolicy: {{ .Values.image.frr.pullPolicy }}
           securityContext:
-            privileged: true
+            privileged: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              add:
+                - NET_ADMIN
+                - NET_RAW
+              drop:
+                - ALL
           volumeMounts:
             - name: frr-run
               mountPath: /run/frr
