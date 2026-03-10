@@ -11,6 +11,7 @@ require (
 	github.com/vishvananda/netlink v1.3.1
 	github.com/vishvananda/netns v0.0.5
 	go.uber.org/zap v1.27.1
+	golang.org/x/sys v0.39.0
 	google.golang.org/grpc v1.79.1
 	google.golang.org/protobuf v1.36.11
 	k8s.io/api v0.35.2
@@ -56,7 +57,6 @@ require (
 	golang.org/x/net v0.48.0 // indirect
 	golang.org/x/oauth2 v0.34.0 // indirect
 	golang.org/x/sync v0.19.0 // indirect
-	golang.org/x/sys v0.39.0 // indirect
 	golang.org/x/term v0.38.0 // indirect
 	golang.org/x/text v0.32.0 // indirect
 	golang.org/x/time v0.9.0 // indirect

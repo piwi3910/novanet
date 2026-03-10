@@ -36,8 +36,27 @@ novanetctl ──gRPC──► novanet-agent ◄───────┘
 |-------------|--------|---------|
 | `/run/novanet/cni.sock` | agent | CNI binary |
 | `/run/novanet/novanet.sock` | agent | novanetctl |
+| `/run/novanet/ipam.sock` | agent | IPAM clients |
+| `/run/novanet/ebpf-services.sock` | agent | eBPF service clients |
 | `/run/novanet/dataplane.sock` | dataplane | agent |
 | `/run/frr/` | FRR sidecar | agent routing manager (native mode) |
+
+### Unix Socket Authentication
+
+All gRPC servers authenticate connecting processes using `SO_PEERCRED` peer
+credential checking (Linux only). The `internal/grpcauth` package provides:
+
+- **`NewAuthenticatedServer()`** -- creates a `*grpc.Server` with transport
+  credentials and interceptors that verify the peer UID via `SO_PEERCRED`.
+- **Unary and stream interceptors** -- reject any connection whose UID is not
+  in the allowed set (currently only UID 0 / root).
+- **Graceful degradation** -- on non-Linux platforms the interceptors log a
+  warning and allow all connections, so development and testing on macOS
+  continue to work.
+
+Socket file permissions are set to `0600`, and the `SO_PEERCRED` check
+provides defence-in-depth: even if file permissions are weakened, only
+processes running as root can call the gRPC API.
 
 ---
 

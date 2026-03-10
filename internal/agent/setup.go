@@ -24,6 +24,7 @@ import (
 	"github.com/azrtydxb/novanet/internal/dataplane"
 	"github.com/azrtydxb/novanet/internal/ebpfservices"
 	"github.com/azrtydxb/novanet/internal/egress"
+	"github.com/azrtydxb/novanet/internal/grpcauth"
 	"github.com/azrtydxb/novanet/internal/identity"
 	"github.com/azrtydxb/novanet/internal/ipam"
 	"github.com/azrtydxb/novanet/internal/masquerade"
@@ -812,7 +813,8 @@ func StartGRPCServer(logger *zap.Logger, socketPath, name string, register func(
 	if err := os.Chmod(socketPath, 0o600); err != nil {
 		logger.Warn("failed to chmod socket", zap.String("socket", socketPath), zap.Error(err))
 	}
-	srv := grpc.NewServer()
+	// Only allow root (UID 0) to connect to gRPC Unix sockets.
+	srv := grpcauth.NewAuthenticatedServer(logger, []uint32{0})
 	register(srv)
 	logger.Info("gRPC server created", zap.String("name", name), zap.String("socket", socketPath))
 	return lis, srv, nil
