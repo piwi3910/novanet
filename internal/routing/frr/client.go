@@ -26,7 +26,7 @@ type Client struct {
 	socketDir string
 	vtyshPath string
 	timeout   time.Duration
-	log       *zap.Logger
+	logger    *zap.Logger
 	mu        sync.Mutex
 	localAS   uint32 // Cached after ConfigureBGPGlobal.
 }
@@ -49,7 +49,7 @@ func NewClient(socketDir string, logger *zap.Logger) *Client {
 		socketDir: socketDir,
 		vtyshPath: vtysh,
 		timeout:   30 * time.Second,
-		log:       logger,
+		logger:    logger,
 	}
 }
 
@@ -125,7 +125,7 @@ func (c *Client) runConfig(ctx context.Context, commands []string) error {
 	}
 
 	for _, cmd := range commands {
-		c.log.Debug("VTY command OK", zap.String("cmd", sanitizeCommand(cmd)))
+		c.logger.Debug("VTY command OK", zap.String("cmd", sanitizeCommand(cmd)))
 	}
 
 	return nil

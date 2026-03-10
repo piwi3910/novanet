@@ -69,24 +69,24 @@ const (
 	// dataplaneRetryInterval is the interval between dataplane connection attempts.
 	dataplaneRetryInterval = 5 * time.Second
 
-	// Config map key constants — MUST match novanet-common/src/lib.rs.
-	configKeyMode             uint32 = 0
-	configKeyTunnelType       uint32 = 1
-	configKeyNodeIP           uint32 = 2
-	configKeyClusterCIDRIP    uint32 = 3
-	configKeyClusterCIDRPL    uint32 = 4
-	configKeyDefaultDeny      uint32 = 5
-	configKeyMasqueradeEnable uint32 = 6
-	configKeySNATIP           uint32 = 7 // Reserved for eBPF-level SNAT (currently using iptables fallback).
-	configKeyPodCIDRIP        uint32 = 8
-	configKeyPodCIDRPL        uint32 = 9
-	configKeyL4LBEnabled      uint32 = 10
+	// Config map key constants — defined in api/v1/novanet.proto as ConfigKey enum.
+	configKeyMode             = uint32(pb.ConfigKey_CONFIG_KEY_MODE)
+	configKeyTunnelType       = uint32(pb.ConfigKey_CONFIG_KEY_TUNNEL_TYPE)
+	configKeyNodeIP           = uint32(pb.ConfigKey_CONFIG_KEY_NODE_IP)
+	configKeyClusterCIDRIP    = uint32(pb.ConfigKey_CONFIG_KEY_CLUSTER_CIDR_IP)
+	configKeyClusterCIDRPL    = uint32(pb.ConfigKey_CONFIG_KEY_CLUSTER_CIDR_PL)
+	configKeyDefaultDeny      = uint32(pb.ConfigKey_CONFIG_KEY_DEFAULT_DENY)
+	configKeyMasqueradeEnable = uint32(pb.ConfigKey_CONFIG_KEY_MASQUERADE_ENABLE)
+	configKeySNATIP           = uint32(pb.ConfigKey_CONFIG_KEY_SNAT_IP) //nolint:unused // Reserved for eBPF-level SNAT (currently using iptables fallback).
+	configKeyPodCIDRIP        = uint32(pb.ConfigKey_CONFIG_KEY_POD_CIDR_IP)
+	configKeyPodCIDRPL        = uint32(pb.ConfigKey_CONFIG_KEY_POD_CIDR_PL)
+	configKeyL4LBEnabled      = uint32(pb.ConfigKey_CONFIG_KEY_L4LB_ENABLED)
 
-	// Config value constants — MUST match novanet-common/src/lib.rs.
-	modeOverlay uint64 = 0
-	modeNative  uint64 = 1
-	tunnelGEV   uint64 = 0
-	tunnelVXL   uint64 = 1
+	// Config value constants — defined in api/v1/novanet.proto as ConfigMode/ConfigTunnelType enums.
+	modeOverlay = uint64(pb.ConfigMode_CONFIG_MODE_OVERLAY)
+	modeNative  = uint64(pb.ConfigMode_CONFIG_MODE_NATIVE)
+	tunnelGEV   = uint64(pb.ConfigTunnelType_CONFIG_TUNNEL_GENEVE)
+	tunnelVXL   = uint64(pb.ConfigTunnelType_CONFIG_TUNNEL_VXLAN)
 )
 
 // Prometheus agentmetrics.
@@ -229,6 +229,29 @@ type egressMapKey struct {
 	dstPrefixLen uint32
 }
 
+// validateAddPodRequest checks that all required fields are present in a CNI ADD request.
+func validateAddPodRequest(req *pb.AddPodRequest) error {
+	if req.PodName == "" {
+		return grpcstatus.Error(codes.InvalidArgument, "PodName is required")
+	}
+	if req.PodNamespace == "" {
+		return grpcstatus.Error(codes.InvalidArgument, "PodNamespace is required")
+	}
+	if req.ContainerId == "" {
+		return grpcstatus.Error(codes.InvalidArgument, "ContainerId is required")
+	}
+	if req.Netns == "" {
+		return grpcstatus.Error(codes.InvalidArgument, "Netns is required")
+	}
+	if req.IfName == "" {
+		return grpcstatus.Error(codes.InvalidArgument, "IfName is required")
+	}
+	if len(req.ContainerId) < 11 {
+		return grpcstatus.Errorf(codes.InvalidArgument, "ContainerId too short: must be at least 11 characters, got %d", len(req.ContainerId))
+	}
+	return nil
+}
+
 // AddPod handles CNI ADD requests.
 func (s *agentServer) AddPod(ctx context.Context, req *pb.AddPodRequest) (*pb.AddPodResponse, error) {
 	start := time.Now()
@@ -236,24 +259,8 @@ func (s *agentServer) AddPod(ctx context.Context, req *pb.AddPodRequest) (*pb.Ad
 		metricCNIAddLatency.Observe(time.Since(start).Seconds())
 	}()
 
-	// Validate required fields.
-	if req.PodName == "" {
-		return nil, grpcstatus.Error(codes.InvalidArgument, "PodName is required")
-	}
-	if req.PodNamespace == "" {
-		return nil, grpcstatus.Error(codes.InvalidArgument, "PodNamespace is required")
-	}
-	if req.ContainerId == "" {
-		return nil, grpcstatus.Error(codes.InvalidArgument, "ContainerId is required")
-	}
-	if req.Netns == "" {
-		return nil, grpcstatus.Error(codes.InvalidArgument, "Netns is required")
-	}
-	if req.IfName == "" {
-		return nil, grpcstatus.Error(codes.InvalidArgument, "IfName is required")
-	}
-	if len(req.ContainerId) < 11 {
-		return nil, grpcstatus.Errorf(codes.InvalidArgument, "ContainerId too short: must be at least 11 characters, got %d", len(req.ContainerId))
+	if err := validateAddPodRequest(req); err != nil {
+		return nil, err
 	}
 
 	key := req.PodNamespace + "/" + req.PodName
@@ -1282,6 +1289,7 @@ func createIPAM(logger *zap.Logger, podCIDR string) *ipam.Allocator {
 	if err != nil {
 		logger.Fatal("failed to create IPAM allocator", zap.Error(err))
 	}
+	ipAlloc.SetLogger(logger)
 	logger.Info("IPAM allocator created",
 		zap.String("pod_cidr", podCIDR),
 		zap.Int("available", ipAlloc.Available()),

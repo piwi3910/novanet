@@ -694,3 +694,32 @@ message InternalBackendHealthInfo {
   uint64 avg_rtt_ns = 7;
   double failure_rate = 8;
 }
+
+// ConfigKey identifies entries in the eBPF config map shared between
+// the Go management plane and the Rust dataplane.
+// Values MUST match novanet-common/src/lib.rs.
+enum ConfigKey {
+  CONFIG_KEY_MODE               = 0;
+  CONFIG_KEY_TUNNEL_TYPE        = 1;
+  CONFIG_KEY_NODE_IP            = 2;
+  CONFIG_KEY_CLUSTER_CIDR_IP    = 3;
+  CONFIG_KEY_CLUSTER_CIDR_PL    = 4;
+  CONFIG_KEY_DEFAULT_DENY       = 5;
+  CONFIG_KEY_MASQUERADE_ENABLE  = 6;
+  CONFIG_KEY_SNAT_IP            = 7;
+  CONFIG_KEY_POD_CIDR_IP        = 8;
+  CONFIG_KEY_POD_CIDR_PL        = 9;
+  CONFIG_KEY_L4LB_ENABLED       = 10;
+}
+
+// ConfigMode specifies the networking mode.
+enum ConfigMode {
+  CONFIG_MODE_OVERLAY = 0;
+  CONFIG_MODE_NATIVE  = 1;
+}
+
+// ConfigTunnelType specifies the overlay tunnel encapsulation.
+enum ConfigTunnelType {
+  CONFIG_TUNNEL_GENEVE = 0;
+  CONFIG_TUNNEL_VXLAN  = 1;
+}

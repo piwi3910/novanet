@@ -128,81 +128,34 @@ func (c *ExtendedCompiler) CompileAll(policies []*v1alpha1.NovaNetworkPolicy) []
 
 // compileIngressRule compiles a single extended ingress rule for the target identity.
 func (c *ExtendedCompiler) compileIngressRule(rule v1alpha1.NovaNetworkPolicyIngressRule, dstIdentity uint64, namespace string) []*CompiledRule {
-	srcIdentities := c.resolveExtendedPeers(rule.From, namespace)
-	srcCIDRs := c.resolveExtendedCIDRs(rule.From)
-	fqdnCIDRs := c.resolveFQDNPeers(rule.From)
-
-	rules := make([]*CompiledRule, 0, len(srcIdentities)+len(srcCIDRs)+len(fqdnCIDRs))
-
-	ports := c.resolveExtendedPorts(rule.Ports)
-
-	if len(rule.From) == 0 {
-		srcIdentities = []uint64{WildcardIdentity}
-	}
-
-	if len(ports) == 0 {
-		ports = []portProto{{protocol: ProtocolAny, port: 0}}
-	}
-
-	// Identity-based rules.
-	for _, srcID := range srcIdentities {
-		for _, pp := range ports {
-			rules = append(rules, &CompiledRule{
-				SrcIdentity: srcID,
-				DstIdentity: dstIdentity,
-				Protocol:    pp.protocol,
-				DstPort:     pp.port,
-				Action:      ActionAllow,
-				Namespace:   namespace,
-			})
-		}
-	}
-
-	// CIDR-based rules from IPBlock peers.
-	for _, entry := range srcCIDRs {
-		for _, pp := range ports {
-			rules = append(rules, &CompiledRule{
-				SrcIdentity: WildcardIdentity,
-				DstIdentity: dstIdentity,
-				Protocol:    pp.protocol,
-				DstPort:     pp.port,
-				Action:      entry.action,
-				CIDR:        entry.cidr,
-				Namespace:   namespace,
-			})
-		}
-	}
-
-	// CIDR-based rules from FQDN peers.
-	for _, cidr := range fqdnCIDRs {
-		for _, pp := range ports {
-			rules = append(rules, &CompiledRule{
-				SrcIdentity: WildcardIdentity,
-				DstIdentity: dstIdentity,
-				Protocol:    pp.protocol,
-				DstPort:     pp.port,
-				Action:      ActionAllow,
-				CIDR:        cidr,
-				Namespace:   namespace,
-			})
-		}
-	}
-
-	return rules
+	return c.compileDirectionalRule(rule.From, rule.Ports, dstIdentity, false, namespace)
 }
 
 // compileEgressRule compiles a single extended egress rule for the source identity.
 func (c *ExtendedCompiler) compileEgressRule(rule v1alpha1.NovaNetworkPolicyEgressRule, srcIdentity uint64, namespace string) []*CompiledRule {
-	dstIdentities := c.resolveExtendedPeers(rule.To, namespace)
-	dstCIDRs := c.resolveExtendedCIDRs(rule.To)
-	fqdnCIDRs := c.resolveFQDNPeers(rule.To)
+	return c.compileDirectionalRule(rule.To, rule.Ports, srcIdentity, true, namespace)
+}
 
-	rules := make([]*CompiledRule, 0, len(dstIdentities)+len(dstCIDRs)+len(fqdnCIDRs))
+// compileDirectionalRule is the shared implementation for both ingress and egress
+// rule compilation. The peers parameter is the From (ingress) or To (egress) list,
+// fixedID is the target identity, and isEgress controls direction assignment.
+func (c *ExtendedCompiler) compileDirectionalRule(
+	peers []v1alpha1.NovaNetworkPolicyPeer,
+	nnpPorts []v1alpha1.NovaNetworkPolicyPort,
+	fixedID uint64,
+	isEgress bool,
+	namespace string,
+) []*CompiledRule {
+	identities := c.resolveExtendedPeers(peers, namespace)
+	cidrEntries := c.resolveExtendedCIDRs(peers)
+	fqdnCIDRs := c.resolveFQDNPeers(peers)
 
-	ports := c.resolveExtendedPorts(rule.Ports)
+	rules := make([]*CompiledRule, 0, len(identities)+len(cidrEntries)+len(fqdnCIDRs))
 
-	if len(rule.To) == 0 {
-		dstIdentities = []uint64{WildcardIdentity}
+	ports := c.resolveExtendedPorts(nnpPorts)
+
+	if len(peers) == 0 {
+		identities = []uint64{WildcardIdentity}
 	}
 
 	if len(ports) == 0 {
@@ -210,51 +163,13 @@ func (c *ExtendedCompiler) compileEgressRule(rule v1alpha1.NovaNetworkPolicyEgre
 	}
 
 	// Identity-based rules.
-	for _, dstID := range dstIdentities {
-		for _, pp := range ports {
-			rules = append(rules, &CompiledRule{
-				SrcIdentity: srcIdentity,
-				DstIdentity: dstID,
-				Protocol:    pp.protocol,
-				DstPort:     pp.port,
-				Action:      ActionAllow,
-				IsEgress:    true,
-				Namespace:   namespace,
-			})
-		}
-	}
+	rules = append(rules, buildIdentityRules(identities, fixedID, ports, isEgress, namespace)...)
 
 	// CIDR-based rules from IPBlock peers.
-	for _, entry := range dstCIDRs {
-		for _, pp := range ports {
-			rules = append(rules, &CompiledRule{
-				SrcIdentity: srcIdentity,
-				DstIdentity: WildcardIdentity,
-				Protocol:    pp.protocol,
-				DstPort:     pp.port,
-				Action:      entry.action,
-				CIDR:        entry.cidr,
-				IsEgress:    true,
-				Namespace:   namespace,
-			})
-		}
-	}
+	rules = append(rules, buildCIDRRules(cidrEntries, fixedID, ports, isEgress, namespace)...)
 
 	// CIDR-based rules from FQDN peers.
-	for _, cidr := range fqdnCIDRs {
-		for _, pp := range ports {
-			rules = append(rules, &CompiledRule{
-				SrcIdentity: srcIdentity,
-				DstIdentity: WildcardIdentity,
-				Protocol:    pp.protocol,
-				DstPort:     pp.port,
-				Action:      ActionAllow,
-				CIDR:        cidr,
-				IsEgress:    true,
-				Namespace:   namespace,
-			})
-		}
-	}
+	rules = append(rules, buildFQDNCIDRRules(fqdnCIDRs, fixedID, ports, isEgress, namespace)...)
 
 	return rules
 }

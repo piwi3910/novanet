@@ -5,8 +5,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/stretchr/testify/require"
-
 	pb "github.com/azrtydxb/novanet/api/v1"
 	"github.com/spf13/cobra"
 )
@@ -112,8 +110,12 @@ func TestConnectAgent_InvalidSocket(t *testing.T) {
 
 	conn, err := connectAgent()
 	// grpc.NewClient is lazy — it succeeds even for invalid paths.
-	require.NoError(t, err)
-	require.NotNil(t, conn)
+	if err != nil {
+		t.Fatalf("connectAgent: unexpected error: %v", err)
+	}
+	if conn == nil {
+		t.Fatal("connectAgent returned nil connection")
+	}
 	_ = conn.Close()
 }
 
@@ -126,8 +128,12 @@ func TestConnectDataplane_InvalidSocket(t *testing.T) {
 	dataplaneSocket = "/nonexistent/dataplane.sock"
 
 	conn, err := connectDataplane()
-	require.NoError(t, err)
-	require.NotNil(t, conn)
+	if err != nil {
+		t.Fatalf("connectDataplane: unexpected error: %v", err)
+	}
+	if conn == nil {
+		t.Fatal("connectDataplane returned nil connection")
+	}
 	_ = conn.Close()
 }
 

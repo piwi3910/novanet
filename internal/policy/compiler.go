@@ -184,33 +184,10 @@ func (c *Compiler) compileIngressRule(rule networkingv1.NetworkPolicyIngressRule
 	}
 
 	// Create cartesian product of sources x ports (identity-based).
-	for _, srcID := range srcIdentities {
-		for _, pp := range ports {
-			rules = append(rules, &CompiledRule{
-				SrcIdentity: srcID,
-				DstIdentity: dstIdentity,
-				Protocol:    pp.protocol,
-				DstPort:     pp.port,
-				Action:      ActionAllow,
-				Namespace:   namespace,
-			})
-		}
-	}
+	rules = append(rules, buildIdentityRules(srcIdentities, dstIdentity, ports, false, namespace)...)
 
 	// Create CIDR-based rules for IPBlock peers (including Except deny rules).
-	for _, entry := range srcCIDRs {
-		for _, pp := range ports {
-			rules = append(rules, &CompiledRule{
-				SrcIdentity: WildcardIdentity,
-				DstIdentity: dstIdentity,
-				Protocol:    pp.protocol,
-				DstPort:     pp.port,
-				Action:      entry.action,
-				CIDR:        entry.cidr,
-				Namespace:   namespace,
-			})
-		}
-	}
+	rules = append(rules, buildCIDRRules(srcCIDRs, dstIdentity, ports, false, namespace)...)
 
 	return rules
 }
@@ -239,35 +216,10 @@ func (c *Compiler) compileEgressRule(rule networkingv1.NetworkPolicyEgressRule, 
 	}
 
 	// Create cartesian product of destinations x ports (identity-based).
-	for _, dstID := range dstIdentities {
-		for _, pp := range ports {
-			rules = append(rules, &CompiledRule{
-				SrcIdentity: srcIdentity,
-				DstIdentity: dstID,
-				Protocol:    pp.protocol,
-				DstPort:     pp.port,
-				Action:      ActionAllow,
-				IsEgress:    true,
-				Namespace:   namespace,
-			})
-		}
-	}
+	rules = append(rules, buildIdentityRules(dstIdentities, srcIdentity, ports, true, namespace)...)
 
 	// Create CIDR-based rules for IPBlock peers (including Except deny rules).
-	for _, entry := range dstCIDRs {
-		for _, pp := range ports {
-			rules = append(rules, &CompiledRule{
-				SrcIdentity: srcIdentity,
-				DstIdentity: WildcardIdentity,
-				Protocol:    pp.protocol,
-				DstPort:     pp.port,
-				Action:      entry.action,
-				CIDR:        entry.cidr,
-				IsEgress:    true,
-				Namespace:   namespace,
-			})
-		}
-	}
+	rules = append(rules, buildCIDRRules(dstCIDRs, srcIdentity, ports, true, namespace)...)
 
 	return rules
 }

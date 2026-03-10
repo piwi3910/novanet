@@ -32,7 +32,7 @@ func bgpGracefulRestartCommands() []string {
 // ConfigureBGPGlobal creates the BGP instance with the given AS number and
 // router ID. This is equivalent to "router bgp <AS>" + "bgp router-id <ID>".
 func (c *Client) ConfigureBGPGlobal(ctx context.Context, localAS uint32, routerID string) error {
-	c.log.Info("configuring BGP global",
+	c.logger.Info("configuring BGP global",
 		zap.Uint32("local_as", localAS),
 		zap.String("router_id", routerID),
 	)
@@ -62,7 +62,7 @@ func (c *Client) ConfigureBGPGlobal(ctx context.Context, localAS uint32, routerI
 func (c *Client) ReconfigureBGPGlobal(ctx context.Context, oldAS, newAS uint32, routerID string) error {
 	if oldAS == newAS {
 		// AS unchanged — just update router-id in place.
-		c.log.Info("updating BGP router-id (AS unchanged)",
+		c.logger.Info("updating BGP router-id (AS unchanged)",
 			zap.Uint32("local_as", newAS),
 			zap.String("router_id", routerID),
 		)
@@ -79,7 +79,7 @@ func (c *Client) ReconfigureBGPGlobal(ctx context.Context, oldAS, newAS uint32, 
 		return nil
 	}
 
-	c.log.Info("reconfiguring BGP global (AS change)",
+	c.logger.Info("reconfiguring BGP global (AS change)",
 		zap.Uint32("old_as", oldAS),
 		zap.Uint32("new_as", newAS),
 		zap.String("router_id", routerID),
@@ -111,7 +111,7 @@ func (c *Client) GetLocalAS() uint32 {
 // Note: FRR infers iBGP vs eBGP from whether remoteAS equals the local AS,
 // so peerType is used for informational/logging purposes only.
 func (c *Client) AddNeighbor(ctx context.Context, addr string, remoteAS uint32, peerType string, keepalive, holdTime uint32, cfg *NeighborConfig) error {
-	c.log.Info("adding BGP neighbor",
+	c.logger.Info("adding BGP neighbor",
 		zap.String("address", addr),
 		zap.Uint32("remote_as", remoteAS),
 		zap.String("peer_type", peerType),
@@ -156,7 +156,7 @@ func (c *Client) AddNeighbor(ctx context.Context, addr string, remoteAS uint32, 
 
 // RemoveNeighbor removes a BGP neighbor by its IP address.
 func (c *Client) RemoveNeighbor(ctx context.Context, addr string) error {
-	c.log.Info("removing BGP neighbor", zap.String("address", addr))
+	c.logger.Info("removing BGP neighbor", zap.String("address", addr))
 
 	commands := []string{
 		fmt.Sprintf("router bgp %d", c.getLocalAS(ctx)),
@@ -174,7 +174,7 @@ func (c *Client) RemoveNeighbor(ctx context.Context, addr string) error {
 func (c *Client) ActivateNeighborAFI(ctx context.Context, addr string, afi string) error {
 	afiName := resolveAFICLI(afi)
 
-	c.log.Info("activating BGP neighbor AFI",
+	c.logger.Info("activating BGP neighbor AFI",
 		zap.String("address", addr),
 		zap.String("afi", afiName),
 	)
@@ -200,7 +200,7 @@ func (c *Client) ActivateNeighborAFI(ctx context.Context, addr string, afi strin
 func (c *Client) AdvertiseNetwork(ctx context.Context, prefix string, afi string) error {
 	afiName := resolveAFICLI(afi)
 
-	c.log.Info("advertising BGP network",
+	c.logger.Info("advertising BGP network",
 		zap.String("prefix", prefix),
 		zap.String("afi", afiName),
 	)
@@ -222,7 +222,7 @@ func (c *Client) AdvertiseNetwork(ctx context.Context, prefix string, afi string
 func (c *Client) WithdrawNetwork(ctx context.Context, prefix string, afi string) error {
 	afiName := resolveAFICLI(afi)
 
-	c.log.Info("withdrawing BGP network",
+	c.logger.Info("withdrawing BGP network",
 		zap.String("prefix", prefix),
 		zap.String("afi", afiName),
 	)
@@ -246,7 +246,7 @@ func (c *Client) getLocalAS(_ context.Context) uint32 {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.localAS == 0 {
-		c.log.Warn("getLocalAS: BGP local AS not configured, returning 0")
+		c.logger.Warn("getLocalAS: BGP local AS not configured, returning 0")
 	}
 	return c.localAS
 }
@@ -257,7 +257,7 @@ func (c *Client) getLocalAS(_ context.Context) uint32 {
 func (c *Client) SetNeighborMaxPrefix(ctx context.Context, addr string, maxPrefixes uint32, warningOnly bool, afi string) error {
 	afiName := resolveAFICLI(afi)
 
-	c.log.Info("setting neighbor maximum-prefix",
+	c.logger.Info("setting neighbor maximum-prefix",
 		zap.String("address", addr),
 		zap.Uint32("max_prefixes", maxPrefixes),
 		zap.Bool("warning_only", warningOnly),
@@ -285,7 +285,7 @@ func (c *Client) SetNeighborMaxPrefix(ctx context.Context, addr string, maxPrefi
 // ConfigureRouteMap creates or replaces a route-map in FRR with the given
 // set commands. Each setCmd is a complete "set ..." line.
 func (c *Client) ConfigureRouteMap(ctx context.Context, name string, setCmds []string) error {
-	c.log.Info("configuring route-map",
+	c.logger.Info("configuring route-map",
 		zap.String("name", name),
 		zap.Int("set_commands", len(setCmds)),
 	)
@@ -309,7 +309,7 @@ func (c *Client) ConfigureRouteMap(ctx context.Context, name string, setCmds []s
 func (c *Client) AdvertiseNetworkWithRouteMap(ctx context.Context, prefix, afi, routeMap string) error {
 	afiName := resolveAFICLI(afi)
 
-	c.log.Info("advertising BGP network with route-map",
+	c.logger.Info("advertising BGP network with route-map",
 		zap.String("prefix", prefix),
 		zap.String("afi", afiName),
 		zap.String("route_map", routeMap),
@@ -330,7 +330,7 @@ func (c *Client) AdvertiseNetworkWithRouteMap(ctx context.Context, prefix, afi, 
 
 // RemoveRouteMap removes a route-map from FRR.
 func (c *Client) RemoveRouteMap(ctx context.Context, name string) error {
-	c.log.Info("removing route-map", zap.String("name", name))
+	c.logger.Info("removing route-map", zap.String("name", name))
 
 	commands := []string{
 		fmt.Sprintf("no route-map %s", name),
@@ -351,7 +351,7 @@ func (c *Client) SetNeighborBFD(ctx context.Context, addr string, enabled bool) 
 		cmd = fmt.Sprintf("no neighbor %s bfd", addr)
 	}
 
-	c.log.Info(action+" BFD for neighbor",
+	c.logger.Info(action+" BFD for neighbor",
 		zap.String("address", addr),
 		zap.Bool("enabled", enabled),
 	)
