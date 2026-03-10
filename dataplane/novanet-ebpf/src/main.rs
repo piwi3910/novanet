@@ -21,11 +21,12 @@
 use aya_ebpf::{
     bindings::TC_ACT_OK as BPF_TC_ACT_OK,
     bindings::TC_ACT_SHOT as BPF_TC_ACT_SHOT,
-    bindings::{bpf_tunnel_key, BPF_F_ZERO_CSUM_TX},
+    bindings::{bpf_tunnel_key, BPF_F_ZERO_CSUM_TX, BPF_SK_LOOKUP_F_REPLACE},
+    helpers::gen::{bpf_sk_assign, bpf_sk_lookup_tcp, bpf_sk_release},
     helpers::{bpf_get_socket_cookie, bpf_redirect, bpf_skb_set_tunnel_key},
-    macros::{cgroup_sock_addr, classifier, map, sk_msg, sock_ops},
+    macros::{cgroup_sock_addr, classifier, map, sk_lookup, sk_msg, sock_ops},
     maps::{Array, HashMap, LruHashMap, PerCpuArray, PerCpuHashMap, RingBuf, SockHash},
-    programs::{SkMsgContext, SockAddrContext, SockOpsContext, TcContext},
+    programs::{SkLookupContext, SkMsgContext, SockAddrContext, SockOpsContext, TcContext},
 };
 use network_types::{
     eth::{EthHdr, EtherType},
@@ -2003,38 +2004,98 @@ fn try_sk_msg_sockmap(ctx: SkMsgContext) -> Result<u32, i64> {
 // ===========================================================================
 // SK_LOOKUP PROGRAM: mesh service redirect
 // Intercepts service-destined connections and redirects to sidecar proxy.
+//
+// When a TCP connection targets a ClusterIP:port registered in the
+// MESH_SERVICES map, this program looks up a listening socket on
+// 127.0.0.1:<redirect_port> and assigns it via bpf_sk_assign(). This
+// replaces nftables/iptables NAT REDIRECT rules entirely, eliminating
+// conntrack overhead and kube-proxy priority ordering issues.
 // ===========================================================================
 
-// TODO: sk_lookup program requires aya-ebpf sk_lookup support.
-// The aya-ebpf crate may not yet have the `sk_lookup` macro and
-// `SkLookupContext`. Once available, implement as follows:
-//
-// #[sk_lookup]
-// pub fn sk_lookup_mesh(ctx: SkLookupContext) -> u32 {
-//     match try_sk_lookup_mesh(ctx) {
-//         Ok(ret) => ret,
-//         Err(_) => 0, // SK_PASS — don't interfere
-//     }
-// }
-//
-// fn try_sk_lookup_mesh(ctx: SkLookupContext) -> Result<u32, i64> {
-//     let dst_ip = ctx.remote_ip4();
-//     let dst_port = ctx.remote_port() as u32;
-//
-//     let key = MeshServiceKey {
-//         ip: dst_ip,
-//         port: dst_port,
-//     };
-//
-//     if let Some(redirect) = unsafe { MESH_SERVICES.get(&key) } {
-//         // Found a mesh service — redirect to sidecar proxy port.
-//         // Use bpf_sk_assign to assign the socket.
-//         // ctx.sk_assign(redirect.redirect_port)?;
-//         return Ok(1); // SK_PASS with assignment
-//     }
-//
-//     Ok(0) // No mesh service — pass through
-// }
+// For BPF_PROG_TYPE_SK_LOOKUP, return 0 means "proceed with lookup" (pass),
+// return 1 means "drop the connection". This is DIFFERENT from sk_action::SK_PASS (1)
+// / sk_action::SK_DROP (0) used in sk_msg/sk_skb programs. Do not confuse them.
+// See kernel: include/uapi/linux/bpf.h, net/core/sock_map.c:sock_map_lookup_prog_run().
+const SK_PASS: u32 = 0;
+#[allow(dead_code)] // Defined for completeness; used when we add drop-on-policy-deny.
+const SK_DROP: u32 = 1;
+
+#[sk_lookup]
+pub fn sk_lookup_mesh(ctx: SkLookupContext) -> u32 {
+    match unsafe { try_sk_lookup_mesh(&ctx) } {
+        Ok(ret) => ret,
+        Err(_) => SK_PASS, // On error, don't interfere — let normal lookup proceed
+    }
+}
+
+/// Look up the destination in the MESH_SERVICES map. If found, find a
+/// listening socket on 127.0.0.1:<redirect_port> and assign it so the
+/// kernel delivers the connection directly to the mesh transparent listener.
+unsafe fn try_sk_lookup_mesh(ctx: &SkLookupContext) -> Result<u32, i64> {
+    let lookup = &*ctx.lookup;
+
+    // Only handle IPv4 TCP for now.
+    if lookup.family != 2 || lookup.protocol != 6 {
+        // AF_INET = 2, IPPROTO_TCP = 6
+        return Ok(SK_PASS);
+    }
+
+    // local_ip4/local_port are the destination (the ClusterIP:port being connected to).
+    // NOTE: In struct bpf_sk_lookup, `local_port` is a __u32 in HOST byte order
+    // (unlike `remote_port` which is __be16 in network byte order). This is
+    // documented in include/uapi/linux/bpf.h and verified in kernel source
+    // net/core/filter.c:bpf_sk_lookup_convert_ctx_access().
+    let dst_ip = lookup.local_ip4;
+    let dst_port = lookup.local_port;
+
+    let key = MeshServiceKey {
+        ip: dst_ip,
+        port: dst_port,
+    };
+
+    let redirect = match MESH_SERVICES.get(&key) {
+        Some(v) => v,
+        None => return Ok(SK_PASS), // Not a mesh service — pass through
+    };
+
+    // Build a socket tuple to look up the listening socket on
+    // 127.0.0.1:<redirect_port>. We set saddr/sport to 0 because we
+    // want to find a wildcard listener, not a connected socket.
+    let mut tuple: aya_ebpf::bindings::bpf_sock_tuple = core::mem::zeroed();
+    // daddr = 127.0.0.1 in network byte order = 0x0100007f
+    tuple.__bindgen_anon_1.ipv4.daddr = 0x0100007fu32;
+    tuple.__bindgen_anon_1.ipv4.dport = (redirect.redirect_port as u16).to_be();
+
+    // BPF_F_CURRENT_NETNS is defined as ((__u64)(-1)) in include/uapi/linux/bpf.h,
+    // which equals u64::MAX (0xFFFFFFFFFFFFFFFF). The aya binding exports it as
+    // c_int (-1), so we cast explicitly to u64 for the helper signature.
+    let sk = bpf_sk_lookup_tcp(
+        ctx.as_ptr(),
+        &mut tuple as *mut _,
+        core::mem::size_of::<aya_ebpf::bindings::bpf_sock_tuple__bindgen_ty_1__bindgen_ty_1>()
+            as u32,
+        aya_ebpf::bindings::BPF_F_CURRENT_NETNS as u64,
+        0,
+    );
+
+    if sk.is_null() {
+        // No listening socket found — pass through to normal lookup.
+        return Ok(SK_PASS);
+    }
+
+    // Assign the found socket to this connection. BPF_SK_LOOKUP_F_REPLACE
+    // allows overriding any previous assignment by another sk_lookup program.
+    let ret = bpf_sk_assign(ctx.as_ptr(), sk as *mut _, BPF_SK_LOOKUP_F_REPLACE as u64);
+
+    // Always release the socket reference from bpf_sk_lookup_tcp.
+    bpf_sk_release(sk as *mut _);
+
+    if ret != 0 {
+        return Err(ret);
+    }
+
+    Ok(SK_PASS) // Socket assigned — kernel will deliver to the mesh listener
+}
 
 // ---------------------------------------------------------------------------
 // Panic handler (required for #![no_std])

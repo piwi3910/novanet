@@ -67,6 +67,7 @@ nav:
   - CLI Reference: cli-reference.md
   - API Reference: api-reference.md
   - Native Routing: novaroute-integration.md
+  - Mesh Interception: mesh-interception.md
   - Troubleshooting: troubleshooting.md
   - Development: development.md
 

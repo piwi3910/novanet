@@ -430,8 +430,8 @@ pub fn load_ebpf(bpf_object_path: &Path) -> Result<(MapManager, Option<RingBuf<M
     // Load sock_ops and sk_msg programs if present (SOCKMAP bypass).
     for prog_name in &["sockops_sockmap", "sk_msg_sockmap"] {
         if let Some(prog) = ebpf.program_mut(prog_name) {
-            match prog_name {
-                &"sockops_sockmap" => match <&mut aya::programs::SockOps>::try_from(prog) {
+            match *prog_name {
+                "sockops_sockmap" => match <&mut aya::programs::SockOps>::try_from(prog) {
                     Ok(p) => match p.load() {
                         Ok(()) => info!(program = *prog_name, "Loaded sock_ops program"),
                         Err(e) => warn!(
@@ -441,7 +441,7 @@ pub fn load_ebpf(bpf_object_path: &Path) -> Result<(MapManager, Option<RingBuf<M
                     },
                     Err(e) => warn!("{} is not a SockOps program: {}", prog_name, e),
                 },
-                &"sk_msg_sockmap" => match <&mut aya::programs::SkMsg>::try_from(prog) {
+                "sk_msg_sockmap" => match <&mut aya::programs::SkMsg>::try_from(prog) {
                     Ok(p) => match p.load() {
                         Ok(()) => info!(program = *prog_name, "Loaded sk_msg program"),
                         Err(e) => warn!(
@@ -475,6 +475,58 @@ pub fn load_ebpf(bpf_object_path: &Path) -> Result<(MapManager, Option<RingBuf<M
         warn!("XDP program 'xdp_pass' not found — XDP acceleration disabled");
     }
 
+    // SK_LOOKUP program for mesh service redirect — load and attach to the
+    // host network namespace. This replaces nftables/iptables NAT REDIRECT
+    // for mesh traffic interception, eliminating conntrack overhead.
+    let sk_lookup_link = if let Some(prog) = ebpf.program_mut("sk_lookup_mesh") {
+        match <&mut aya::programs::SkLookup>::try_from(prog) {
+            Ok(sk) => match sk.load() {
+                Ok(()) => {
+                    info!(program = "sk_lookup_mesh", "Loaded sk_lookup program");
+                    match std::fs::File::open("/proc/self/ns/net") {
+                        Ok(netns) => match sk.attach(netns) {
+                            Ok(link_id) => {
+                                info!("sk_lookup_mesh attached to host network namespace");
+                                Some(sk.take_link(link_id).ok())
+                            }
+                            Err(e) => {
+                                warn!(
+                                    "Failed to attach sk_lookup_mesh: {} — mesh sk_lookup disabled",
+                                    e
+                                );
+                                None
+                            }
+                        },
+                        Err(e) => {
+                            warn!(
+                                "Failed to open /proc/self/ns/net: {} — mesh sk_lookup disabled",
+                                e
+                            );
+                            None
+                        }
+                    }
+                }
+                Err(e) => {
+                    warn!(
+                        "Failed to load sk_lookup_mesh: {} — mesh sk_lookup disabled",
+                        e
+                    );
+                    None
+                }
+            },
+            Err(e) => {
+                warn!(
+                    "sk_lookup_mesh is not an SkLookup program: {} — mesh sk_lookup disabled",
+                    e
+                );
+                None
+            }
+        }
+    } else {
+        warn!("sk_lookup_mesh program not found — mesh sk_lookup disabled");
+        None
+    };
+
     let real_maps = RealMaps::new(
         endpoints,
         endpoints_v6,
@@ -499,6 +551,7 @@ pub fn load_ebpf(bpf_object_path: &Path) -> Result<(MapManager, Option<RingBuf<M
         rl_tokens,
         rl_config,
         backend_health,
+        sk_lookup_link.flatten(),
         ebpf,
     );
 

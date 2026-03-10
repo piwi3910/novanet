@@ -101,7 +101,8 @@ jobs:
       - name: Install system dependencies
         run: |
           sudo apt-get update -qq || sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends protobuf-compiler build-essential mold
+          sudo apt-get install -y --no-install-recommends protobuf-compiler build-essential
+          sudo apt-get install -y --no-install-recommends mold || true
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@0f1b44df7e9cbb178d781a242338dfa5e243ad7f # nightly
@@ -129,7 +130,11 @@ jobs:
         env:
           RUSTC_WRAPPER: sccache
           RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
-        run: cargo clippy -p novanet-common -p novanet-dataplane -- -D warnings
+        run: |
+          if ! command -v mold &>/dev/null; then
+            unset RUSTFLAGS
+          fi
+          cargo clippy -p novanet-common -p novanet-dataplane -- -D warnings
 
   phase1-lint-helm:
     name: "Phase 1: Lint (Helm)"
@@ -323,7 +328,8 @@ jobs:
       - name: Install system dependencies
         run: |
           sudo apt-get update -qq || sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends protobuf-compiler build-essential mold
+          sudo apt-get install -y --no-install-recommends protobuf-compiler build-essential
+          sudo apt-get install -y --no-install-recommends mold || true
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@0f1b44df7e9cbb178d781a242338dfa5e243ad7f # nightly
@@ -356,6 +362,9 @@ jobs:
           RUSTC_WRAPPER: sccache
           RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
         run: |
+          if ! command -v mold &>/dev/null; then
+            unset RUSTFLAGS
+          fi
           cargo nextest run \
             --profile ci \
             -p novanet-common \

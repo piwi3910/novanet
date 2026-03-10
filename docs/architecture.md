@@ -101,12 +101,29 @@ Overlay mode only. Pass-through (TC_ACT_OK), reserved for future identity TLV in
 
 Currently a no-op that returns TC_ACT_OK, allowing the kernel to handle tunnel encapsulation directly. A future version may inject source identity into Geneve TLV options at this hook point.
 
+### sk_lookup_mesh (Host network namespace, socket lookup)
+
+Intercepts TCP socket lookups for mesh service traffic and redirects connections to the local transparent proxy listener. This is a `BPF_PROG_TYPE_SK_LOOKUP` program attached to the host network namespace.
+
+1. Triggered by the kernel during TCP socket lookup (before a listening socket is selected)
+2. Check if the destination is IPv4 TCP (`AF_INET`, `IPPROTO_TCP`)
+3. Look up `(dst_ip, dst_port)` in the MESH_SERVICES map
+4. If found, use `bpf_sk_lookup_tcp` to find a listening socket on `127.0.0.1:<redirect_port>`
+5. Assign the socket via `bpf_sk_assign` with `BPF_SK_LOOKUP_F_REPLACE`
+6. The kernel delivers the connection directly to the mesh sidecar listener
+
+If the destination is not in MESH_SERVICES or no listening socket is found, the program returns `SK_PASS` and normal socket lookup proceeds.
+
+!!! info "Replaces iptables/nftables NAT REDIRECT"
+    The sk_lookup approach eliminates conntrack overhead and avoids priority ordering issues with kube-proxy iptables rules. On kernels older than 5.9 (where `BPF_PROG_TYPE_SK_LOOKUP` is unavailable), NovaEdge falls back to nftables REDIRECT rules.
+
 ### Program Attachment
 
 Programs are attached dynamically by the agent via gRPC `AttachProgram` RPCs to the dataplane. Attachment happens:
 
 - When a new pod is created (attach to the host-side veth)
 - When a tunnel interface is created (overlay mode)
+- **sk_lookup_mesh** is loaded and attached to the host network namespace at dataplane startup (not via gRPC)
 
 Programs are pinned to `/sys/fs/bpf/novanet/` so they survive pod restarts.
 
@@ -125,6 +142,7 @@ All maps are pinned to `/sys/fs/bpf/novanet/` and shared between the four TC pro
 | CONFIG | HashMap | `u32` (key) | `u64` (value) | 32 | Runtime configuration (mode, tunnel type, node IP, etc.) |
 | FLOW_EVENTS | RingBuf | -- | `FlowEvent` struct | 8 MiB | Flow event export to userspace |
 | DROP_COUNTERS | PerCpuArray | `u32` (reason) | `u64` (count) | 16 | Per-CPU drop statistics |
+| MESH_SERVICES | HashMap | `{ip: u32, port: u32}` | `{redirect_port: u32}` | 4,096 | Mesh service IPs/ports to intercept via sk_lookup |
 
 ### Policy Lookup Order
 

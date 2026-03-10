@@ -112,11 +112,10 @@ fn health_counters_to_proto(
     port: u32,
     counters: &BackendHealthCounters,
 ) -> proto::InternalBackendHealthInfo {
-    let avg_rtt_ns = if counters.success_conns > 0 {
-        counters.total_rtt_ns / counters.success_conns
-    } else {
-        0
-    };
+    let avg_rtt_ns = counters
+        .total_rtt_ns
+        .checked_div(counters.success_conns)
+        .unwrap_or(0);
     let failure_rate = if counters.total_conns > 0 {
         counters.failed_conns as f64 / counters.total_conns as f64
     } else {
