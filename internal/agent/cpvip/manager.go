@@ -15,7 +15,7 @@ import (
 	"sync"
 	"time"
 
-	pb "github.com/azrtydxb/novanet/api/v1"
+	"github.com/azrtydxb/novanet/internal/dataplane"
 	"github.com/azrtydxb/novanet/internal/routing"
 	"github.com/azrtydxb/novanet/internal/tunnel"
 	"go.uber.org/zap"
@@ -51,7 +51,7 @@ type Config struct {
 // keeps the L4 LB service map and BGP advertisements in sync.
 type Manager struct {
 	cfg        Config
-	dpClient   pb.DataplaneControlClient
+	dpClient   dataplane.ClientInterface
 	nrClient   *routing.Manager
 	k8sClient  kubernetes.Interface
 	logger     *zap.Logger
@@ -64,7 +64,7 @@ type Manager struct {
 }
 
 // NewManager creates a cp-vip manager. nrClient may be nil if BGP is not used.
-func NewManager(cfg Config, dpClient pb.DataplaneControlClient, nrClient *routing.Manager,
+func NewManager(cfg Config, dpClient dataplane.ClientInterface, nrClient *routing.Manager,
 	k8sClient kubernetes.Interface, logger *zap.Logger) *Manager {
 
 	if cfg.HealthInterval == 0 {
@@ -219,32 +219,36 @@ func (m *Manager) checkHealth(ctx context.Context, nodeIP string) bool {
 }
 
 // updateDataplane pushes the healthy backends and service entry to the
-// eBPF dataplane via gRPC.
+// eBPF dataplane via the dataplane.ClientInterface. If no dataplane client
+// is available (nil), the update is silently skipped.
 func (m *Manager) updateDataplane(ctx context.Context, healthyIPs []string) error {
+	if m.dpClient == nil {
+		m.logger.Debug("dataplane client not available, skipping L4 LB update")
+		return nil
+	}
+
 	backendCount := uint32(len(healthyIPs)) //nolint:gosec // len bounded by cluster size
 
 	// Build backend entries at reserved offsets.
-	entries := make([]*pb.BackendEntry, 0, backendCount)
+	backends := make([]*dataplane.Backend, 0, backendCount)
 	for i, ip := range healthyIPs {
-		entries = append(entries, &pb.BackendEntry{
+		backends = append(backends, &dataplane.Backend{
 			Index:  backendBaseOffset + uint32(i),
-			Ip:     ip,
+			IP:     ip,
 			Port:   apiServerPort,
-			NodeIp: ip, // backend is on the node itself
+			NodeIP: ip, // backend is on the node itself
 		})
 	}
 
-	if len(entries) > 0 {
-		if _, err := m.dpClient.UpsertBackends(ctx, &pb.UpsertBackendsRequest{
-			Backends: entries,
-		}); err != nil {
+	if len(backends) > 0 {
+		if err := m.dpClient.UpsertBackends(ctx, backends); err != nil {
 			return fmt.Errorf("upserting backends: %w", err)
 		}
 	}
 
 	// Upsert the service entry pointing to our reserved backend slots.
-	if _, err := m.dpClient.UpsertService(ctx, &pb.UpsertServiceRequest{
-		Ip:            m.cfg.VIP,
+	if err := m.dpClient.UpsertServiceEntry(ctx, &dataplane.ServiceConfig{
+		IP:            m.cfg.VIP,
 		Port:          apiServerPort,
 		Protocol:      protocolTCP,
 		Scope:         scopeClusterIP,

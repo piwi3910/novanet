@@ -227,6 +227,83 @@ func TestExpandEnvVars(t *testing.T) {
 	}
 }
 
+func TestValidate_IPv6_Enabled_Valid(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.IPv6.Enabled = true
+	cfg.IPv6.ClusterCIDRv6 = "fd00::/48"
+	cfg.IPv6.NodeCIDRv6MaskSize = 112
+
+	if err := Validate(cfg); err != nil {
+		t.Errorf("unexpected error for valid IPv6 config: %v", err)
+	}
+}
+
+func TestValidate_IPv6_EmptyClusterCIDR(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.IPv6.Enabled = true
+	cfg.IPv6.ClusterCIDRv6 = ""
+
+	err := Validate(cfg)
+	if err == nil {
+		t.Error("expected error for empty cluster_cidr_v6 when IPv6 is enabled")
+	}
+}
+
+func TestValidate_IPv6_InvalidCIDR(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.IPv6.Enabled = true
+	cfg.IPv6.ClusterCIDRv6 = "not-a-cidr"
+
+	err := Validate(cfg)
+	if err == nil {
+		t.Error("expected error for invalid IPv6 CIDR")
+	}
+}
+
+func TestValidate_IPv6_IPv4CIDRRejected(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.IPv6.Enabled = true
+	cfg.IPv6.ClusterCIDRv6 = "10.244.0.0/16"
+	cfg.IPv6.NodeCIDRv6MaskSize = 112
+
+	err := Validate(cfg)
+	if err == nil {
+		t.Error("expected error when IPv4 CIDR is provided as cluster_cidr_v6")
+	}
+}
+
+func TestValidate_IPv6_MaskSizeOutOfRange(t *testing.T) {
+	tests := []struct {
+		name string
+		size int
+	}{
+		{"too small", 47},
+		{"too large", 121},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := DefaultConfig()
+			cfg.IPv6.Enabled = true
+			cfg.IPv6.ClusterCIDRv6 = "fd00::/48"
+			cfg.IPv6.NodeCIDRv6MaskSize = tt.size
+			if err := Validate(cfg); err == nil {
+				t.Errorf("expected error for IPv6 mask size %d", tt.size)
+			}
+		})
+	}
+}
+
+func TestValidate_IPv6_Disabled_NoValidation(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.IPv6.Enabled = false
+	cfg.IPv6.ClusterCIDRv6 = "" // would fail if validated
+
+	if err := Validate(cfg); err != nil {
+		t.Errorf("IPv6 validation should be skipped when disabled: %v", err)
+	}
+}
+
 func TestExpandEnvVars_UnsetVars(t *testing.T) {
 	cfg := DefaultConfig()
 

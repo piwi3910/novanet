@@ -1648,7 +1648,7 @@ func initRoutingMode(ctx context.Context, logger *zap.Logger, cfg *config.Config
 	case "overlay":
 		initOverlayMode(ctx, logger, cfg, k8sClient, agentSrv, dpClient, nodeIP, nodeName, bgWg)
 	case "native":
-		return initNativeMode(ctx, logger, cfg, k8sClient, agentSrv, dpClient, nodeIP, podCIDR, nodeName, bgWg)
+		return initNativeMode(ctx, logger, cfg, k8sClient, agentSrv, nodeIP, podCIDR, nodeName, bgWg)
 	}
 	return nil
 }
@@ -1684,7 +1684,7 @@ func initOverlayMode(ctx context.Context, logger *zap.Logger, cfg *config.Config
 // initNativeMode sets up native routing mode with eBGP via the integrated
 // routing manager (FRR sidecar).
 func initNativeMode(ctx context.Context, logger *zap.Logger, cfg *config.Config,
-	k8sClient *kubernetes.Clientset, agentSrv *agentServer, dpClient pb.DataplaneControlClient,
+	k8sClient *kubernetes.Clientset, agentSrv *agentServer,
 	nodeIP net.IP, podCIDR, nodeName string, bgWg *sync.WaitGroup) *routing.Manager {
 
 	logger.Info("running in native routing mode (eBGP)")
@@ -1747,12 +1747,29 @@ func initNativeMode(ctx context.Context, logger *zap.Logger, cfg *config.Config,
 			healthInterval = time.Duration(cfg.Routing.ControlPlaneVIPHealthInterval) * time.Second
 		}
 
+		// Create a dedicated dataplane client for the cp-vip manager
+		// using the dataplane.ClientInterface abstraction.
+		cpvipDPClient, cpvipDPErr := dataplane.NewClient(cfg.DataplaneSocket, logger.Named("cpvip-dp"))
+		if cpvipDPErr != nil {
+			logger.Error("failed to create cpvip dataplane client", zap.Error(cpvipDPErr))
+		}
+		var cpvipDP dataplane.ClientInterface
+		if cpvipDPErr == nil {
+			connCtx, connCancel := context.WithTimeout(ctx, 5*time.Second)
+			if connErr := cpvipDPClient.Connect(connCtx); connErr != nil {
+				logger.Error("failed to connect cpvip dataplane client", zap.Error(connErr))
+			} else {
+				cpvipDP = cpvipDPClient
+			}
+			connCancel()
+		}
+
 		cpvipMgr := cpvip.NewManager(cpvip.Config{
 			VIP:            vip,
 			HealthInterval: healthInterval,
 			NodeName:       nodeName,
 			IsControlPlane: isControlPlaneNode(ctx, k8sClient, nodeName, logger),
-		}, dpClient, routingMgr, k8sClient, logger)
+		}, cpvipDP, routingMgr, k8sClient, logger)
 
 		bgWg.Add(1)
 		go func() {

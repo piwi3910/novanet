@@ -25,6 +25,9 @@ var (
 	ErrEmptyRoutingProto    = errors.New("routing.protocol must not be empty when routing_mode is native")
 	ErrInvalidRoutingProto  = errors.New("routing.protocol must be bgp or ospf")
 	ErrInvalidLogLevel      = errors.New("log_level must be debug, info, warn, or error")
+	ErrEmptyClusterCIDRv6   = errors.New("ipv6.cluster_cidr_v6 must not be empty when ipv6 is enabled")
+	ErrInvalidClusterCIDRv6 = errors.New("ipv6.cluster_cidr_v6 is not a valid IPv6 CIDR")
+	ErrInvalidNodeCIDRv6    = errors.New("ipv6.node_cidr_v6_mask_size must be between 48 and 120")
 )
 
 // Config holds the complete NovaNet agent configuration.
@@ -359,6 +362,24 @@ func Validate(cfg *Config) error {
 		// valid
 	default:
 		return fmt.Errorf("%w: got %q", ErrInvalidLogLevel, cfg.LogLevel)
+	}
+
+	// IPv6 validation: when enabled, ClusterCIDRv6 must be set and valid,
+	// and NodeCIDRv6MaskSize must be in a reasonable range.
+	if cfg.IPv6.Enabled {
+		if cfg.IPv6.ClusterCIDRv6 == "" {
+			return ErrEmptyClusterCIDRv6
+		}
+		ip, _, err := net.ParseCIDR(cfg.IPv6.ClusterCIDRv6)
+		if err != nil {
+			return fmt.Errorf("%w: %q: %v", ErrInvalidClusterCIDRv6, cfg.IPv6.ClusterCIDRv6, err)
+		}
+		if ip.To4() != nil {
+			return fmt.Errorf("%w: %q is an IPv4 CIDR", ErrInvalidClusterCIDRv6, cfg.IPv6.ClusterCIDRv6)
+		}
+		if cfg.IPv6.NodeCIDRv6MaskSize < 48 || cfg.IPv6.NodeCIDRv6MaskSize > 120 {
+			return fmt.Errorf("%w: got %d", ErrInvalidNodeCIDRv6, cfg.IPv6.NodeCIDRv6MaskSize)
+		}
 	}
 
 	return nil
