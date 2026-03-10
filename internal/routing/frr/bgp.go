@@ -32,6 +32,10 @@ func bgpGracefulRestartCommands() []string {
 // ConfigureBGPGlobal creates the BGP instance with the given AS number and
 // router ID. This is equivalent to "router bgp <AS>" + "bgp router-id <ID>".
 func (c *Client) ConfigureBGPGlobal(ctx context.Context, localAS uint32, routerID string) error {
+	if _, err := sanitizeVTYParam(routerID); err != nil {
+		return fmt.Errorf("frr: configure BGP global: router-id: %w", err)
+	}
+
 	c.logger.Info("configuring BGP global",
 		zap.Uint32("local_as", localAS),
 		zap.String("router_id", routerID),
@@ -60,6 +64,10 @@ func (c *Client) ConfigureBGPGlobal(ctx context.Context, localAS uint32, routerI
 // creating the new one. All BGP sessions will be torn down and must be
 // re-established by the reconciler.
 func (c *Client) ReconfigureBGPGlobal(ctx context.Context, oldAS, newAS uint32, routerID string) error {
+	if _, err := sanitizeVTYParam(routerID); err != nil {
+		return fmt.Errorf("frr: reconfigure BGP global: router-id: %w", err)
+	}
+
 	if oldAS == newAS {
 		// AS unchanged — just update router-id in place.
 		c.logger.Info("updating BGP router-id (AS unchanged)",
@@ -111,6 +119,30 @@ func (c *Client) GetLocalAS() uint32 {
 // Note: FRR infers iBGP vs eBGP from whether remoteAS equals the local AS,
 // so peerType is used for informational/logging purposes only.
 func (c *Client) AddNeighbor(ctx context.Context, addr string, remoteAS uint32, peerType string, keepalive, holdTime uint32, cfg *NeighborConfig) error {
+	// Validate neighbor address is a valid IP.
+	if err := validateIPAddress(addr); err != nil {
+		return fmt.Errorf("frr: add neighbor: %w", err)
+	}
+
+	// Sanitize optional string fields to prevent VTY command injection.
+	if cfg != nil {
+		if cfg.Description != "" {
+			if _, err := sanitizeVTYParam(cfg.Description); err != nil {
+				return fmt.Errorf("frr: add neighbor %s: description: %w", addr, err)
+			}
+		}
+		if cfg.Password != "" {
+			if _, err := sanitizeVTYParam(cfg.Password); err != nil {
+				return fmt.Errorf("frr: add neighbor %s: password: %w", addr, err)
+			}
+		}
+		if cfg.SourceAddress != "" {
+			if err := validateIPAddress(cfg.SourceAddress); err != nil {
+				return fmt.Errorf("frr: add neighbor %s: source-address: %w", addr, err)
+			}
+		}
+	}
+
 	c.logger.Info("adding BGP neighbor",
 		zap.String("address", addr),
 		zap.Uint32("remote_as", remoteAS),
@@ -156,6 +188,10 @@ func (c *Client) AddNeighbor(ctx context.Context, addr string, remoteAS uint32, 
 
 // RemoveNeighbor removes a BGP neighbor by its IP address.
 func (c *Client) RemoveNeighbor(ctx context.Context, addr string) error {
+	if err := validateIPAddress(addr); err != nil {
+		return fmt.Errorf("frr: remove neighbor: %w", err)
+	}
+
 	c.logger.Info("removing BGP neighbor", zap.String("address", addr))
 
 	commands := []string{
@@ -172,7 +208,14 @@ func (c *Client) RemoveNeighbor(ctx context.Context, addr string) error {
 // ActivateNeighborAFI activates an address family for a BGP neighbor.
 // The afi parameter accepts "ipv4-unicast", "ipv4", "ipv6-unicast", "ipv6".
 func (c *Client) ActivateNeighborAFI(ctx context.Context, addr string, afi string) error {
+	if err := validateIPAddress(addr); err != nil {
+		return fmt.Errorf("frr: activate neighbor AFI: %w", err)
+	}
+
 	afiName := resolveAFICLI(afi)
+	if _, err := sanitizeVTYParam(afiName); err != nil {
+		return fmt.Errorf("frr: activate neighbor AFI: afi: %w", err)
+	}
 
 	c.logger.Info("activating BGP neighbor AFI",
 		zap.String("address", addr),
@@ -198,7 +241,14 @@ func (c *Client) ActivateNeighborAFI(ctx context.Context, addr string, afi strin
 // AdvertiseNetwork adds a network prefix to BGP for advertisement.
 // The afi parameter accepts the same values as ActivateNeighborAFI.
 func (c *Client) AdvertiseNetwork(ctx context.Context, prefix string, afi string) error {
+	if _, err := sanitizeVTYParam(prefix); err != nil {
+		return fmt.Errorf("frr: advertise network: prefix: %w", err)
+	}
+
 	afiName := resolveAFICLI(afi)
+	if _, err := sanitizeVTYParam(afiName); err != nil {
+		return fmt.Errorf("frr: advertise network: afi: %w", err)
+	}
 
 	c.logger.Info("advertising BGP network",
 		zap.String("prefix", prefix),
@@ -220,7 +270,14 @@ func (c *Client) AdvertiseNetwork(ctx context.Context, prefix string, afi string
 
 // WithdrawNetwork removes a network prefix from BGP advertisements.
 func (c *Client) WithdrawNetwork(ctx context.Context, prefix string, afi string) error {
+	if _, err := sanitizeVTYParam(prefix); err != nil {
+		return fmt.Errorf("frr: withdraw network: prefix: %w", err)
+	}
+
 	afiName := resolveAFICLI(afi)
+	if _, err := sanitizeVTYParam(afiName); err != nil {
+		return fmt.Errorf("frr: withdraw network: afi: %w", err)
+	}
 
 	c.logger.Info("withdrawing BGP network",
 		zap.String("prefix", prefix),
@@ -255,7 +312,14 @@ func (c *Client) getLocalAS(_ context.Context) uint32 {
 // from a BGP neighbor. If warningOnly is true, FRR logs a warning instead
 // of tearing down the session when the limit is exceeded.
 func (c *Client) SetNeighborMaxPrefix(ctx context.Context, addr string, maxPrefixes uint32, warningOnly bool, afi string) error {
+	if err := validateIPAddress(addr); err != nil {
+		return fmt.Errorf("frr: set neighbor max-prefix: %w", err)
+	}
+
 	afiName := resolveAFICLI(afi)
+	if _, err := sanitizeVTYParam(afiName); err != nil {
+		return fmt.Errorf("frr: set neighbor max-prefix: afi: %w", err)
+	}
 
 	c.logger.Info("setting neighbor maximum-prefix",
 		zap.String("address", addr),
@@ -285,6 +349,15 @@ func (c *Client) SetNeighborMaxPrefix(ctx context.Context, addr string, maxPrefi
 // ConfigureRouteMap creates or replaces a route-map in FRR with the given
 // set commands. Each setCmd is a complete "set ..." line.
 func (c *Client) ConfigureRouteMap(ctx context.Context, name string, setCmds []string) error {
+	if _, err := sanitizeVTYParam(name); err != nil {
+		return fmt.Errorf("frr: configure route-map: name: %w", err)
+	}
+	for i, cmd := range setCmds {
+		if _, err := sanitizeVTYParam(cmd); err != nil {
+			return fmt.Errorf("frr: configure route-map %s: set command %d: %w", name, i, err)
+		}
+	}
+
 	c.logger.Info("configuring route-map",
 		zap.String("name", name),
 		zap.Int("set_commands", len(setCmds)),
@@ -307,7 +380,17 @@ func (c *Client) ConfigureRouteMap(ctx context.Context, name string, setCmds []s
 
 // AdvertiseNetworkWithRouteMap adds a network prefix with an associated route-map.
 func (c *Client) AdvertiseNetworkWithRouteMap(ctx context.Context, prefix, afi, routeMap string) error {
+	if _, err := sanitizeVTYParam(prefix); err != nil {
+		return fmt.Errorf("frr: advertise network with route-map: prefix: %w", err)
+	}
+	if _, err := sanitizeVTYParam(routeMap); err != nil {
+		return fmt.Errorf("frr: advertise network with route-map: route-map name: %w", err)
+	}
+
 	afiName := resolveAFICLI(afi)
+	if _, err := sanitizeVTYParam(afiName); err != nil {
+		return fmt.Errorf("frr: advertise network with route-map: afi: %w", err)
+	}
 
 	c.logger.Info("advertising BGP network with route-map",
 		zap.String("prefix", prefix),
@@ -330,6 +413,10 @@ func (c *Client) AdvertiseNetworkWithRouteMap(ctx context.Context, prefix, afi, 
 
 // RemoveRouteMap removes a route-map from FRR.
 func (c *Client) RemoveRouteMap(ctx context.Context, name string) error {
+	if _, err := sanitizeVTYParam(name); err != nil {
+		return fmt.Errorf("frr: remove route-map: name: %w", err)
+	}
+
 	c.logger.Info("removing route-map", zap.String("name", name))
 
 	commands := []string{
@@ -344,6 +431,10 @@ func (c *Client) RemoveRouteMap(ctx context.Context, name string) error {
 
 // SetNeighborBFD enables or disables BFD for a BGP neighbor.
 func (c *Client) SetNeighborBFD(ctx context.Context, addr string, enabled bool) error {
+	if err := validateIPAddress(addr); err != nil {
+		return fmt.Errorf("frr: set neighbor BFD: %w", err)
+	}
+
 	action := "enabling"
 	cmd := fmt.Sprintf("neighbor %s bfd", addr)
 	if !enabled {

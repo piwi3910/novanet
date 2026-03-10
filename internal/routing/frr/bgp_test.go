@@ -114,7 +114,7 @@ func TestClient_GetLocalAS_AfterConfig(t *testing.T) {
 	ctx := context.Background()
 
 	// Configure BGP global
-	if err := client.ConfigureBGPGlobal(ctx, 65001, "router-1"); err != nil {
+	if err := client.ConfigureBGPGlobal(ctx, 65001, "10.0.0.1"); err != nil {
 		t.Fatalf("ConfigureBGPGlobal: %v", err)
 	}
 
@@ -144,14 +144,14 @@ func TestClient_ConfigureBGPGlobal(t *testing.T) {
 	client, dir := setupFakeVtysh(t)
 	ctx := context.Background()
 
-	if err := client.ConfigureBGPGlobal(ctx, 65001, "router-1"); err != nil {
+	if err := client.ConfigureBGPGlobal(ctx, 65001, "10.0.0.1"); err != nil {
 		t.Fatalf("ConfigureBGPGlobal: %v", err)
 	}
 
 	// Verify commands were sent
 	stdin := readRecordedStdin(t, dir)
 	assertStdinContains(t, stdin, "router bgp 65001")
-	assertStdinContains(t, stdin, "bgp router-id router-1")
+	assertStdinContains(t, stdin, "bgp router-id 10.0.0.1")
 }
 
 func TestClient_ConfigureBGPGlobal_InvalidAS(t *testing.T) {
@@ -159,7 +159,7 @@ func TestClient_ConfigureBGPGlobal_InvalidAS(t *testing.T) {
 	ctx := context.Background()
 
 	// AS 0 should still work (FRR will handle validation)
-	err := client.ConfigureBGPGlobal(ctx, 0, "router-1")
+	err := client.ConfigureBGPGlobal(ctx, 0, "10.0.0.1")
 	// The fake vtysh always succeeds, so we just verify it doesn't panic
 	if err != nil {
 		t.Errorf("ConfigureBGPGlobal: unexpected error: %v", err)
@@ -171,7 +171,7 @@ func TestClient_ReconfigureBGPGlobal_SameAS(t *testing.T) {
 	ctx := context.Background()
 
 	// First configuration
-	if err := client.ConfigureBGPGlobal(ctx, 65001, "router-1"); err != nil {
+	if err := client.ConfigureBGPGlobal(ctx, 65001, "10.0.0.1"); err != nil {
 		t.Fatalf("ConfigureBGPGlobal: %v", err)
 	}
 
@@ -179,13 +179,13 @@ func TestClient_ReconfigureBGPGlobal_SameAS(t *testing.T) {
 	_ = os.Remove(filepath.Join(dir, "stdin"))
 
 	// Same AS - should just update router-id
-	if err := client.ConfigureBGPGlobal(ctx, 65001, "router-2"); err != nil {
+	if err := client.ConfigureBGPGlobal(ctx, 65001, "10.0.0.2"); err != nil {
 		t.Fatalf("ConfigureBGPGlobal: %v", err)
 	}
 
 	stdin := readRecordedStdin(t, dir)
 	assertStdinContains(t, stdin, "router bgp 65001")
-	assertStdinContains(t, stdin, "bgp router-id router-2")
+	assertStdinContains(t, stdin, "bgp router-id 10.0.0.2")
 }
 
 func TestClient_ReconfigureBGPGlobal_DifferentAS(t *testing.T) {
@@ -193,7 +193,7 @@ func TestClient_ReconfigureBGPGlobal_DifferentAS(t *testing.T) {
 	ctx := context.Background()
 
 	// First configuration
-	if err := client.ConfigureBGPGlobal(ctx, 65001, "router-1"); err != nil {
+	if err := client.ConfigureBGPGlobal(ctx, 65001, "10.0.0.1"); err != nil {
 		t.Fatalf("ConfigureBGPGlobal: %v", err)
 	}
 
@@ -201,7 +201,7 @@ func TestClient_ReconfigureBGPGlobal_DifferentAS(t *testing.T) {
 	_ = os.Remove(filepath.Join(dir, "stdin"))
 
 	// Different AS - should remove old and create new
-	if err := client.ReconfigureBGPGlobal(ctx, 65001, 65002, "router-1"); err != nil {
+	if err := client.ReconfigureBGPGlobal(ctx, 65001, 65002, "10.0.0.1"); err != nil {
 		t.Fatalf("ReconfigureBGPGlobal: %v", err)
 	}
 
@@ -215,7 +215,7 @@ func TestClient_AddNeighbor(t *testing.T) {
 	ctx := context.Background()
 
 	// Configure BGP first
-	if err := client.ConfigureBGPGlobal(ctx, 65001, "router-1"); err != nil {
+	if err := client.ConfigureBGPGlobal(ctx, 65001, "10.0.0.1"); err != nil {
 		t.Fatalf("ConfigureBGPGlobal: %v", err)
 	}
 
@@ -238,7 +238,7 @@ func TestClient_AddNeighbor_WithConfig(t *testing.T) {
 	ctx := context.Background()
 
 	// Configure BGP first
-	if err := client.ConfigureBGPGlobal(ctx, 65001, "router-1"); err != nil {
+	if err := client.ConfigureBGPGlobal(ctx, 65001, "10.0.0.1"); err != nil {
 		t.Fatalf("ConfigureBGPGlobal: %v", err)
 	}
 
@@ -268,7 +268,7 @@ func TestClient_AddNeighbor_NoTimers(t *testing.T) {
 	ctx := context.Background()
 
 	// Configure BGP first
-	if err := client.ConfigureBGPGlobal(ctx, 65001, "router-1"); err != nil {
+	if err := client.ConfigureBGPGlobal(ctx, 65001, "10.0.0.1"); err != nil {
 		t.Fatalf("ConfigureBGPGlobal: %v", err)
 	}
 
@@ -292,7 +292,7 @@ func TestClient_RemoveNeighbor(t *testing.T) {
 	ctx := context.Background()
 
 	// Configure BGP first
-	if err := client.ConfigureBGPGlobal(ctx, 65001, "router-1"); err != nil {
+	if err := client.ConfigureBGPGlobal(ctx, 65001, "10.0.0.1"); err != nil {
 		t.Fatalf("ConfigureBGPGlobal: %v", err)
 	}
 
@@ -314,7 +314,7 @@ func TestClient_ActivateNeighborAFI(t *testing.T) {
 	ctx := context.Background()
 
 	// Configure BGP first
-	if err := client.ConfigureBGPGlobal(ctx, 65001, "router-1"); err != nil {
+	if err := client.ConfigureBGPGlobal(ctx, 65001, "10.0.0.1"); err != nil {
 		t.Fatalf("ConfigureBGPGlobal: %v", err)
 	}
 
@@ -337,7 +337,7 @@ func TestClient_ActivateNeighborAFI_IPv6(t *testing.T) {
 	ctx := context.Background()
 
 	// Configure BGP first
-	if err := client.ConfigureBGPGlobal(ctx, 65001, "router-1"); err != nil {
+	if err := client.ConfigureBGPGlobal(ctx, 65001, "10.0.0.1"); err != nil {
 		t.Fatalf("ConfigureBGPGlobal: %v", err)
 	}
 
@@ -358,7 +358,7 @@ func TestClient_AdvertiseNetwork(t *testing.T) {
 	ctx := context.Background()
 
 	// Configure BGP first
-	if err := client.ConfigureBGPGlobal(ctx, 65001, "router-1"); err != nil {
+	if err := client.ConfigureBGPGlobal(ctx, 65001, "10.0.0.1"); err != nil {
 		t.Fatalf("ConfigureBGPGlobal: %v", err)
 	}
 
@@ -380,7 +380,7 @@ func TestClient_WithdrawNetwork(t *testing.T) {
 	ctx := context.Background()
 
 	// Configure BGP first
-	if err := client.ConfigureBGPGlobal(ctx, 65001, "router-1"); err != nil {
+	if err := client.ConfigureBGPGlobal(ctx, 65001, "10.0.0.1"); err != nil {
 		t.Fatalf("ConfigureBGPGlobal: %v", err)
 	}
 
@@ -402,7 +402,7 @@ func TestClient_SetNeighborMaxPrefix(t *testing.T) {
 	ctx := context.Background()
 
 	// Configure BGP first
-	if err := client.ConfigureBGPGlobal(ctx, 65001, "router-1"); err != nil {
+	if err := client.ConfigureBGPGlobal(ctx, 65001, "10.0.0.1"); err != nil {
 		t.Fatalf("ConfigureBGPGlobal: %v", err)
 	}
 
@@ -426,7 +426,7 @@ func TestClient_SetNeighborMaxPrefix_WarningOnly(t *testing.T) {
 	ctx := context.Background()
 
 	// Configure BGP first
-	if err := client.ConfigureBGPGlobal(ctx, 65001, "router-1"); err != nil {
+	if err := client.ConfigureBGPGlobal(ctx, 65001, "10.0.0.1"); err != nil {
 		t.Fatalf("ConfigureBGPGlobal: %v", err)
 	}
 
@@ -447,7 +447,7 @@ func TestClient_ConfigureRouteMap(t *testing.T) {
 	ctx := context.Background()
 
 	// Configure BGP first
-	if err := client.ConfigureBGPGlobal(ctx, 65001, "router-1"); err != nil {
+	if err := client.ConfigureBGPGlobal(ctx, 65001, "10.0.0.1"); err != nil {
 		t.Fatalf("ConfigureBGPGlobal: %v", err)
 	}
 
@@ -473,7 +473,7 @@ func TestClient_ConfigureRouteMap_Empty(t *testing.T) {
 	ctx := context.Background()
 
 	// Configure BGP first
-	if err := client.ConfigureBGPGlobal(ctx, 65001, "router-1"); err != nil {
+	if err := client.ConfigureBGPGlobal(ctx, 65001, "10.0.0.1"); err != nil {
 		t.Fatalf("ConfigureBGPGlobal: %v", err)
 	}
 
@@ -495,7 +495,7 @@ func TestClient_AdvertiseNetworkWithRouteMap(t *testing.T) {
 	ctx := context.Background()
 
 	// Configure BGP first
-	if err := client.ConfigureBGPGlobal(ctx, 65001, "router-1"); err != nil {
+	if err := client.ConfigureBGPGlobal(ctx, 65001, "10.0.0.1"); err != nil {
 		t.Fatalf("ConfigureBGPGlobal: %v", err)
 	}
 
@@ -517,7 +517,7 @@ func TestClient_RemoveRouteMap(t *testing.T) {
 	ctx := context.Background()
 
 	// Configure BGP first
-	if err := client.ConfigureBGPGlobal(ctx, 65001, "router-1"); err != nil {
+	if err := client.ConfigureBGPGlobal(ctx, 65001, "10.0.0.1"); err != nil {
 		t.Fatalf("ConfigureBGPGlobal: %v", err)
 	}
 
@@ -538,7 +538,7 @@ func TestClient_SetNeighborBFD_Enable(t *testing.T) {
 	ctx := context.Background()
 
 	// Configure BGP first
-	if err := client.ConfigureBGPGlobal(ctx, 65001, "router-1"); err != nil {
+	if err := client.ConfigureBGPGlobal(ctx, 65001, "10.0.0.1"); err != nil {
 		t.Fatalf("ConfigureBGPGlobal: %v", err)
 	}
 
@@ -559,7 +559,7 @@ func TestClient_SetNeighborBFD_Disable(t *testing.T) {
 	ctx := context.Background()
 
 	// Configure BGP first
-	if err := client.ConfigureBGPGlobal(ctx, 65001, "router-1"); err != nil {
+	if err := client.ConfigureBGPGlobal(ctx, 65001, "10.0.0.1"); err != nil {
 		t.Fatalf("ConfigureBGPGlobal: %v", err)
 	}
 
@@ -573,6 +573,166 @@ func TestClient_SetNeighborBFD_Disable(t *testing.T) {
 
 	stdin := readRecordedStdin(t, dir)
 	assertStdinContains(t, stdin, "no neighbor 192.168.1.2 bfd")
+}
+
+// --- VTY command injection prevention tests ---
+
+func TestClient_AddNeighbor_InvalidAddr(t *testing.T) {
+	client, _ := setupFakeVtysh(t)
+	ctx := context.Background()
+
+	if err := client.ConfigureBGPGlobal(ctx, 65001, "10.0.0.1"); err != nil {
+		t.Fatalf("ConfigureBGPGlobal: %v", err)
+	}
+
+	err := client.AddNeighbor(ctx, "not-an-ip", 65002, "external", 10, 30, nil)
+	if err == nil {
+		t.Fatal("expected error for non-IP address")
+	}
+	if !strings.Contains(err.Error(), "invalid IP address") {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+func TestClient_AddNeighbor_InjectionInDescription(t *testing.T) {
+	client, _ := setupFakeVtysh(t)
+	ctx := context.Background()
+
+	if err := client.ConfigureBGPGlobal(ctx, 65001, "10.0.0.1"); err != nil {
+		t.Fatalf("ConfigureBGPGlobal: %v", err)
+	}
+
+	cfg := &NeighborConfig{
+		Description: "legit\nroute-map EVIL permit 10",
+	}
+	err := client.AddNeighbor(ctx, "192.168.1.2", 65002, "external", 10, 30, cfg)
+	if err == nil {
+		t.Fatal("expected error for newline in description")
+	}
+	if !strings.Contains(err.Error(), "description") || !strings.Contains(err.Error(), "control characters") {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+func TestClient_AddNeighbor_InjectionInPassword(t *testing.T) {
+	client, _ := setupFakeVtysh(t)
+	ctx := context.Background()
+
+	if err := client.ConfigureBGPGlobal(ctx, 65001, "10.0.0.1"); err != nil {
+		t.Fatalf("ConfigureBGPGlobal: %v", err)
+	}
+
+	cfg := &NeighborConfig{
+		Password: "pass\nneighbor 10.0.0.1 remote-as 666",
+	}
+	err := client.AddNeighbor(ctx, "192.168.1.2", 65002, "external", 10, 30, cfg)
+	if err == nil {
+		t.Fatal("expected error for newline in password")
+	}
+	if !strings.Contains(err.Error(), "password") || !strings.Contains(err.Error(), "control characters") {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+func TestClient_AddNeighbor_InvalidSourceAddress(t *testing.T) {
+	client, _ := setupFakeVtysh(t)
+	ctx := context.Background()
+
+	if err := client.ConfigureBGPGlobal(ctx, 65001, "10.0.0.1"); err != nil {
+		t.Fatalf("ConfigureBGPGlobal: %v", err)
+	}
+
+	cfg := &NeighborConfig{
+		SourceAddress: "not-valid-ip",
+	}
+	err := client.AddNeighbor(ctx, "192.168.1.2", 65002, "external", 10, 30, cfg)
+	if err == nil {
+		t.Fatal("expected error for invalid source address")
+	}
+	if !strings.Contains(err.Error(), "source-address") || !strings.Contains(err.Error(), "invalid IP address") {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+func TestClient_ConfigureBGPGlobal_InjectionInRouterID(t *testing.T) {
+	client, _ := setupFakeVtysh(t)
+	ctx := context.Background()
+
+	err := client.ConfigureBGPGlobal(ctx, 65001, "10.0.0.1\nrouter bgp 666")
+	if err == nil {
+		t.Fatal("expected error for newline in router-id")
+	}
+	if !strings.Contains(err.Error(), "router-id") || !strings.Contains(err.Error(), "control characters") {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+func TestClient_AdvertiseNetwork_InjectionInPrefix(t *testing.T) {
+	client, _ := setupFakeVtysh(t)
+	ctx := context.Background()
+	client.localAS = 65001
+
+	err := client.AdvertiseNetwork(ctx, "10.0.0.0/24\nroute-map EVIL permit 10", "ipv4")
+	if err == nil {
+		t.Fatal("expected error for newline in prefix")
+	}
+	if !strings.Contains(err.Error(), "prefix") || !strings.Contains(err.Error(), "control characters") {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+func TestClient_WithdrawNetwork_InjectionInPrefix(t *testing.T) {
+	client, _ := setupFakeVtysh(t)
+	ctx := context.Background()
+	client.localAS = 65001
+
+	err := client.WithdrawNetwork(ctx, "10.0.0.0/24\nevil-command", "ipv4")
+	if err == nil {
+		t.Fatal("expected error for newline in prefix")
+	}
+	if !strings.Contains(err.Error(), "prefix") || !strings.Contains(err.Error(), "control characters") {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+func TestClient_ConfigureRouteMap_InjectionInName(t *testing.T) {
+	client, _ := setupFakeVtysh(t)
+	ctx := context.Background()
+
+	err := client.ConfigureRouteMap(ctx, "my-map\nevil-command", nil)
+	if err == nil {
+		t.Fatal("expected error for newline in route-map name")
+	}
+	if !strings.Contains(err.Error(), "name") || !strings.Contains(err.Error(), "control characters") {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+func TestClient_ConfigureRouteMap_InjectionInSetCmd(t *testing.T) {
+	client, _ := setupFakeVtysh(t)
+	ctx := context.Background()
+
+	setCmds := []string{"set local-preference 200\nevil-command"}
+	err := client.ConfigureRouteMap(ctx, "test-map", setCmds)
+	if err == nil {
+		t.Fatal("expected error for newline in set command")
+	}
+	if !strings.Contains(err.Error(), "set command 0") || !strings.Contains(err.Error(), "control characters") {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+func TestClient_RemoveRouteMap_InjectionInName(t *testing.T) {
+	client, _ := setupFakeVtysh(t)
+	ctx := context.Background()
+
+	err := client.RemoveRouteMap(ctx, "my-map\nevil")
+	if err == nil {
+		t.Fatal("expected error for newline in route-map name")
+	}
+	if !strings.Contains(err.Error(), "name") || !strings.Contains(err.Error(), "control characters") {
+		t.Errorf("unexpected error: %v", err)
+	}
 }
 
 // Benchmark tests

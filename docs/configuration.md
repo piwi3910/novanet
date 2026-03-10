@@ -43,6 +43,12 @@ The following table lists all configurable values in the NovaNet Helm chart (`de
 | `routing.bfd.detectMultiplier` | `3` | BFD detect multiplier (missed packets before declaring peer down). |
 | `routing.peers` | `[]` | List of BGP peers to configure. Each entry has `neighbor_address`, `remote_as`, `description`, and optionally `bfd_enabled`, `bfd_min_rx_ms`, `bfd_min_tx_ms`, `bfd_detect_multiplier`. |
 
+**Input validation**: All string parameters passed to FRR (neighbor addresses, descriptions,
+passwords, source addresses, network prefixes, and route-map names) are validated before
+constructing VTY commands. Neighbor and source addresses must be valid IPv4 or IPv6 addresses.
+All string fields are rejected if they contain control characters (newlines, tabs, etc.) to
+prevent VTY command injection.
+
 ### L4 Load Balancing
 
 | Key | Default | Description |
