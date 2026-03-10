@@ -36,7 +36,7 @@ func (v *HostEndpointPolicyValidator) ValidateDelete(_ context.Context, _ *novan
 }
 
 func validateHostEndpointPolicySpec(spec *novanetv1alpha1.HostEndpointPolicySpec) field.ErrorList {
-	var allErrs field.ErrorList
+	allErrs := make(field.ErrorList, 0, len(spec.Ingress)+len(spec.Egress))
 
 	ingressPath := field.NewPath("spec", "ingress")
 	for i, rule := range spec.Ingress {
@@ -52,7 +52,7 @@ func validateHostEndpointPolicySpec(spec *novanetv1alpha1.HostEndpointPolicySpec
 }
 
 func validateHostRule(rule novanetv1alpha1.HostRule, fldPath *field.Path) field.ErrorList {
-	var allErrs field.ErrorList
+	allErrs := make(field.ErrorList, 0)
 
 	switch rule.Action {
 	case novanetv1alpha1.HostRuleActionAllow, novanetv1alpha1.HostRuleActionDeny:

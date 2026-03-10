@@ -36,7 +36,7 @@ func (v *NovaNetworkPolicyValidator) ValidateDelete(_ context.Context, _ *novane
 }
 
 func validateNovaNetworkPolicySpec(spec *novanetv1alpha1.NovaNetworkPolicySpec) field.ErrorList {
-	var allErrs field.ErrorList
+	allErrs := make(field.ErrorList, 0)
 
 	for i, pt := range spec.PolicyTypes {
 		switch pt {
@@ -66,7 +66,7 @@ func validateNovaNetworkPolicySpec(spec *novanetv1alpha1.NovaNetworkPolicySpec) 
 }
 
 func validateNetworkPolicyPorts(ports []novanetv1alpha1.NovaNetworkPolicyPort, fldPath *field.Path) field.ErrorList {
-	var allErrs field.ErrorList
+	allErrs := make(field.ErrorList, 0)
 
 	for i, p := range ports {
 		portPath := fldPath.Index(i)
@@ -99,7 +99,7 @@ func validateNetworkPolicyPorts(ports []novanetv1alpha1.NovaNetworkPolicyPort, f
 }
 
 func validateNetworkPolicyPeers(peers []novanetv1alpha1.NovaNetworkPolicyPeer, fldPath *field.Path) field.ErrorList {
-	var allErrs field.ErrorList
+	allErrs := make(field.ErrorList, 0)
 
 	for i, peer := range peers {
 		peerPath := fldPath.Index(i)
@@ -112,7 +112,7 @@ func validateNetworkPolicyPeers(peers []novanetv1alpha1.NovaNetworkPolicyPeer, f
 }
 
 func validateIPBlock(ipBlock *novanetv1alpha1.NovaIPBlock, fldPath *field.Path) field.ErrorList {
-	var allErrs field.ErrorList
+	allErrs := make(field.ErrorList, 0)
 
 	if err := validateCIDR(ipBlock.CIDR); err != nil {
 		allErrs = append(allErrs, field.Invalid(fldPath.Child("cidr"), ipBlock.CIDR, err.Error()))

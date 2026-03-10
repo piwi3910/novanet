@@ -38,7 +38,7 @@ func (v *IPPoolValidator) ValidateDelete(_ context.Context, _ *novanetv1alpha1.I
 }
 
 func validateIPPoolSpec(spec *novanetv1alpha1.IPPoolSpec) field.ErrorList {
-	var allErrs field.ErrorList
+	allErrs := make(field.ErrorList, 0)
 
 	switch spec.Type {
 	case novanetv1alpha1.IPPoolTypeLoadBalancerVIP,
