@@ -324,7 +324,7 @@ func (r *NovaNetClusterReconciler) reconcileConfigMap(ctx context.Context, clust
 		Egress:          novanetEgressCfg{MasqueradeEnabled: true},
 		Policy:          novanetPolicyCfg{DefaultDeny: false},
 		LogLevel:        cluster.Spec.Agent.LogLevel,
-		MetricsAddress:  fmt.Sprintf(":%d", metricsPort),
+		MetricsAddress:  fmt.Sprintf("127.0.0.1:%d", metricsPort),
 	}
 
 	if cluster.Spec.NovaRouteIntegration != nil && cluster.Spec.NovaRouteIntegration.Enabled {

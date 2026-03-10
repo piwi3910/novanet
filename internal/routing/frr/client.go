@@ -125,10 +125,21 @@ func (c *Client) runConfig(ctx context.Context, commands []string) error {
 	}
 
 	for _, cmd := range commands {
-		c.log.Debug("VTY command OK", zap.String("cmd", cmd))
+		c.log.Debug("VTY command OK", zap.String("cmd", sanitizeCommand(cmd)))
 	}
 
 	return nil
+}
+
+// sanitizeCommand redacts sensitive values (e.g. BGP passwords) from FRR
+// VTY commands before they are written to log output.
+func sanitizeCommand(cmd string) string {
+	// Matches "neighbor <addr> password <secret>" - redact the password value.
+	if strings.Contains(cmd, " password ") {
+		idx := strings.Index(cmd, " password ")
+		return cmd[:idx] + " password ***"
+	}
+	return cmd
 }
 
 // runShow executes a show command via vtysh and returns the output.
