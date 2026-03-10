@@ -1,4 +1,4 @@
-package main
+package agent
 
 import (
 	"context"
@@ -22,12 +22,12 @@ func saturateU32(v uint64) uint32 {
 }
 
 // GetRoutingPeers returns BGP peer state from FRR and augments with intent owner info.
-func (s *agentServer) GetRoutingPeers(ctx context.Context, _ *pb.GetRoutingPeersRequest) (*pb.GetRoutingPeersResponse, error) {
-	if s.routingMgr == nil {
+func (s *Server) GetRoutingPeers(ctx context.Context, _ *pb.GetRoutingPeersRequest) (*pb.GetRoutingPeersResponse, error) {
+	if s.RoutingMgr == nil {
 		return nil, status.Error(codes.FailedPrecondition, "routing not enabled (overlay mode)")
 	}
 
-	frrClient := s.routingMgr.FRRClient()
+	frrClient := s.RoutingMgr.FRRClient()
 	if frrClient == nil {
 		return nil, status.Error(codes.Unavailable, "FRR client not available")
 	}
@@ -37,15 +37,13 @@ func (s *agentServer) GetRoutingPeers(ctx context.Context, _ *pb.GetRoutingPeers
 		return nil, status.Errorf(codes.Internal, "failed to query BGP neighbors: %v", err)
 	}
 
-	// Get BFD sessions for cross-referencing BFD status per peer.
 	bfdPeers, _ := frrClient.GetBFDPeers(ctx) //nolint:errcheck // BFD info is optional
 	bfdByAddr := make(map[string]string, len(bfdPeers))
 	for _, bp := range bfdPeers {
 		bfdByAddr[bp.PeerAddress] = bp.Status
 	}
 
-	// Get intent store for owner info.
-	store := s.routingMgr.Store()
+	store := s.RoutingMgr.Store()
 	peerIntents := store.GetPeerIntents()
 	ownerByAddr := make(map[string]string, len(peerIntents))
 	for _, pi := range peerIntents {
@@ -72,7 +70,6 @@ func (s *agentServer) GetRoutingPeers(ctx context.Context, _ *pb.GetRoutingPeers
 		resp.Peers = append(resp.Peers, peer)
 	}
 
-	// Sort peers by address for stable output.
 	sort.Slice(resp.Peers, func(i, j int) bool {
 		return resp.Peers[i].NeighborAddress < resp.Peers[j].NeighborAddress
 	})
@@ -81,12 +78,12 @@ func (s *agentServer) GetRoutingPeers(ctx context.Context, _ *pb.GetRoutingPeers
 }
 
 // GetRoutingPrefixes returns prefix advertisement state from the intent store.
-func (s *agentServer) GetRoutingPrefixes(ctx context.Context, _ *pb.GetRoutingPrefixesRequest) (*pb.GetRoutingPrefixesResponse, error) {
-	if s.routingMgr == nil {
+func (s *Server) GetRoutingPrefixes(ctx context.Context, _ *pb.GetRoutingPrefixesRequest) (*pb.GetRoutingPrefixesResponse, error) {
+	if s.RoutingMgr == nil {
 		return nil, status.Error(codes.FailedPrecondition, "routing not enabled (overlay mode)")
 	}
 
-	store := s.routingMgr.Store()
+	store := s.RoutingMgr.Store()
 	prefixIntents := store.GetPrefixIntents()
 
 	resp := &pb.GetRoutingPrefixesResponse{
@@ -106,7 +103,6 @@ func (s *agentServer) GetRoutingPrefixes(ctx context.Context, _ *pb.GetRoutingPr
 		})
 	}
 
-	// Sort by prefix for stable output.
 	sort.Slice(resp.Prefixes, func(i, j int) bool {
 		return resp.Prefixes[i].Prefix < resp.Prefixes[j].Prefix
 	})
@@ -115,12 +111,12 @@ func (s *agentServer) GetRoutingPrefixes(ctx context.Context, _ *pb.GetRoutingPr
 }
 
 // GetRoutingBFDSessions returns BFD session state from FRR augmented with intent info.
-func (s *agentServer) GetRoutingBFDSessions(ctx context.Context, _ *pb.GetRoutingBFDSessionsRequest) (*pb.GetRoutingBFDSessionsResponse, error) {
-	if s.routingMgr == nil {
+func (s *Server) GetRoutingBFDSessions(ctx context.Context, _ *pb.GetRoutingBFDSessionsRequest) (*pb.GetRoutingBFDSessionsResponse, error) {
+	if s.RoutingMgr == nil {
 		return nil, status.Error(codes.FailedPrecondition, "routing not enabled (overlay mode)")
 	}
 
-	frrClient := s.routingMgr.FRRClient()
+	frrClient := s.RoutingMgr.FRRClient()
 	if frrClient == nil {
 		return nil, status.Error(codes.Unavailable, "FRR client not available")
 	}
@@ -130,8 +126,7 @@ func (s *agentServer) GetRoutingBFDSessions(ctx context.Context, _ *pb.GetRoutin
 		return nil, status.Errorf(codes.Internal, "failed to query BFD peers: %v", err)
 	}
 
-	// Get intent store for owner info and timer details.
-	store := s.routingMgr.Store()
+	store := s.RoutingMgr.Store()
 	bfdIntents := store.GetBFDIntents()
 	bfdByAddr := make(map[string]*pb.RoutingBFDSessionInfo, len(bfdIntents))
 	for _, bi := range bfdIntents {
@@ -144,7 +139,6 @@ func (s *agentServer) GetRoutingBFDSessions(ctx context.Context, _ *pb.GetRoutin
 		}
 	}
 
-	// Also check peer intents for BFD enabled via peer config.
 	peerIntents := store.GetPeerIntents()
 	for _, pi := range peerIntents {
 		if pi.BFDEnabled {
@@ -169,7 +163,6 @@ func (s *agentServer) GetRoutingBFDSessions(ctx context.Context, _ *pb.GetRoutin
 			Status:      bp.Status,
 			Uptime:      bp.Uptime,
 		}
-		// Merge intent info if available.
 		if info, ok := bfdByAddr[bp.PeerAddress]; ok {
 			session.MinRxMs = info.MinRxMs
 			session.MinTxMs = info.MinTxMs
@@ -188,12 +181,12 @@ func (s *agentServer) GetRoutingBFDSessions(ctx context.Context, _ *pb.GetRoutin
 }
 
 // GetRoutingOSPFNeighbors returns OSPF neighbor state from FRR.
-func (s *agentServer) GetRoutingOSPFNeighbors(ctx context.Context, _ *pb.GetRoutingOSPFNeighborsRequest) (*pb.GetRoutingOSPFNeighborsResponse, error) {
-	if s.routingMgr == nil {
+func (s *Server) GetRoutingOSPFNeighbors(ctx context.Context, _ *pb.GetRoutingOSPFNeighborsRequest) (*pb.GetRoutingOSPFNeighborsResponse, error) {
+	if s.RoutingMgr == nil {
 		return nil, status.Error(codes.FailedPrecondition, "routing not enabled (overlay mode)")
 	}
 
-	frrClient := s.routingMgr.FRRClient()
+	frrClient := s.RoutingMgr.FRRClient()
 	if frrClient == nil {
 		return nil, status.Error(codes.Unavailable, "FRR client not available")
 	}
@@ -203,8 +196,7 @@ func (s *agentServer) GetRoutingOSPFNeighbors(ctx context.Context, _ *pb.GetRout
 		return nil, status.Errorf(codes.Internal, "failed to query OSPF neighbors: %v", err)
 	}
 
-	// Get intent store for owner info.
-	store := s.routingMgr.Store()
+	store := s.RoutingMgr.Store()
 	ospfIntents := store.GetOSPFIntents()
 	ownerByIface := make(map[string]string, len(ospfIntents))
 	for _, oi := range ospfIntents {
@@ -229,16 +221,14 @@ func (s *agentServer) GetRoutingOSPFNeighbors(ctx context.Context, _ *pb.GetRout
 }
 
 // StreamRoutingEvents streams routing events to the client.
-func (s *agentServer) StreamRoutingEvents(req *pb.StreamRoutingEventsRequest, stream pb.AgentControl_StreamRoutingEventsServer) error {
-	if s.routingMgr == nil {
+func (s *Server) StreamRoutingEvents(req *pb.StreamRoutingEventsRequest, stream pb.AgentControl_StreamRoutingEventsServer) error {
+	if s.RoutingMgr == nil {
 		return status.Error(codes.FailedPrecondition, "routing not enabled (overlay mode)")
 	}
 
-	// Subscribe to routing events via the manager's event channel.
-	ch := s.routingMgr.SubscribeEvents()
-	defer s.routingMgr.UnsubscribeEvents(ch)
+	ch := s.RoutingMgr.SubscribeEvents()
+	defer s.RoutingMgr.UnsubscribeEvents(ch)
 
-	// Build event type filter set.
 	typeFilter := make(map[string]bool, len(req.EventTypes))
 	for _, t := range req.EventTypes {
 		typeFilter[t] = true
@@ -253,12 +243,10 @@ func (s *agentServer) StreamRoutingEvents(req *pb.StreamRoutingEventsRequest, st
 				return nil
 			}
 
-			// Apply owner filter.
 			if req.OwnerFilter != "" && evt.Owner != req.OwnerFilter {
 				continue
 			}
 
-			// Apply event type filter.
 			if len(typeFilter) > 0 && !typeFilter[evt.EventType] {
 				continue
 			}
