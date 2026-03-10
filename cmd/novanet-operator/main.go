@@ -19,6 +19,7 @@ import (
 
 	novanetv1alpha1 "github.com/azrtydxb/novanet/api/v1alpha1"
 	"github.com/azrtydxb/novanet/internal/operator/controller"
+	novanetwebhook "github.com/azrtydxb/novanet/internal/webhook"
 )
 
 // Build-time variables set via ldflags.
@@ -123,6 +124,20 @@ func main() {
 	}
 	if err = clusterReconciler.SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "NovaNetCluster")
+		os.Exit(1)
+	}
+
+	// Set up validating webhooks for CRDs
+	if err = novanetwebhook.SetupHostEndpointPolicyWebhookWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create webhook", "webhook", "HostEndpointPolicy")
+		os.Exit(1)
+	}
+	if err = novanetwebhook.SetupNovaNetworkPolicyWebhookWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create webhook", "webhook", "NovaNetworkPolicy")
+		os.Exit(1)
+	}
+	if err = novanetwebhook.SetupIPPoolWebhookWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create webhook", "webhook", "IPPool")
 		os.Exit(1)
 	}
 
