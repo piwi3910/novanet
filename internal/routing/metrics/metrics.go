@@ -1,6 +1,6 @@
 // Package routingmetrics provides Prometheus metrics for NovaNet routing.
 // It follows the same registration pattern as agentmetrics: metrics are
-// created with prometheus.New*Vec and explicitly registered via Register().
+// created with prometheus.New* and explicitly registered via Register().
 package routingmetrics
 
 import (
