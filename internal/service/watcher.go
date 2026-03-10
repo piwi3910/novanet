@@ -7,6 +7,7 @@ import (
 	"net"
 	"strings"
 	"sync"
+	"time"
 
 	"go.uber.org/zap"
 	corev1 "k8s.io/api/core/v1"
@@ -19,6 +20,9 @@ import (
 )
 
 const (
+	// DefaultRPCTimeout is the default timeout for dataplane RPC calls.
+	DefaultRPCTimeout = 30 * time.Second
+
 	// MaglevTableSize is the size of each Maglev lookup table.
 	MaglevTableSize = 65537
 
@@ -65,6 +69,7 @@ type Watcher struct {
 	allocator  *SlotAllocator
 	defaultAlg string
 	dsrEnabled bool
+	rpcTimeout time.Duration
 	logger     *zap.Logger
 
 	// maglevAllocator tracks Maglev table slots (each service needs MaglevTableSize entries).
@@ -88,6 +93,13 @@ func WithDSR(enabled bool) WatcherOption {
 	}
 }
 
+// WithRPCTimeout sets the timeout for dataplane RPC calls.
+func WithRPCTimeout(d time.Duration) WatcherOption {
+	return func(w *Watcher) {
+		w.rpcTimeout = d
+	}
+}
+
 // NewWatcher creates a new Service/EndpointSlice watcher.
 func NewWatcher(
 	clientset kubernetes.Interface,
@@ -102,6 +114,7 @@ func NewWatcher(
 		dpClient:        dpClient,
 		allocator:       allocator,
 		defaultAlg:      defaultAlg,
+		rpcTimeout:      DefaultRPCTimeout,
 		logger:          logger,
 		maglevAllocator: NewSlotAllocator(1048576), // MAX_MAGLEV
 		services:        make(map[string]*serviceState),
@@ -374,7 +387,8 @@ func (w *Watcher) reconcileService(svc *corev1.Service) {
 	defer w.mu.Unlock()
 
 	key := svc.Namespace + "/" + svc.Name
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), w.rpcTimeout)
+	defer cancel()
 
 	// Get all ClusterIPs (dual-stack aware).
 	clusterIPs := serviceClusterIPs(svc)
@@ -486,7 +500,8 @@ func (w *Watcher) deleteService(svc *corev1.Service) {
 
 func (w *Watcher) deleteServiceLocked(svc *corev1.Service) {
 	key := svc.Namespace + "/" + svc.Name
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), w.rpcTimeout)
+	defer cancel()
 
 	state, exists := w.services[key]
 	if !exists {
