@@ -30,10 +30,12 @@ func NewAuthenticatedServer(logger *zap.Logger, allowedUIDs []uint32, opts ...gr
 
 	unary, stream := buildInterceptors(logger, uidSet)
 
+	// Apply caller opts first, then auth interceptors last so they cannot
+	// be overridden by a stray grpc.UnaryInterceptor in opts.
 	combined := make([]grpc.ServerOption, 0, len(opts)+3)
+	combined = append(combined, opts...)
 	combined = append(combined, TransportCredentials())
 	combined = append(combined, grpc.UnaryInterceptor(unary), grpc.StreamInterceptor(stream))
-	combined = append(combined, opts...)
 
 	return grpc.NewServer(combined...)
 }

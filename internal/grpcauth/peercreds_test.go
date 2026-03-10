@@ -5,6 +5,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"go.uber.org/zap/zaptest"
@@ -37,17 +38,7 @@ func TestPeerUID_Set(t *testing.T) {
 func TestNewAuthenticatedServer_Serves(t *testing.T) {
 	logger := zaptest.NewLogger(t)
 
-	// Use /tmp directly to avoid macOS socket path length limits (108 chars).
-	sockDir, err := os.MkdirTemp("/tmp", "grpcauth-test-")
-	if err != nil {
-		t.Fatalf("mktempdir: %v", err)
-	}
-	t.Cleanup(func() {
-		if rmErr := os.RemoveAll(sockDir); rmErr != nil {
-			t.Logf("cleanup: %v", rmErr)
-		}
-	})
-	sockPath := filepath.Join(sockDir, "t.sock")
+	sockPath := shortSocketPath(t)
 
 	srv := NewAuthenticatedServer(logger, []uint32{0})
 	healthpb.RegisterHealthServer(srv, health.NewServer())
@@ -80,4 +71,24 @@ func TestNewAuthenticatedServer_Serves(t *testing.T) {
 	if resp.Status != healthpb.HealthCheckResponse_SERVING {
 		t.Fatalf("unexpected health status: %v", resp.Status)
 	}
+}
+
+// shortSocketPath returns a Unix socket path short enough for all platforms.
+// macOS has a 104-byte limit on socket paths, so t.TempDir() paths may be
+// too long. On macOS we use /tmp; on Linux t.TempDir() is fine.
+func shortSocketPath(t *testing.T) string {
+	t.Helper()
+	if runtime.GOOS == "darwin" {
+		dir, err := os.MkdirTemp("/tmp", "ga-")
+		if err != nil {
+			t.Fatalf("mktempdir: %v", err)
+		}
+		t.Cleanup(func() {
+			if rmErr := os.RemoveAll(dir); rmErr != nil {
+				t.Logf("cleanup: %v", rmErr)
+			}
+		})
+		return filepath.Join(dir, "t.sock")
+	}
+	return filepath.Join(t.TempDir(), "t.sock")
 }
