@@ -40,6 +40,12 @@ var (
 
 	// Log level errors.
 	ErrLogLevelInvalid = errors.New("log_level is not valid (must be debug, info, warn, or error)")
+
+	// Environment variable expansion errors.
+	ErrAsBaseNodeIPRequired = errors.New("bgp.as_base is set but NODE_IP environment variable is not set")
+	ErrAsBaseNodeIPInvalid  = errors.New("NODE_IP is not a valid IPv4 address for as_base computation")
+	ErrAsBaseOctetParse     = errors.New("cannot parse last octet of NODE_IP")
+	ErrLocalASEnvInvalid    = errors.New("NOVAROUTE_BGP_LOCAL_AS is not a valid uint32")
 )
 
 // Config holds the complete NovaRoute agent configuration.
@@ -322,7 +328,7 @@ func validateOwners(owners map[string]OwnerConfig) error {
 // when set (regardless of what the config file contains):
 //   - NOVAROUTE_BGP_LOCAL_AS  → bgp.local_as (must be a valid uint32)
 //   - NOVAROUTE_BGP_ROUTER_ID → bgp.router_id
-func ExpandEnvVars(cfg *Config) {
+func ExpandEnvVars(cfg *Config) error {
 	for name, owner := range cfg.Owners {
 		owner.Token = os.ExpandEnv(owner.Token)
 		cfg.Owners[name] = owner
@@ -340,31 +346,32 @@ func ExpandEnvVars(cfg *Config) {
 
 	// Per-node AS computation: as_base + last octet of NODE_IP.
 	if cfg.BGP.AsBase > 0 {
-		if nodeIP := os.Getenv("NODE_IP"); nodeIP != "" {
-			parts := strings.Split(nodeIP, ".")
-			if len(parts) == 4 {
-				if lastOctet, err := strconv.ParseUint(parts[3], 10, 32); err == nil {
-					cfg.BGP.LocalAS = cfg.BGP.AsBase + uint32(lastOctet)
-				} else {
-					fmt.Fprintf(os.Stderr, "WARNING: cannot parse last octet of NODE_IP=%q: %v\n", nodeIP, err)
-				}
-			} else {
-				fmt.Fprintf(os.Stderr, "WARNING: NODE_IP=%q is not a valid IPv4 address for as_base computation\n", nodeIP)
-			}
-		} else {
-			fmt.Fprintf(os.Stderr, "WARNING: bgp.as_base is set but NODE_IP environment variable is not set\n")
+		nodeIP := os.Getenv("NODE_IP")
+		if nodeIP == "" {
+			return ErrAsBaseNodeIPRequired
 		}
+		parts := strings.Split(nodeIP, ".")
+		if len(parts) != 4 {
+			return fmt.Errorf("%w: %q", ErrAsBaseNodeIPInvalid, nodeIP)
+		}
+		lastOctet, err := strconv.ParseUint(parts[3], 10, 32)
+		if err != nil {
+			return fmt.Errorf("%w %q: %w", ErrAsBaseOctetParse, nodeIP, err)
+		}
+		cfg.BGP.LocalAS = cfg.BGP.AsBase + uint32(lastOctet)
 	}
 
 	// Explicit env var overrides for BGP fields (take highest precedence).
 	if v := os.Getenv("NOVAROUTE_BGP_LOCAL_AS"); v != "" {
-		if as, err := strconv.ParseUint(v, 10, 32); err == nil {
-			cfg.BGP.LocalAS = uint32(as)
-		} else {
-			fmt.Fprintf(os.Stderr, "WARNING: NOVAROUTE_BGP_LOCAL_AS=%q is not a valid uint32, ignoring: %v\n", v, err)
+		as, err := strconv.ParseUint(v, 10, 32)
+		if err != nil {
+			return fmt.Errorf("%w: %q: %w", ErrLocalASEnvInvalid, v, err)
 		}
+		cfg.BGP.LocalAS = uint32(as)
 	}
 	if v := os.Getenv("NOVAROUTE_BGP_ROUTER_ID"); v != "" {
 		cfg.BGP.RouterID = v
 	}
+
+	return nil
 }

@@ -127,6 +127,87 @@ func (r *peerResolver) resolvePodAndNsPeers(
 	return r.findOrFallback(podSelector)
 }
 
+// buildIdentityRules creates the cartesian product of identity IDs x ports.
+// For ingress rules, ids are source identities and fixedID is the destination;
+// for egress rules, ids are destination identities and fixedID is the source.
+func buildIdentityRules(ids []uint32, fixedID uint32, ports []portProto, isEgress bool, namespace string) []*CompiledRule {
+	rules := make([]*CompiledRule, 0, len(ids)*len(ports))
+	for _, id := range ids {
+		for _, pp := range ports {
+			r := &CompiledRule{
+				Protocol:  pp.protocol,
+				DstPort:   pp.port,
+				Action:    ActionAllow,
+				IsEgress:  isEgress,
+				Namespace: namespace,
+			}
+			if isEgress {
+				r.SrcIdentity = fixedID
+				r.DstIdentity = id
+			} else {
+				r.SrcIdentity = id
+				r.DstIdentity = fixedID
+			}
+			rules = append(rules, r)
+		}
+	}
+	return rules
+}
+
+// buildCIDRRules creates CIDR-based rules from IPBlock peers.
+// For ingress, fixedID is the destination identity; for egress, fixedID is the source.
+func buildCIDRRules(entries []cidrEntry, fixedID uint32, ports []portProto, isEgress bool, namespace string) []*CompiledRule {
+	rules := make([]*CompiledRule, 0, len(entries)*len(ports))
+	for _, entry := range entries {
+		for _, pp := range ports {
+			r := &CompiledRule{
+				Protocol:  pp.protocol,
+				DstPort:   pp.port,
+				Action:    entry.action,
+				CIDR:      entry.cidr,
+				IsEgress:  isEgress,
+				Namespace: namespace,
+			}
+			if isEgress {
+				r.SrcIdentity = fixedID
+				r.DstIdentity = WildcardIdentity
+			} else {
+				r.SrcIdentity = WildcardIdentity
+				r.DstIdentity = fixedID
+			}
+			rules = append(rules, r)
+		}
+	}
+	return rules
+}
+
+// buildFQDNCIDRRules creates CIDR-based allow rules from FQDN-resolved CIDRs.
+// For ingress, fixedID is the destination identity; for egress, fixedID is the source.
+func buildFQDNCIDRRules(cidrs []string, fixedID uint32, ports []portProto, isEgress bool, namespace string) []*CompiledRule {
+	rules := make([]*CompiledRule, 0, len(cidrs)*len(ports))
+	for _, cidr := range cidrs {
+		for _, pp := range ports {
+			r := &CompiledRule{
+				Protocol:  pp.protocol,
+				DstPort:   pp.port,
+				Action:    ActionAllow,
+				CIDR:      cidr,
+				IsEgress:  isEgress,
+				Namespace: namespace,
+			}
+			if isEgress {
+				r.SrcIdentity = fixedID
+				r.DstIdentity = WildcardIdentity
+			} else {
+				r.SrcIdentity = WildcardIdentity
+				r.DstIdentity = fixedID
+			}
+			rules = append(rules, r)
+		}
+	}
+	return rules
+}
+
 // resolveIPBlockCIDRs extracts IPBlock CIDRs from peers as cidrEntry values.
 // The primary CIDR gets ActionAllow while Except CIDRs get ActionDeny.
 func resolveIPBlockCIDRs(cidr string, except []string, logger *zap.Logger) []cidrEntry {

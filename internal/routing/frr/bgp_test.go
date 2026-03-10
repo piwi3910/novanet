@@ -4,10 +4,9 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 )
 
@@ -27,14 +26,20 @@ func TestResolveAFICLI_BGP(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.input, func(t *testing.T) {
 			result := resolveAFICLI(tt.input)
-			assert.Equal(t, tt.expected, result)
+			if result != tt.expected {
+				t.Errorf("resolveAFICLI(%q) = %q, want %q", tt.input, result, tt.expected)
+			}
 		})
 	}
 }
 
 func TestErrBGPNotConfigured(t *testing.T) {
-	assert.Error(t, ErrBGPNotConfigured)
-	assert.Equal(t, "BGP local AS not configured", ErrBGPNotConfigured.Error())
+	if ErrBGPNotConfigured == nil {
+		t.Fatal("ErrBGPNotConfigured is nil")
+	}
+	if got := ErrBGPNotConfigured.Error(); got != "BGP local AS not configured" {
+		t.Errorf("ErrBGPNotConfigured = %q, want %q", got, "BGP local AS not configured")
+	}
 }
 
 func TestNeighborConfig(t *testing.T) {
@@ -45,28 +50,52 @@ func TestNeighborConfig(t *testing.T) {
 		Description:   "Test neighbor",
 	}
 
-	assert.Equal(t, "192.168.1.1", cfg.SourceAddress)
-	assert.Equal(t, uint32(5), cfg.EBGPMultihop)
-	assert.Equal(t, "secret", cfg.Password)
-	assert.Equal(t, "Test neighbor", cfg.Description)
+	if cfg.SourceAddress != "192.168.1.1" {
+		t.Errorf("SourceAddress = %q, want %q", cfg.SourceAddress, "192.168.1.1")
+	}
+	if cfg.EBGPMultihop != 5 {
+		t.Errorf("EBGPMultihop = %d, want 5", cfg.EBGPMultihop)
+	}
+	if cfg.Password != "secret" {
+		t.Errorf("Password = %q, want %q", cfg.Password, "secret")
+	}
+	if cfg.Description != "Test neighbor" {
+		t.Errorf("Description = %q, want %q", cfg.Description, "Test neighbor")
+	}
 }
 
 func TestNeighborConfig_Empty(t *testing.T) {
 	cfg := &NeighborConfig{}
 
-	assert.Equal(t, "", cfg.SourceAddress)
-	assert.Equal(t, uint32(0), cfg.EBGPMultihop)
-	assert.Equal(t, "", cfg.Password)
-	assert.Equal(t, "", cfg.Description)
+	if cfg.SourceAddress != "" {
+		t.Errorf("SourceAddress = %q, want empty", cfg.SourceAddress)
+	}
+	if cfg.EBGPMultihop != 0 {
+		t.Errorf("EBGPMultihop = %d, want 0", cfg.EBGPMultihop)
+	}
+	if cfg.Password != "" {
+		t.Errorf("Password = %q, want empty", cfg.Password)
+	}
+	if cfg.Description != "" {
+		t.Errorf("Description = %q, want empty", cfg.Description)
+	}
 }
 
 func TestBGPGracefulRestartCommands(t *testing.T) {
 	commands := bgpGracefulRestartCommands()
 
-	assert.NotEmpty(t, commands)
-	assert.Contains(t, commands[0], "bgp graceful-restart")
-	assert.Contains(t, commands[1], "bgp graceful-restart restart-time")
-	assert.Contains(t, commands[2], "bgp graceful-restart stalepath-time")
+	if len(commands) == 0 {
+		t.Fatal("bgpGracefulRestartCommands returned empty slice")
+	}
+	if !strings.Contains(commands[0], "bgp graceful-restart") {
+		t.Errorf("commands[0] = %q, want to contain %q", commands[0], "bgp graceful-restart")
+	}
+	if !strings.Contains(commands[1], "bgp graceful-restart restart-time") {
+		t.Errorf("commands[1] = %q, want to contain %q", commands[1], "bgp graceful-restart restart-time")
+	}
+	if !strings.Contains(commands[2], "bgp graceful-restart stalepath-time") {
+		t.Errorf("commands[2] = %q, want to contain %q", commands[2], "bgp graceful-restart stalepath-time")
+	}
 }
 
 func TestClient_GetLocalAS(t *testing.T) {
@@ -75,7 +104,9 @@ func TestClient_GetLocalAS(t *testing.T) {
 
 	// Initially returns 0
 	localAS := client.GetLocalAS()
-	assert.Equal(t, uint32(0), localAS)
+	if localAS != 0 {
+		t.Errorf("GetLocalAS() = %d, want 0", localAS)
+	}
 }
 
 func TestClient_GetLocalAS_AfterConfig(t *testing.T) {
@@ -83,12 +114,15 @@ func TestClient_GetLocalAS_AfterConfig(t *testing.T) {
 	ctx := context.Background()
 
 	// Configure BGP global
-	err := client.ConfigureBGPGlobal(ctx, 65001, "router-1")
-	require.NoError(t, err)
+	if err := client.ConfigureBGPGlobal(ctx, 65001, "router-1"); err != nil {
+		t.Fatalf("ConfigureBGPGlobal: %v", err)
+	}
 
 	// Now GetLocalAS should return the configured AS
 	localAS := client.GetLocalAS()
-	assert.Equal(t, uint32(65001), localAS)
+	if localAS != 65001 {
+		t.Errorf("GetLocalAS() = %d, want 65001", localAS)
+	}
 }
 
 func TestClient_AddNeighbor_NoBGPConfig(t *testing.T) {
@@ -98,16 +132,21 @@ func TestClient_AddNeighbor_NoBGPConfig(t *testing.T) {
 
 	// Should fail because BGP is not configured
 	err := client.AddNeighbor(ctx, "192.168.1.2", 65002, "external", 10, 30, nil)
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "BGP local AS not configured")
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "BGP local AS not configured") {
+		t.Errorf("error = %q, want to contain %q", err, "BGP local AS not configured")
+	}
 }
 
 func TestClient_ConfigureBGPGlobal(t *testing.T) {
 	client, dir := setupFakeVtysh(t)
 	ctx := context.Background()
 
-	err := client.ConfigureBGPGlobal(ctx, 65001, "router-1")
-	require.NoError(t, err)
+	if err := client.ConfigureBGPGlobal(ctx, 65001, "router-1"); err != nil {
+		t.Fatalf("ConfigureBGPGlobal: %v", err)
+	}
 
 	// Verify commands were sent
 	stdin := readRecordedStdin(t, dir)
@@ -122,7 +161,9 @@ func TestClient_ConfigureBGPGlobal_InvalidAS(t *testing.T) {
 	// AS 0 should still work (FRR will handle validation)
 	err := client.ConfigureBGPGlobal(ctx, 0, "router-1")
 	// The fake vtysh always succeeds, so we just verify it doesn't panic
-	assert.NoError(t, err)
+	if err != nil {
+		t.Errorf("ConfigureBGPGlobal: unexpected error: %v", err)
+	}
 }
 
 func TestClient_ReconfigureBGPGlobal_SameAS(t *testing.T) {
@@ -130,15 +171,17 @@ func TestClient_ReconfigureBGPGlobal_SameAS(t *testing.T) {
 	ctx := context.Background()
 
 	// First configuration
-	err := client.ConfigureBGPGlobal(ctx, 65001, "router-1")
-	require.NoError(t, err)
+	if err := client.ConfigureBGPGlobal(ctx, 65001, "router-1"); err != nil {
+		t.Fatalf("ConfigureBGPGlobal: %v", err)
+	}
 
 	// Clear recorded stdin
 	_ = os.Remove(filepath.Join(dir, "stdin"))
 
 	// Same AS - should just update router-id
-	err = client.ConfigureBGPGlobal(ctx, 65001, "router-2")
-	require.NoError(t, err)
+	if err := client.ConfigureBGPGlobal(ctx, 65001, "router-2"); err != nil {
+		t.Fatalf("ConfigureBGPGlobal: %v", err)
+	}
 
 	stdin := readRecordedStdin(t, dir)
 	assertStdinContains(t, stdin, "router bgp 65001")
@@ -150,15 +193,17 @@ func TestClient_ReconfigureBGPGlobal_DifferentAS(t *testing.T) {
 	ctx := context.Background()
 
 	// First configuration
-	err := client.ConfigureBGPGlobal(ctx, 65001, "router-1")
-	require.NoError(t, err)
+	if err := client.ConfigureBGPGlobal(ctx, 65001, "router-1"); err != nil {
+		t.Fatalf("ConfigureBGPGlobal: %v", err)
+	}
 
 	// Clear recorded stdin
 	_ = os.Remove(filepath.Join(dir, "stdin"))
 
 	// Different AS - should remove old and create new
-	err = client.ReconfigureBGPGlobal(ctx, 65001, 65002, "router-1")
-	require.NoError(t, err)
+	if err := client.ReconfigureBGPGlobal(ctx, 65001, 65002, "router-1"); err != nil {
+		t.Fatalf("ReconfigureBGPGlobal: %v", err)
+	}
 
 	stdin := readRecordedStdin(t, dir)
 	assertStdinContains(t, stdin, "no router bgp 65001")
@@ -170,15 +215,17 @@ func TestClient_AddNeighbor(t *testing.T) {
 	ctx := context.Background()
 
 	// Configure BGP first
-	err := client.ConfigureBGPGlobal(ctx, 65001, "router-1")
-	require.NoError(t, err)
+	if err := client.ConfigureBGPGlobal(ctx, 65001, "router-1"); err != nil {
+		t.Fatalf("ConfigureBGPGlobal: %v", err)
+	}
 
 	// Clear recorded stdin
 	_ = os.Remove(filepath.Join(dir, "stdin"))
 
 	// Add neighbor
-	err = client.AddNeighbor(ctx, "192.168.1.2", 65002, "external", 10, 30, nil)
-	require.NoError(t, err)
+	if err := client.AddNeighbor(ctx, "192.168.1.2", 65002, "external", 10, 30, nil); err != nil {
+		t.Fatalf("AddNeighbor: %v", err)
+	}
 
 	stdin := readRecordedStdin(t, dir)
 	assertStdinContains(t, stdin, "router bgp 65001")
@@ -191,8 +238,9 @@ func TestClient_AddNeighbor_WithConfig(t *testing.T) {
 	ctx := context.Background()
 
 	// Configure BGP first
-	err := client.ConfigureBGPGlobal(ctx, 65001, "router-1")
-	require.NoError(t, err)
+	if err := client.ConfigureBGPGlobal(ctx, 65001, "router-1"); err != nil {
+		t.Fatalf("ConfigureBGPGlobal: %v", err)
+	}
 
 	// Clear recorded stdin
 	_ = os.Remove(filepath.Join(dir, "stdin"))
@@ -204,8 +252,9 @@ func TestClient_AddNeighbor_WithConfig(t *testing.T) {
 		Password:      "secret123",
 		Description:   "Test peer",
 	}
-	err = client.AddNeighbor(ctx, "192.168.1.2", 65002, "external", 10, 30, cfg)
-	require.NoError(t, err)
+	if err := client.AddNeighbor(ctx, "192.168.1.2", 65002, "external", 10, 30, cfg); err != nil {
+		t.Fatalf("AddNeighbor: %v", err)
+	}
 
 	stdin := readRecordedStdin(t, dir)
 	assertStdinContains(t, stdin, "neighbor 192.168.1.2 update-source 192.168.1.1")
@@ -219,19 +268,23 @@ func TestClient_AddNeighbor_NoTimers(t *testing.T) {
 	ctx := context.Background()
 
 	// Configure BGP first
-	err := client.ConfigureBGPGlobal(ctx, 65001, "router-1")
-	require.NoError(t, err)
+	if err := client.ConfigureBGPGlobal(ctx, 65001, "router-1"); err != nil {
+		t.Fatalf("ConfigureBGPGlobal: %v", err)
+	}
 
 	// Clear recorded stdin
 	_ = os.Remove(filepath.Join(dir, "stdin"))
 
 	// Add neighbor without timers
-	err = client.AddNeighbor(ctx, "192.168.1.2", 65002, "external", 0, 0, nil)
-	require.NoError(t, err)
+	if err := client.AddNeighbor(ctx, "192.168.1.2", 65002, "external", 0, 0, nil); err != nil {
+		t.Fatalf("AddNeighbor: %v", err)
+	}
 
 	stdin := readRecordedStdin(t, dir)
 	// Timers should not be configured
-	assert.NotContains(t, stdin, "timers")
+	if strings.Contains(stdin, "timers") {
+		t.Errorf("stdin contains 'timers' but should not: %s", stdin)
+	}
 }
 
 func TestClient_RemoveNeighbor(t *testing.T) {
@@ -239,15 +292,17 @@ func TestClient_RemoveNeighbor(t *testing.T) {
 	ctx := context.Background()
 
 	// Configure BGP first
-	err := client.ConfigureBGPGlobal(ctx, 65001, "router-1")
-	require.NoError(t, err)
+	if err := client.ConfigureBGPGlobal(ctx, 65001, "router-1"); err != nil {
+		t.Fatalf("ConfigureBGPGlobal: %v", err)
+	}
 
 	// Clear recorded stdin
 	_ = os.Remove(filepath.Join(dir, "stdin"))
 
 	// Remove neighbor
-	err = client.RemoveNeighbor(ctx, "192.168.1.2")
-	require.NoError(t, err)
+	if err := client.RemoveNeighbor(ctx, "192.168.1.2"); err != nil {
+		t.Fatalf("RemoveNeighbor: %v", err)
+	}
 
 	stdin := readRecordedStdin(t, dir)
 	assertStdinContains(t, stdin, "router bgp 65001")
@@ -259,15 +314,17 @@ func TestClient_ActivateNeighborAFI(t *testing.T) {
 	ctx := context.Background()
 
 	// Configure BGP first
-	err := client.ConfigureBGPGlobal(ctx, 65001, "router-1")
-	require.NoError(t, err)
+	if err := client.ConfigureBGPGlobal(ctx, 65001, "router-1"); err != nil {
+		t.Fatalf("ConfigureBGPGlobal: %v", err)
+	}
 
 	// Clear recorded stdin
 	_ = os.Remove(filepath.Join(dir, "stdin"))
 
 	// Activate AFI
-	err = client.ActivateNeighborAFI(ctx, "192.168.1.2", "ipv4")
-	require.NoError(t, err)
+	if err := client.ActivateNeighborAFI(ctx, "192.168.1.2", "ipv4"); err != nil {
+		t.Fatalf("ActivateNeighborAFI: %v", err)
+	}
 
 	stdin := readRecordedStdin(t, dir)
 	assertStdinContains(t, stdin, "address-family ipv4 unicast")
@@ -280,15 +337,17 @@ func TestClient_ActivateNeighborAFI_IPv6(t *testing.T) {
 	ctx := context.Background()
 
 	// Configure BGP first
-	err := client.ConfigureBGPGlobal(ctx, 65001, "router-1")
-	require.NoError(t, err)
+	if err := client.ConfigureBGPGlobal(ctx, 65001, "router-1"); err != nil {
+		t.Fatalf("ConfigureBGPGlobal: %v", err)
+	}
 
 	// Clear recorded stdin
 	_ = os.Remove(filepath.Join(dir, "stdin"))
 
 	// Activate IPv6 AFI
-	err = client.ActivateNeighborAFI(ctx, "2001:db8::2", "ipv6-unicast")
-	require.NoError(t, err)
+	if err := client.ActivateNeighborAFI(ctx, "2001:db8::2", "ipv6-unicast"); err != nil {
+		t.Fatalf("ActivateNeighborAFI: %v", err)
+	}
 
 	stdin := readRecordedStdin(t, dir)
 	assertStdinContains(t, stdin, "address-family ipv6 unicast")
@@ -299,15 +358,17 @@ func TestClient_AdvertiseNetwork(t *testing.T) {
 	ctx := context.Background()
 
 	// Configure BGP first
-	err := client.ConfigureBGPGlobal(ctx, 65001, "router-1")
-	require.NoError(t, err)
+	if err := client.ConfigureBGPGlobal(ctx, 65001, "router-1"); err != nil {
+		t.Fatalf("ConfigureBGPGlobal: %v", err)
+	}
 
 	// Clear recorded stdin
 	_ = os.Remove(filepath.Join(dir, "stdin"))
 
 	// Advertise network
-	err = client.AdvertiseNetwork(ctx, "10.0.0.0/24", "ipv4")
-	require.NoError(t, err)
+	if err := client.AdvertiseNetwork(ctx, "10.0.0.0/24", "ipv4"); err != nil {
+		t.Fatalf("AdvertiseNetwork: %v", err)
+	}
 
 	stdin := readRecordedStdin(t, dir)
 	assertStdinContains(t, stdin, "address-family ipv4 unicast")
@@ -319,15 +380,17 @@ func TestClient_WithdrawNetwork(t *testing.T) {
 	ctx := context.Background()
 
 	// Configure BGP first
-	err := client.ConfigureBGPGlobal(ctx, 65001, "router-1")
-	require.NoError(t, err)
+	if err := client.ConfigureBGPGlobal(ctx, 65001, "router-1"); err != nil {
+		t.Fatalf("ConfigureBGPGlobal: %v", err)
+	}
 
 	// Clear recorded stdin
 	_ = os.Remove(filepath.Join(dir, "stdin"))
 
 	// Withdraw network
-	err = client.WithdrawNetwork(ctx, "10.0.0.0/24", "ipv4")
-	require.NoError(t, err)
+	if err := client.WithdrawNetwork(ctx, "10.0.0.0/24", "ipv4"); err != nil {
+		t.Fatalf("WithdrawNetwork: %v", err)
+	}
 
 	stdin := readRecordedStdin(t, dir)
 	assertStdinContains(t, stdin, "address-family ipv4 unicast")
@@ -339,19 +402,23 @@ func TestClient_SetNeighborMaxPrefix(t *testing.T) {
 	ctx := context.Background()
 
 	// Configure BGP first
-	err := client.ConfigureBGPGlobal(ctx, 65001, "router-1")
-	require.NoError(t, err)
+	if err := client.ConfigureBGPGlobal(ctx, 65001, "router-1"); err != nil {
+		t.Fatalf("ConfigureBGPGlobal: %v", err)
+	}
 
 	// Clear recorded stdin
 	_ = os.Remove(filepath.Join(dir, "stdin"))
 
 	// Set max prefix
-	err = client.SetNeighborMaxPrefix(ctx, "192.168.1.2", 1000, false, "ipv4")
-	require.NoError(t, err)
+	if err := client.SetNeighborMaxPrefix(ctx, "192.168.1.2", 1000, false, "ipv4"); err != nil {
+		t.Fatalf("SetNeighborMaxPrefix: %v", err)
+	}
 
 	stdin := readRecordedStdin(t, dir)
 	assertStdinContains(t, stdin, "neighbor 192.168.1.2 maximum-prefix 1000")
-	assert.NotContains(t, stdin, "warning-only")
+	if strings.Contains(stdin, "warning-only") {
+		t.Errorf("stdin contains 'warning-only' but should not")
+	}
 }
 
 func TestClient_SetNeighborMaxPrefix_WarningOnly(t *testing.T) {
@@ -359,15 +426,17 @@ func TestClient_SetNeighborMaxPrefix_WarningOnly(t *testing.T) {
 	ctx := context.Background()
 
 	// Configure BGP first
-	err := client.ConfigureBGPGlobal(ctx, 65001, "router-1")
-	require.NoError(t, err)
+	if err := client.ConfigureBGPGlobal(ctx, 65001, "router-1"); err != nil {
+		t.Fatalf("ConfigureBGPGlobal: %v", err)
+	}
 
 	// Clear recorded stdin
 	_ = os.Remove(filepath.Join(dir, "stdin"))
 
 	// Set max prefix with warning only
-	err = client.SetNeighborMaxPrefix(ctx, "192.168.1.2", 1000, true, "ipv4")
-	require.NoError(t, err)
+	if err := client.SetNeighborMaxPrefix(ctx, "192.168.1.2", 1000, true, "ipv4"); err != nil {
+		t.Fatalf("SetNeighborMaxPrefix: %v", err)
+	}
 
 	stdin := readRecordedStdin(t, dir)
 	assertStdinContains(t, stdin, "neighbor 192.168.1.2 maximum-prefix 1000 warning-only")
@@ -378,16 +447,18 @@ func TestClient_ConfigureRouteMap(t *testing.T) {
 	ctx := context.Background()
 
 	// Configure BGP first
-	err := client.ConfigureBGPGlobal(ctx, 65001, "router-1")
-	require.NoError(t, err)
+	if err := client.ConfigureBGPGlobal(ctx, 65001, "router-1"); err != nil {
+		t.Fatalf("ConfigureBGPGlobal: %v", err)
+	}
 
 	// Clear recorded stdin
 	_ = os.Remove(filepath.Join(dir, "stdin"))
 
 	// Configure route-map
 	setCmds := []string{"set local-preference 200", "set community 65001:100"}
-	err = client.ConfigureRouteMap(ctx, "test-map", setCmds)
-	require.NoError(t, err)
+	if err := client.ConfigureRouteMap(ctx, "test-map", setCmds); err != nil {
+		t.Fatalf("ConfigureRouteMap: %v", err)
+	}
 
 	stdin := readRecordedStdin(t, dir)
 	assertStdinContains(t, stdin, "no route-map test-map")
@@ -402,15 +473,17 @@ func TestClient_ConfigureRouteMap_Empty(t *testing.T) {
 	ctx := context.Background()
 
 	// Configure BGP first
-	err := client.ConfigureBGPGlobal(ctx, 65001, "router-1")
-	require.NoError(t, err)
+	if err := client.ConfigureBGPGlobal(ctx, 65001, "router-1"); err != nil {
+		t.Fatalf("ConfigureBGPGlobal: %v", err)
+	}
 
 	// Clear recorded stdin
 	_ = os.Remove(filepath.Join(dir, "stdin"))
 
 	// Configure route-map with no set commands
-	err = client.ConfigureRouteMap(ctx, "empty-map", nil)
-	require.NoError(t, err)
+	if err := client.ConfigureRouteMap(ctx, "empty-map", nil); err != nil {
+		t.Fatalf("ConfigureRouteMap: %v", err)
+	}
 
 	stdin := readRecordedStdin(t, dir)
 	assertStdinContains(t, stdin, "no route-map empty-map")
@@ -422,15 +495,17 @@ func TestClient_AdvertiseNetworkWithRouteMap(t *testing.T) {
 	ctx := context.Background()
 
 	// Configure BGP first
-	err := client.ConfigureBGPGlobal(ctx, 65001, "router-1")
-	require.NoError(t, err)
+	if err := client.ConfigureBGPGlobal(ctx, 65001, "router-1"); err != nil {
+		t.Fatalf("ConfigureBGPGlobal: %v", err)
+	}
 
 	// Clear recorded stdin
 	_ = os.Remove(filepath.Join(dir, "stdin"))
 
 	// Advertise network with route-map
-	err = client.AdvertiseNetworkWithRouteMap(ctx, "10.0.0.0/24", "ipv4", "test-map")
-	require.NoError(t, err)
+	if err := client.AdvertiseNetworkWithRouteMap(ctx, "10.0.0.0/24", "ipv4", "test-map"); err != nil {
+		t.Fatalf("AdvertiseNetworkWithRouteMap: %v", err)
+	}
 
 	stdin := readRecordedStdin(t, dir)
 	assertStdinContains(t, stdin, "address-family ipv4 unicast")
@@ -442,15 +517,17 @@ func TestClient_RemoveRouteMap(t *testing.T) {
 	ctx := context.Background()
 
 	// Configure BGP first
-	err := client.ConfigureBGPGlobal(ctx, 65001, "router-1")
-	require.NoError(t, err)
+	if err := client.ConfigureBGPGlobal(ctx, 65001, "router-1"); err != nil {
+		t.Fatalf("ConfigureBGPGlobal: %v", err)
+	}
 
 	// Clear recorded stdin
 	_ = os.Remove(filepath.Join(dir, "stdin"))
 
 	// Remove route-map
-	err = client.RemoveRouteMap(ctx, "test-map")
-	require.NoError(t, err)
+	if err := client.RemoveRouteMap(ctx, "test-map"); err != nil {
+		t.Fatalf("RemoveRouteMap: %v", err)
+	}
 
 	stdin := readRecordedStdin(t, dir)
 	assertStdinContains(t, stdin, "no route-map test-map")
@@ -461,15 +538,17 @@ func TestClient_SetNeighborBFD_Enable(t *testing.T) {
 	ctx := context.Background()
 
 	// Configure BGP first
-	err := client.ConfigureBGPGlobal(ctx, 65001, "router-1")
-	require.NoError(t, err)
+	if err := client.ConfigureBGPGlobal(ctx, 65001, "router-1"); err != nil {
+		t.Fatalf("ConfigureBGPGlobal: %v", err)
+	}
 
 	// Clear recorded stdin
 	_ = os.Remove(filepath.Join(dir, "stdin"))
 
 	// Enable BFD
-	err = client.SetNeighborBFD(ctx, "192.168.1.2", true)
-	require.NoError(t, err)
+	if err := client.SetNeighborBFD(ctx, "192.168.1.2", true); err != nil {
+		t.Fatalf("SetNeighborBFD: %v", err)
+	}
 
 	stdin := readRecordedStdin(t, dir)
 	assertStdinContains(t, stdin, "neighbor 192.168.1.2 bfd")
@@ -480,15 +559,17 @@ func TestClient_SetNeighborBFD_Disable(t *testing.T) {
 	ctx := context.Background()
 
 	// Configure BGP first
-	err := client.ConfigureBGPGlobal(ctx, 65001, "router-1")
-	require.NoError(t, err)
+	if err := client.ConfigureBGPGlobal(ctx, 65001, "router-1"); err != nil {
+		t.Fatalf("ConfigureBGPGlobal: %v", err)
+	}
 
 	// Clear recorded stdin
 	_ = os.Remove(filepath.Join(dir, "stdin"))
 
 	// Disable BFD
-	err = client.SetNeighborBFD(ctx, "192.168.1.2", false)
-	require.NoError(t, err)
+	if err := client.SetNeighborBFD(ctx, "192.168.1.2", false); err != nil {
+		t.Fatalf("SetNeighborBFD: %v", err)
+	}
 
 	stdin := readRecordedStdin(t, dir)
 	assertStdinContains(t, stdin, "no neighbor 192.168.1.2 bfd")
