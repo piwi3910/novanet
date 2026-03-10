@@ -20,7 +20,7 @@ const maxCIDRSize = 1 << 20
 // addresses. It uses Bitmap-based tracking for CIDR ranges and a map for
 // discrete addresses. All operations are thread-safe.
 type Pool struct {
-	mu sync.Mutex
+	mu sync.RWMutex
 
 	name       string
 	poolType   PoolType
@@ -257,8 +257,8 @@ func (p *Pool) Release(ip net.IP) error {
 
 // IsAvailable checks if the given IP is valid and available in this pool.
 func (p *Pool) IsAvailable(ip net.IP) bool {
-	p.mu.Lock()
-	defer p.mu.Unlock()
+	p.mu.RLock()
+	defer p.mu.RUnlock()
 
 	ipNorm := normalizeIP(ip)
 	ipStr := ipNorm.String()
@@ -285,6 +285,9 @@ func (p *Pool) IsAvailable(ip net.IP) bool {
 
 // Contains checks if the given IP belongs to this pool (regardless of allocation state).
 func (p *Pool) Contains(ip net.IP) bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+
 	ipNorm := normalizeIP(ip)
 	ipStr := ipNorm.String()
 
@@ -301,8 +304,8 @@ func (p *Pool) Contains(ip net.IP) bool {
 
 // Status returns the current pool status.
 func (p *Pool) Status() PoolStatus {
-	p.mu.Lock()
-	defer p.mu.Unlock()
+	p.mu.RLock()
+	defer p.mu.RUnlock()
 
 	total := len(p.discreteAddrs)
 	for _, cr := range p.ranges {

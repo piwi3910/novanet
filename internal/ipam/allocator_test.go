@@ -319,6 +319,16 @@ func TestConcurrentAccess(t *testing.T) {
 		}()
 	}
 
+	// Concurrently read Used() and Available().
+	for range 50 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_ = a.Used()
+			_ = a.Available()
+		}()
+	}
+
 	wg.Wait()
 	close(allocated)
 

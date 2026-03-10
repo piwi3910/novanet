@@ -2,6 +2,7 @@ package ipam
 
 import (
 	"net"
+	"sync"
 	"testing"
 )
 
@@ -324,5 +325,61 @@ func TestPoolContains(t *testing.T) {
 	}
 	if p.Contains(net.ParseIP("10.0.1.1")) {
 		t.Fatal("expected IP outside pool to not be contained")
+	}
+}
+
+func TestPoolConcurrentAccess(t *testing.T) {
+	p, err := NewPool(PoolConfig{
+		Name:       "race-pool",
+		Type:       PoolTypeCustom,
+		CIDRs:      []string{"10.0.0.0/24"},
+		Addresses:  []string{"192.168.1.100", "192.168.1.101"},
+		AutoAssign: true,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var wg sync.WaitGroup
+
+	// Concurrently allocate IPs.
+	for range 50 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_, _ = p.Allocate("owner", "res")
+		}()
+	}
+
+	// Concurrently read with Contains, IsAvailable, and Status.
+	for range 50 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			p.Contains(net.ParseIP("10.0.0.50"))
+			p.IsAvailable(net.ParseIP("10.0.0.51"))
+			p.Status()
+		}()
+	}
+
+	// Concurrently allocate specific IPs.
+	specificIPs := []string{
+		"10.0.0.200", "10.0.0.201", "10.0.0.202", "10.0.0.203", "10.0.0.204",
+		"10.0.0.205", "10.0.0.206", "10.0.0.207", "10.0.0.208", "10.0.0.209",
+	}
+	for _, ipStr := range specificIPs {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_ = p.AllocateSpecific(net.ParseIP(ipStr), "owner", "res")
+		}()
+	}
+
+	wg.Wait()
+
+	// Verify status is consistent.
+	status := p.Status()
+	if status.Allocated < 0 || status.Allocated > status.Total {
+		t.Fatalf("inconsistent status: allocated=%d total=%d", status.Allocated, status.Total)
 	}
 }

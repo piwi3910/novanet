@@ -32,7 +32,7 @@ var (
 // Supports both IPv4 and IPv6 CIDRs. The maximum subnet size is capped
 // at maxCIDRSize to prevent excessive memory usage.
 type Allocator struct {
-	mu sync.Mutex
+	mu sync.RWMutex
 
 	// network is the parsed CIDR network.
 	network *net.IPNet
@@ -247,16 +247,16 @@ func (a *Allocator) Release(ip net.IP) error {
 
 // Used returns the number of allocated IPs (including reserved addresses).
 func (a *Allocator) Used() int {
-	a.mu.Lock()
-	defer a.mu.Unlock()
+	a.mu.RLock()
+	defer a.mu.RUnlock()
 	return a.used
 }
 
 // Available returns the number of IPs available for allocation.
 // This excludes reserved addresses.
 func (a *Allocator) Available() int {
-	a.mu.Lock()
-	defer a.mu.Unlock()
+	a.mu.RLock()
+	defer a.mu.RUnlock()
 	return a.size - a.used
 }
 
