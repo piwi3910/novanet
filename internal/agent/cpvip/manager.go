@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -193,7 +194,11 @@ func (m *Manager) discoverCPNodes(ctx context.Context) ([]string, error) {
 
 // checkHealth hits the API server's /livez endpoint on the given node IP.
 func (m *Manager) checkHealth(ctx context.Context, nodeIP string) bool {
-	url := fmt.Sprintf("https://%s:%d/livez", nodeIP, apiServerPort)
+	host := nodeIP
+	if strings.Contains(nodeIP, ":") {
+		host = "[" + nodeIP + "]"
+	}
+	url := fmt.Sprintf("https://%s:%d/livez", host, apiServerPort)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return false
@@ -268,7 +273,7 @@ func (m *Manager) manageBGP(localHealthy bool) {
 		return
 	}
 
-	vipCIDR := m.cfg.VIP + "/32"
+	vipCIDR := m.cfg.VIP + vipPrefix(m.cfg.VIP)
 
 	if localHealthy && !m.bgpAdvertised {
 		if err := m.nrClient.AdvertisePrefix(vipCIDR); err != nil {
@@ -290,7 +295,7 @@ func (m *Manager) manageBGP(localHealthy bool) {
 // manageLoopback binds or unbinds the VIP on the loopback interface based on
 // local API server health.
 func (m *Manager) manageLoopback(localHealthy bool) {
-	vipCIDR := m.cfg.VIP + "/32"
+	vipCIDR := m.cfg.VIP + vipPrefix(m.cfg.VIP)
 
 	if localHealthy && !m.loopbackBound {
 		if err := tunnel.AddLoopbackAddress(vipCIDR); err != nil {
@@ -315,13 +320,13 @@ func (m *Manager) shutdown() {
 
 	if m.cfg.IsControlPlane {
 		if m.bgpAdvertised && m.nrClient != nil {
-			vipCIDR := m.cfg.VIP + "/32"
+			vipCIDR := m.cfg.VIP + vipPrefix(m.cfg.VIP)
 			if err := m.nrClient.WithdrawPrefix(vipCIDR); err != nil {
 				m.logger.Error("failed to withdraw cp-vip on shutdown", zap.Error(err))
 			}
 		}
 		if m.loopbackBound {
-			vipCIDR := m.cfg.VIP + "/32"
+			vipCIDR := m.cfg.VIP + vipPrefix(m.cfg.VIP)
 			if err := tunnel.RemoveLoopbackAddress(vipCIDR); err != nil {
 				m.logger.Warn("failed to remove cp-vip from loopback on shutdown", zap.Error(err))
 			}
@@ -334,21 +339,31 @@ func (m *Manager) shutdown() {
 func (m *Manager) localIP(cpNodeIPs []string) string {
 	// We need to find our own IP in the list. The manager knows the node name,
 	// and the IPs were collected from the same API. We resolve it by checking
-	// which IP is local.
-	for _, ip := range cpNodeIPs {
-		addrs, err := net.InterfaceAddrs()
-		if err != nil {
-			continue
+	// which IP is local. Call net.InterfaceAddrs() once and build a set.
+	addrs, err := net.InterfaceAddrs()
+	if err != nil {
+		return ""
+	}
+	localSet := make(map[string]struct{}, len(addrs))
+	for _, addr := range addrs {
+		if ipNet, ok := addr.(*net.IPNet); ok {
+			localSet[ipNet.IP.String()] = struct{}{}
 		}
-		for _, addr := range addrs {
-			if ipNet, ok := addr.(*net.IPNet); ok {
-				if ipNet.IP.String() == ip {
-					return ip
-				}
-			}
+	}
+	for _, ip := range cpNodeIPs {
+		if _, ok := localSet[ip]; ok {
+			return ip
 		}
 	}
 	return ""
+}
+
+// vipPrefix returns "/128" for IPv6 addresses and "/32" for IPv4.
+func vipPrefix(ip string) string {
+	if strings.Contains(ip, ":") {
+		return "/128"
+	}
+	return "/32"
 }
 
 func mapsEqual(a, b map[string]bool) bool {

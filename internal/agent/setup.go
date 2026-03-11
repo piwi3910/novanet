@@ -615,8 +615,7 @@ func InitNativeMode(ctx context.Context, logger *zap.Logger, cfg *config.Config,
 	}
 	routingMgr.Start(ctx)
 	ipBytes := nodeIP.To16()
-	lastByte := uint32(ipBytes[len(ipBytes)-1])
-	localAS := uint32(65000) + lastByte
+	localAS := uint32(64512) + uint32(ipBytes[14])*256 + uint32(ipBytes[15])
 	routerID := nodeIP.String()
 	routingMgr.ConfigureBGP(localAS, routerID)
 	if err := routingMgr.AdvertisePrefix(podCIDR); err != nil {
@@ -988,7 +987,7 @@ func WatchNodesNative(ctx context.Context, logger *zap.Logger, k8sClient *kubern
 				continue
 			}
 			ipBytes := parsedIP.To16()
-			remoteAS := uint32(65000) + uint32(ipBytes[len(ipBytes)-1])
+			remoteAS := uint32(64512) + uint32(ipBytes[14])*256 + uint32(ipBytes[15])
 			if err := routingMgr.ApplyPeer(remoteIP, remoteAS, bfdOpts); err != nil {
 				logger.Error("failed to apply BGP peer", zap.Error(err), zap.String("node", n.Name),
 					zap.String("remote_ip", remoteIP), zap.Uint32("remote_as", remoteAS))
