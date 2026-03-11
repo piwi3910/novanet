@@ -57,4 +57,13 @@ RUN mkdir -p /run/novanet && chown novanet:novanet /run/novanet
 HEALTHCHECK --interval=15s --timeout=5s --retries=3 \
     CMD novanetctl status --agent-socket /run/novanet/novanet.sock >/dev/null 2>&1 || exit 1
 
+# The agent container runs as root because it requires:
+#   - CAP_NET_ADMIN / CAP_SYS_ADMIN to configure network interfaces, routes,
+#     iptables rules, and attach/manage eBPF programs via bpf() syscalls.
+#   - CAP_BPF (Linux 5.8+) for eBPF map and program operations.
+#   - Access to host network namespaces (/proc, /sys/fs/bpf, /run/netns).
+#   - FRR integration which requires writing to /etc/frr and signalling daemons.
+# These capabilities cannot be granted to a non-root user in most container
+# runtimes without effectively equivalent privilege. The novanet user created
+# above is reserved for future least-privilege improvements.
 ENTRYPOINT ["novanet-agent"]

@@ -87,4 +87,12 @@ COPY --from=builder /build/dataplane/target/bpfel-unknown-none/release/novanet-e
 # Create runtime directories.
 RUN mkdir -p /run/novanet /sys/fs/bpf && chown novanet:novanet /run/novanet
 
+# The dataplane container runs as root because it requires:
+#   - CAP_BPF / CAP_SYS_ADMIN to load, attach, and manage eBPF programs and
+#     maps via the bpf() syscall, including XDP, TC, and socket-level hooks.
+#   - CAP_NET_ADMIN to configure network interfaces and attach XDP/TC programs.
+#   - Access to /sys/fs/bpf (the BPF filesystem) for pinning maps and programs.
+#   - Access to /sys/kernel/debug/tracing for eBPF tracepoint programs.
+# These operations require root or equivalent capabilities that provide the
+# same privilege level. The novanet user is reserved for future improvements.
 ENTRYPOINT ["novanet-dataplane"]

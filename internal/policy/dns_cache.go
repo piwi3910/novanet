@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"go.uber.org/zap"
+	"golang.org/x/sync/singleflight"
 )
 
 // defaultDNSTTL is the default time-to-live for cached DNS entries.
@@ -44,11 +45,12 @@ type dnsCacheEntry struct {
 // It stores resolved IPs and their TTLs, supports periodic refresh, and
 // enforces a maximum size with LRU eviction.
 type DNSCache struct {
-	mu         sync.RWMutex
+	mu         sync.Mutex
 	entries    map[string]*dnsCacheEntry
 	maxEntries int
 	logger     *zap.Logger
 	resolver   DNSResolver
+	flight     singleflight.Group
 }
 
 // NewDNSCache creates a new DNS cache with the given maximum number of entries.
@@ -75,38 +77,62 @@ func (c *DNSCache) SetResolver(resolver DNSResolver) {
 
 // Size returns the current number of entries in the cache.
 func (c *DNSCache) Size() int {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	return len(c.entries)
 }
 
 // Resolve returns the cached IPs for the given FQDN, performing a lookup
-// if the entry is missing or expired.
+// if the entry is missing or expired. Concurrent lookups for the same FQDN
+// are deduplicated via singleflight.
 func (c *DNSCache) Resolve(fqdn string) []net.IP {
-	c.mu.RLock()
+	// Check cache under a single Lock to avoid TOCTOU race: read entry,
+	// check expiry, and update lastAccess atomically.
+	c.mu.Lock()
 	entry, ok := c.entries[fqdn]
-	c.mu.RUnlock()
-
 	if ok && time.Now().Before(entry.expiry) {
-		c.mu.Lock()
 		entry.lastAccess = time.Now()
+		ips := entry.ips
 		c.mu.Unlock()
-		return entry.ips
+		return ips
+	}
+	// Capture the resolver while we hold the lock so we don't race with
+	// SetResolver. Also grab stale IPs for fallback on resolution failure.
+	resolverFn := c.resolver
+	var staleIPs []net.IP
+	if ok {
+		staleIPs = entry.ips
+	}
+	c.mu.Unlock()
+
+	// Cache miss or expired — resolve outside the lock. Use singleflight
+	// to deduplicate concurrent lookups for the same FQDN.
+	v, err, shared := c.flight.Do(fqdn, func() (interface{}, error) {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		return resolverFn(ctx, fqdn)
+	})
+
+	if err != nil {
+		// Only log from the original caller, not from shared waiters,
+		// to avoid duplicate warnings.
+		if !shared {
+			c.logger.Warn("DNS resolution failed",
+				zap.String("fqdn", fqdn),
+				zap.Error(err),
+			)
+		}
+		// Return stale data if available.
+		if staleIPs != nil {
+			return staleIPs
+		}
+		return nil
 	}
 
-	// Cache miss or expired — resolve.
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	resolved, err := c.resolver(ctx, fqdn)
-	if err != nil {
-		c.logger.Warn("DNS resolution failed",
-			zap.String("fqdn", fqdn),
-			zap.Error(err),
-		)
-		// Return stale data if available.
-		if ok {
-			return entry.ips
+	resolved, ok := v.([]net.IP)
+	if !ok {
+		if staleIPs != nil {
+			return staleIPs
 		}
 		return nil
 	}
@@ -122,16 +148,18 @@ func (c *DNSCache) Resolve(fqdn string) []net.IP {
 	c.evictLocked()
 	c.mu.Unlock()
 
-	c.logger.Debug("resolved FQDN",
-		zap.String("fqdn", fqdn),
-		zap.Int("ip_count", len(resolved)),
-	)
+	if !shared {
+		c.logger.Debug("resolved FQDN",
+			zap.String("fqdn", fqdn),
+			zap.Int("ip_count", len(resolved)),
+		)
+	}
 
 	return resolved
 }
 
 // evictLocked removes the least recently used entry if the cache exceeds maxEntries.
-// Must be called with c.mu held for writing.
+// Must be called with c.mu held.
 func (c *DNSCache) evictLocked() {
 	for len(c.entries) > c.maxEntries {
 		var oldestKey string
@@ -157,17 +185,18 @@ func (c *DNSCache) evictLocked() {
 // Refresh re-resolves all cached FQDNs and returns the number of entries
 // whose resolved IPs changed.
 func (c *DNSCache) Refresh() int {
-	c.mu.RLock()
+	c.mu.Lock()
 	fqdns := make([]string, 0, len(c.entries))
 	for fqdn := range c.entries {
 		fqdns = append(fqdns, fqdn)
 	}
-	c.mu.RUnlock()
+	resolverFn := c.resolver
+	c.mu.Unlock()
 
 	changed := 0
 	for _, fqdn := range fqdns {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		resolved, err := c.resolver(ctx, fqdn)
+		resolved, err := resolverFn(ctx, fqdn)
 		cancel()
 
 		if err != nil {
@@ -206,8 +235,8 @@ func (c *DNSCache) Refresh() int {
 
 // GetAll returns a snapshot of all cached FQDN -> IP mappings.
 func (c *DNSCache) GetAll() map[string][]net.IP {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
+	c.mu.Lock()
+	defer c.mu.Unlock()
 
 	result := make(map[string][]net.IP, len(c.entries))
 	for fqdn, entry := range c.entries {

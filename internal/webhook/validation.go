@@ -90,3 +90,24 @@ func validateProtocol(protocol string) error {
 func cidrsOverlap(a, b *net.IPNet) bool {
 	return a.Contains(b.IP) || b.Contains(a.IP)
 }
+
+// cidrContains checks whether parent fully contains child. Both the first and
+// last addresses of child must be within parent's range.
+func cidrContains(parent, child *net.IPNet) bool {
+	// The child's network address must be within the parent.
+	if !parent.Contains(child.IP) {
+		return false
+	}
+	// Compute the last address of the child network and check containment.
+	childLast := lastAddr(child)
+	return parent.Contains(childLast)
+}
+
+// lastAddr returns the last (broadcast) address of a CIDR range.
+func lastAddr(n *net.IPNet) net.IP {
+	ip := make(net.IP, len(n.IP))
+	for i := range n.IP {
+		ip[i] = n.IP[i] | ^n.Mask[i]
+	}
+	return ip
+}

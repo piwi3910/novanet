@@ -2,6 +2,8 @@ package webhook
 
 import (
 	"context"
+	"fmt"
+	"net"
 
 	"k8s.io/apimachinery/pkg/util/validation/field"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -116,11 +118,22 @@ func validateIPBlock(ipBlock *novanetv1alpha1.NovaIPBlock, fldPath *field.Path) 
 
 	if err := validateCIDR(ipBlock.CIDR); err != nil {
 		allErrs = append(allErrs, field.Invalid(fldPath.Child("cidr"), ipBlock.CIDR, err.Error()))
+		// If the parent CIDR is invalid, we cannot validate containment of except entries.
+		return allErrs
 	}
 
+	_, parentNet, _ := net.ParseCIDR(ipBlock.CIDR)
+
 	for i, except := range ipBlock.Except {
+		exceptPath := fldPath.Child("except").Index(i)
 		if err := validateCIDR(except); err != nil {
-			allErrs = append(allErrs, field.Invalid(fldPath.Child("except").Index(i), except, err.Error()))
+			allErrs = append(allErrs, field.Invalid(exceptPath, except, err.Error()))
+			continue
+		}
+		_, exceptNet, _ := net.ParseCIDR(except)
+		if !cidrContains(parentNet, exceptNet) {
+			allErrs = append(allErrs, field.Invalid(exceptPath, except,
+				fmt.Sprintf("except CIDR %s is not contained within parent CIDR %s", except, ipBlock.CIDR)))
 		}
 	}
 

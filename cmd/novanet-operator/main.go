@@ -140,6 +140,17 @@ func main() {
 		setupLog.Error(err, "unable to create webhook", "webhook", "IPPool")
 		os.Exit(1)
 	}
+	if err = novanetwebhook.SetupEgressGatewayPolicyWebhookWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create webhook", "webhook", "EgressGatewayPolicy")
+		os.Exit(1)
+	}
+	if err = novanetwebhook.SetupNovanetClusterWebhookWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create webhook", "webhook", "NovanetCluster")
+		os.Exit(1)
+	}
+	// NOTE: IPAllocation is an internal-only CRD managed exclusively by the
+	// IPAM controller. It is not user-facing and does not require a validating
+	// webhook — the controller is the sole writer.
 
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
 		setupLog.Error(err, "unable to set up health check")

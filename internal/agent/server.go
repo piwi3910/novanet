@@ -88,6 +88,82 @@ type Server struct {
 	Endpoints map[string]*Endpoint // key: namespace/name
 }
 
+// ServerOptions holds the configuration for creating a new Server.
+type ServerOptions struct {
+	// Required fields.
+	Logger         *zap.Logger
+	Cfg            *config.Config
+	IPAlloc        *ipam.Allocator
+	IDAlloc        *identity.Allocator
+	NodeIP         net.IP
+	PodCIDR        string
+	PolicyCompiler *policy.Compiler
+
+	// Optional fields — may be nil when not applicable.
+	DpClient    pb.DataplaneControlClient
+	K8sClient   kubernetes.Interface
+	EgressMgr   *egress.Manager
+	WgManager   *encryption.WireGuardManager
+	HostFW      interface{}
+	BwManager   *bandwidth.Manager
+	LbIPAM      *lbipam.Allocator
+	L2Announcer *l2announce.Announcer
+	XdpMgr      *xdp.Manager
+
+	// DpConnected indicates whether the dataplane gRPC connection is established.
+	DpConnected bool
+}
+
+// NewServer creates a Server with validated required fields and sensible defaults.
+// It panics if any required option (Logger, Cfg, IPAlloc, IDAlloc, NodeIP,
+// PodCIDR, PolicyCompiler) is zero-valued.
+func NewServer(opts ServerOptions) *Server {
+	if opts.Logger == nil {
+		panic("agent.NewServer: Logger is required")
+	}
+	if opts.Cfg == nil {
+		panic("agent.NewServer: Cfg is required")
+	}
+	if opts.IPAlloc == nil {
+		panic("agent.NewServer: IPAlloc is required")
+	}
+	if opts.IDAlloc == nil {
+		panic("agent.NewServer: IDAlloc is required")
+	}
+	if opts.NodeIP == nil {
+		panic("agent.NewServer: NodeIP is required")
+	}
+	if opts.PodCIDR == "" {
+		panic("agent.NewServer: PodCIDR is required")
+	}
+	if opts.PolicyCompiler == nil {
+		panic("agent.NewServer: PolicyCompiler is required")
+	}
+
+	s := &Server{
+		Logger:         opts.Logger,
+		Cfg:            opts.Cfg,
+		IPAlloc:        opts.IPAlloc,
+		IDAlloc:        opts.IDAlloc,
+		DpClient:       opts.DpClient,
+		K8sClient:      opts.K8sClient,
+		NodeIP:         opts.NodeIP,
+		PodCIDR:        opts.PodCIDR,
+		PolicyCompiler: opts.PolicyCompiler,
+		EgressMgr:      opts.EgressMgr,
+		WgManager:      opts.WgManager,
+		HostFW:         opts.HostFW,
+		BwManager:      opts.BwManager,
+		LbIPAM:         opts.LbIPAM,
+		L2Announcer:    opts.L2Announcer,
+		XdpMgr:         opts.XdpMgr,
+		PrevEgressKeys: make(map[EgressMapKey]bool),
+		Endpoints:      make(map[string]*Endpoint),
+	}
+	s.DpConnected.Store(opts.DpConnected)
+	return s
+}
+
 // validateAddPodRequest checks that all required fields are present in a CNI ADD request.
 func validateAddPodRequest(req *pb.AddPodRequest) error {
 	if req.PodName == "" {

@@ -44,10 +44,12 @@ The following table lists all configurable values in the NovaNet Helm chart (`de
 | `routing.peers` | `[]` | List of BGP peers to configure. Each entry has `neighbor_address`, `remote_as`, `description`, and optionally `bfd_enabled`, `bfd_min_rx_ms`, `bfd_min_tx_ms`, `bfd_detect_multiplier`. |
 
 **Input validation**: All string parameters passed to FRR (neighbor addresses, descriptions,
-passwords, source addresses, network prefixes, and route-map names) are validated before
-constructing VTY commands. Neighbor and source addresses must be valid IPv4 or IPv6 addresses.
-All string fields are rejected if they contain control characters (newlines, tabs, etc.) to
-prevent VTY command injection.
+passwords, source addresses, network prefixes, route-map names, OSPF interface names, OSPF area
+IDs, and BFD peer interfaces) are validated before constructing VTY commands. Neighbor addresses,
+source addresses, and BFD peer addresses must be valid IPv4 or IPv6 addresses. Address-family
+identifiers (AFI) are validated against a fixed allowlist (`ipv4-unicast`, `ipv4`, `ipv6-unicast`,
+`ipv6`); unrecognized values are rejected. All other string fields are rejected if they contain
+control characters (newlines, tabs, etc.) to prevent VTY command injection.
 
 ### L4 Load Balancing
 
@@ -403,8 +405,12 @@ The NovaNet operator registers validating admission webhooks for the following C
 | CRD | Webhook | Validations |
 |-----|---------|-------------|
 | `HostEndpointPolicy` | `vhostendpointpolicy.kb.io` | Action must be `Allow` or `Deny`; CIDRs must be valid and canonical; ports must be in range 1-65535; endPort must be >= port; protocol must be TCP, UDP, or SCTP |
-| `NovaNetworkPolicy` | `vnovanetworkpolicy.kb.io` | PolicyTypes must be `Ingress` or `Egress`; IPBlock CIDRs and exceptions must be valid; port numbers in range; endPort requires port; protocol must be TCP, UDP, or SCTP |
+| `NovaNetworkPolicy` | `vnovanetworkpolicy.kb.io` | PolicyTypes must be `Ingress` or `Egress`; IPBlock CIDRs and exceptions must be valid and exceptions must be contained within the parent CIDR; port numbers in range; endPort requires port; protocol must be TCP, UDP, or SCTP |
 | `IPPool` | `vippool.kb.io` | Type must be a valid IPPoolType; CIDRs must be valid and non-overlapping; addresses must be valid IPs; at least one CIDR or address is required |
+| `EgressGatewayPolicy` | `vegressgatewaypolicy.kb.io` | Destination and excluded CIDRs must be valid and canonical; egressIP must be a valid IP address |
+| `NovaNetCluster` | `vnovanetcluster.kb.io` | ClusterCIDR and ClusterCIDRv6 must be valid CIDRs; ControlPlaneVIP must be a valid IP; MTU must be 0 (auto) or 1280-9000; agent ports must be in range 1-65535 |
+
+Note: `IPAllocation` is an internal-only CRD managed exclusively by the IPAM controller and does not have a validating webhook.
 
 The webhook manifests are located at `config/webhook/manifests.yaml`. The operator wires them up automatically via controller-runtime's webhook builder.
 

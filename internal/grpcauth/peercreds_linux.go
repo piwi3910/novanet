@@ -88,9 +88,7 @@ func (peerCredTransportCreds) ClientHandshake(_ context.Context, _ string, conn 
 func (peerCredTransportCreds) ServerHandshake(conn net.Conn) (net.Conn, credentials.AuthInfo, error) {
 	uc, err := peerCredFromConn(conn)
 	if err != nil {
-		// Degrade gracefully -- allow connection but interceptors will reject
-		// if AuthInfo is missing.
-		return conn, nil, nil //nolint:nilerr // graceful degradation
+		return nil, nil, fmt.Errorf("SO_PEERCRED handshake failed: %w", err)
 	}
 	return conn, uc, nil
 }

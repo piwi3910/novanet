@@ -9,6 +9,15 @@ import (
 
 // AddBFDPeer creates a single-hop BFD session for the given peer address.
 func (c *Client) AddBFDPeer(ctx context.Context, peerAddr string, minRx, minTx, detectMult uint32, iface string) error {
+	if err := validateIPAddress(peerAddr); err != nil {
+		return fmt.Errorf("frr: add BFD peer: %w", err)
+	}
+	if iface != "" {
+		if _, err := sanitizeVTYParam(iface); err != nil {
+			return fmt.Errorf("frr: add BFD peer: interface: %w", err)
+		}
+	}
+
 	c.logger.Info("adding BFD peer",
 		zap.String("peer_addr", peerAddr),
 		zap.Uint32("min_rx", minRx),
@@ -49,6 +58,15 @@ func (c *Client) AddBFDPeer(ctx context.Context, peerAddr string, minRx, minTx, 
 // If iface is non-empty, it is appended to the peer command to disambiguate
 // multi-interface BFD sessions.
 func (c *Client) RemoveBFDPeer(ctx context.Context, peerAddr string, iface string) error {
+	if err := validateIPAddress(peerAddr); err != nil {
+		return fmt.Errorf("frr: remove BFD peer: %w", err)
+	}
+	if iface != "" {
+		if _, err := sanitizeVTYParam(iface); err != nil {
+			return fmt.Errorf("frr: remove BFD peer: interface: %w", err)
+		}
+	}
+
 	c.logger.Info("removing BFD peer", zap.String("peer_addr", peerAddr), zap.String("interface", iface))
 
 	peerCmd := fmt.Sprintf("no peer %s", peerAddr)

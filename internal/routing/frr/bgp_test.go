@@ -2,6 +2,7 @@ package frr
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -12,20 +13,34 @@ import (
 
 func TestResolveAFICLI_BGP(t *testing.T) {
 	tests := []struct {
+		name     string
 		input    string
 		expected string
+		wantErr  bool
 	}{
-		{"ipv4-unicast", "ipv4 unicast"},
-		{"ipv4", "ipv4 unicast"},
-		{"ipv6-unicast", "ipv6 unicast"},
-		{"ipv6", "ipv6 unicast"},
-		{"unknown", "unknown"},
-		{"", ""},
+		{"ipv4-unicast", "ipv4-unicast", "ipv4 unicast", false},
+		{"ipv4", "ipv4", "ipv4 unicast", false},
+		{"ipv6-unicast", "ipv6-unicast", "ipv6 unicast", false},
+		{"ipv6", "ipv6", "ipv6 unicast", false},
+		{"unknown", "unknown", "", true},
+		{"empty", "", "", true},
 	}
 
 	for _, tt := range tests {
-		t.Run(tt.input, func(t *testing.T) {
-			result := resolveAFICLI(tt.input)
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := resolveAFICLI(tt.input)
+			if tt.wantErr {
+				if err == nil {
+					t.Errorf("resolveAFICLI(%q) expected error, got nil", tt.input)
+				}
+				if !errors.Is(err, ErrUnrecognizedAFI) {
+					t.Errorf("resolveAFICLI(%q) error = %v, want ErrUnrecognizedAFI", tt.input, err)
+				}
+				return
+			}
+			if err != nil {
+				t.Errorf("resolveAFICLI(%q) unexpected error: %v", tt.input, err)
+			}
 			if result != tt.expected {
 				t.Errorf("resolveAFICLI(%q) = %q, want %q", tt.input, result, tt.expected)
 			}
@@ -351,6 +366,20 @@ func TestClient_ActivateNeighborAFI_IPv6(t *testing.T) {
 
 	stdin := readRecordedStdin(t, dir)
 	assertStdinContains(t, stdin, "address-family ipv6 unicast")
+}
+
+func TestClient_ActivateNeighborAFI_UnrecognizedAFI(t *testing.T) {
+	client, _ := setupFakeVtysh(t)
+	ctx := context.Background()
+	client.localAS = 65001
+
+	err := client.ActivateNeighborAFI(ctx, "192.168.1.2", "l2vpn-evpn")
+	if err == nil {
+		t.Fatal("expected error for unrecognized AFI")
+	}
+	if !strings.Contains(err.Error(), "unrecognized AFI") {
+		t.Errorf("unexpected error: %v", err)
+	}
 }
 
 func TestClient_AdvertiseNetwork(t *testing.T) {
@@ -740,6 +769,6 @@ func BenchmarkResolveAFICLI(b *testing.B) {
 	inputs := []string{"ipv4", "ipv6", "ipv4-unicast", "ipv6-unicast"}
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		resolveAFICLI(inputs[i%len(inputs)])
+		_, _ = resolveAFICLI(inputs[i%len(inputs)])
 	}
 }

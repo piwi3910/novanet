@@ -2,6 +2,7 @@ package webhook
 
 import (
 	"context"
+	"net"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -348,5 +349,196 @@ func TestIPPoolValidator_MultipleCIDRsNoOverlap(t *testing.T) {
 	}
 	v := &IPPoolValidator{}
 	_, err := v.ValidateCreate(context.Background(), pool)
+	require.NoError(t, err)
+}
+
+// --- IPBlock.Except containment tests (issue #83) ---
+
+func TestNovaNetworkPolicyValidator_ExceptNotContained(t *testing.T) {
+	nnp := &novanetv1alpha1.NovaNetworkPolicy{
+		Spec: novanetv1alpha1.NovaNetworkPolicySpec{
+			Ingress: []novanetv1alpha1.NovaNetworkPolicyIngressRule{
+				{From: []novanetv1alpha1.NovaNetworkPolicyPeer{
+					{IPBlock: &novanetv1alpha1.NovaIPBlock{CIDR: "10.0.0.0/8", Except: []string{"192.168.0.0/16"}}},
+				}},
+			},
+		},
+	}
+	v := &NovaNetworkPolicyValidator{}
+	_, err := v.ValidateCreate(context.Background(), nnp)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "not contained within")
+}
+
+func TestNovaNetworkPolicyValidator_ExceptContained(t *testing.T) {
+	nnp := &novanetv1alpha1.NovaNetworkPolicy{
+		Spec: novanetv1alpha1.NovaNetworkPolicySpec{
+			Ingress: []novanetv1alpha1.NovaNetworkPolicyIngressRule{
+				{From: []novanetv1alpha1.NovaNetworkPolicyPeer{
+					{IPBlock: &novanetv1alpha1.NovaIPBlock{CIDR: "10.0.0.0/8", Except: []string{"10.1.0.0/16"}}},
+				}},
+			},
+		},
+	}
+	v := &NovaNetworkPolicyValidator{}
+	_, err := v.ValidateCreate(context.Background(), nnp)
+	require.NoError(t, err)
+}
+
+func TestNovaNetworkPolicyValidator_ExceptPartiallyOutside(t *testing.T) {
+	nnp := &novanetv1alpha1.NovaNetworkPolicy{
+		Spec: novanetv1alpha1.NovaNetworkPolicySpec{
+			Egress: []novanetv1alpha1.NovaNetworkPolicyEgressRule{
+				{To: []novanetv1alpha1.NovaNetworkPolicyPeer{
+					{IPBlock: &novanetv1alpha1.NovaIPBlock{CIDR: "10.0.0.0/8", Except: []string{"10.0.0.0/7"}}},
+				}},
+			},
+		},
+	}
+	v := &NovaNetworkPolicyValidator{}
+	_, err := v.ValidateCreate(context.Background(), nnp)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "not contained within")
+}
+
+func TestNovaNetworkPolicyValidator_ExceptIPv6Contained(t *testing.T) {
+	nnp := &novanetv1alpha1.NovaNetworkPolicy{
+		Spec: novanetv1alpha1.NovaNetworkPolicySpec{
+			Ingress: []novanetv1alpha1.NovaNetworkPolicyIngressRule{
+				{From: []novanetv1alpha1.NovaNetworkPolicyPeer{
+					{IPBlock: &novanetv1alpha1.NovaIPBlock{CIDR: "fd00::/32", Except: []string{"fd00::/48"}}},
+				}},
+			},
+		},
+	}
+	v := &NovaNetworkPolicyValidator{}
+	_, err := v.ValidateCreate(context.Background(), nnp)
+	require.NoError(t, err)
+}
+
+func TestCidrContains(t *testing.T) {
+	tests := []struct {
+		name     string
+		parent   string
+		child    string
+		expected bool
+	}{
+		{"child within parent", "10.0.0.0/8", "10.1.0.0/16", true},
+		{"child equals parent", "10.0.0.0/8", "10.0.0.0/8", true},
+		{"child outside parent", "10.0.0.0/8", "192.168.0.0/16", false},
+		{"child wider than parent", "10.0.0.0/16", "10.0.0.0/8", false},
+		{"child at boundary end", "10.0.0.0/24", "10.0.0.128/25", true},
+		{"ipv6 contained", "fd00::/32", "fd00::/48", true},
+		{"ipv6 not contained", "fd00::/48", "fd01::/48", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, parentNet, err := net.ParseCIDR(tt.parent)
+			require.NoError(t, err)
+			_, childNet, err := net.ParseCIDR(tt.child)
+			require.NoError(t, err)
+			assert.Equal(t, tt.expected, cidrContains(parentNet, childNet))
+		})
+	}
+}
+
+// --- EgressGatewayPolicy webhook tests (issue #82) ---
+
+func TestEgressGatewayPolicyValidator_ValidCreate(t *testing.T) {
+	egp := &novanetv1alpha1.EgressGatewayPolicy{
+		Spec: novanetv1alpha1.EgressGatewayPolicySpec{
+			PodSelector:      metav1.LabelSelector{MatchLabels: map[string]string{"app": "web"}},
+			DestinationCIDRs: []string{"0.0.0.0/0"},
+			ExcludedCIDRs:    []string{"10.0.0.0/8"},
+			GatewaySelector:  metav1.LabelSelector{MatchLabels: map[string]string{"role": "gateway"}},
+			EgressIP:         "203.0.113.1",
+		},
+	}
+	v := &EgressGatewayPolicyValidator{}
+	_, err := v.ValidateCreate(context.Background(), egp)
+	require.NoError(t, err)
+}
+
+func TestEgressGatewayPolicyValidator_InvalidDestCIDR(t *testing.T) {
+	egp := &novanetv1alpha1.EgressGatewayPolicy{
+		Spec: novanetv1alpha1.EgressGatewayPolicySpec{
+			DestinationCIDRs: []string{"not-a-cidr"},
+		},
+	}
+	v := &EgressGatewayPolicyValidator{}
+	_, err := v.ValidateCreate(context.Background(), egp)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid CIDR")
+}
+
+func TestEgressGatewayPolicyValidator_InvalidEgressIP(t *testing.T) {
+	egp := &novanetv1alpha1.EgressGatewayPolicy{
+		Spec: novanetv1alpha1.EgressGatewayPolicySpec{
+			EgressIP: "not-an-ip",
+		},
+	}
+	v := &EgressGatewayPolicyValidator{}
+	_, err := v.ValidateCreate(context.Background(), egp)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid IP")
+}
+
+func TestEgressGatewayPolicyValidator_Delete(t *testing.T) {
+	v := &EgressGatewayPolicyValidator{}
+	_, err := v.ValidateDelete(context.Background(), &novanetv1alpha1.EgressGatewayPolicy{})
+	require.NoError(t, err)
+}
+
+// --- NovanetCluster webhook tests (issue #82) ---
+
+func TestNovanetClusterValidator_ValidCreate(t *testing.T) {
+	nnc := &novanetv1alpha1.NovaNetCluster{
+		Spec: novanetv1alpha1.NovaNetClusterSpec{
+			Version: "v1.0.0",
+			Networking: novanetv1alpha1.NetworkingSpec{
+				ClusterCIDR: "10.0.0.0/16",
+			},
+		},
+	}
+	v := &NovanetClusterValidator{}
+	_, err := v.ValidateCreate(context.Background(), nnc)
+	require.NoError(t, err)
+}
+
+func TestNovanetClusterValidator_InvalidClusterCIDR(t *testing.T) {
+	nnc := &novanetv1alpha1.NovaNetCluster{
+		Spec: novanetv1alpha1.NovaNetClusterSpec{
+			Version: "v1.0.0",
+			Networking: novanetv1alpha1.NetworkingSpec{
+				ClusterCIDR: "bad-cidr",
+			},
+		},
+	}
+	v := &NovanetClusterValidator{}
+	_, err := v.ValidateCreate(context.Background(), nnc)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid CIDR")
+}
+
+func TestNovanetClusterValidator_InvalidMTU(t *testing.T) {
+	mtu := int32(500)
+	nnc := &novanetv1alpha1.NovaNetCluster{
+		Spec: novanetv1alpha1.NovaNetClusterSpec{
+			Version: "v1.0.0",
+			Networking: novanetv1alpha1.NetworkingSpec{
+				ClusterCIDR: "10.0.0.0/16",
+				MTU:         &mtu,
+			},
+		},
+	}
+	v := &NovanetClusterValidator{}
+	_, err := v.ValidateCreate(context.Background(), nnc)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "MTU")
+}
+
+func TestNovanetClusterValidator_Delete(t *testing.T) {
+	v := &NovanetClusterValidator{}
+	_, err := v.ValidateDelete(context.Background(), &novanetv1alpha1.NovaNetCluster{})
 	require.NoError(t, err)
 }
