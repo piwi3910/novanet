@@ -10,6 +10,7 @@ import (
 	"time"
 
 	pb "github.com/azrtydxb/novanet/api/v1"
+	"github.com/azrtydxb/novanet/internal/constants"
 	"github.com/azrtydxb/novanet/internal/identity"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -25,7 +26,7 @@ import (
 func StartRemoteEndpointSync(ctx context.Context, logger *zap.Logger, k8sClient kubernetes.Interface,
 	dpClient pb.DataplaneControlClient, selfNode string, remoteEndpointsGauge prometheus.Gauge) {
 
-	factory := informers.NewSharedInformerFactory(k8sClient, 30*time.Second)
+	factory := informers.NewSharedInformerFactory(k8sClient, constants.DefaultResyncPeriod)
 	podInformer := factory.Core().V1().Pods().Informer()
 
 	var remoteCount int64
