@@ -118,6 +118,17 @@ type BackendHealthInfo struct {
 	FailureRate  float64
 }
 
+// EgressPolicy represents an egress policy rule for CIDR-based filtering.
+type EgressPolicy struct {
+	SrcIdentity      uint32
+	DstCIDR          string
+	DstCIDRPrefixLen uint32
+	Protocol         uint32
+	DstPort          uint32
+	Action           pb.EgressAction
+	SNATIP           string
+}
+
 // Backend represents an L4 LB backend entry.
 type Backend struct {
 	Index  uint32
@@ -177,6 +188,10 @@ type ClientInterface interface {
 	// L4 LB service management
 	UpsertBackends(ctx context.Context, backends []*Backend) error
 	UpsertServiceEntry(ctx context.Context, svc *ServiceConfig) error
+
+	// Egress policy management
+	UpsertEgressPolicy(ctx context.Context, policy *EgressPolicy) error
+	DeleteEgressPolicy(ctx context.Context, srcIdentity uint32, dstCIDR string, dstPrefixLen uint32) error
 
 	Close() error
 }
@@ -817,6 +832,52 @@ func (c *Client) UpsertServiceEntry(ctx context.Context, svc *ServiceConfig) err
 	})
 	if err != nil {
 		return fmt.Errorf("upserting service: %w", err)
+	}
+	return nil
+}
+
+// UpsertEgressPolicy adds or updates an egress policy in the dataplane.
+func (c *Client) UpsertEgressPolicy(ctx context.Context, policy *EgressPolicy) error {
+	c.mu.RLock()
+	client := c.client
+	c.mu.RUnlock()
+
+	if client == nil {
+		return ErrNotConnected
+	}
+
+	_, err := client.UpsertEgressPolicy(ctx, &pb.UpsertEgressPolicyRequest{
+		SrcIdentity:      policy.SrcIdentity,
+		DstCidr:          policy.DstCIDR,
+		DstCidrPrefixLen: policy.DstCIDRPrefixLen,
+		Protocol:         policy.Protocol,
+		DstPort:          policy.DstPort,
+		Action:           policy.Action,
+		SnatIp:           policy.SNATIP,
+	})
+	if err != nil {
+		return fmt.Errorf("upserting egress policy: %w", err)
+	}
+	return nil
+}
+
+// DeleteEgressPolicy removes an egress policy from the dataplane.
+func (c *Client) DeleteEgressPolicy(ctx context.Context, srcIdentity uint32, dstCIDR string, dstPrefixLen uint32) error {
+	c.mu.RLock()
+	client := c.client
+	c.mu.RUnlock()
+
+	if client == nil {
+		return ErrNotConnected
+	}
+
+	_, err := client.DeleteEgressPolicy(ctx, &pb.DeleteEgressPolicyRequest{
+		SrcIdentity:      srcIdentity,
+		DstCidr:          dstCIDR,
+		DstCidrPrefixLen: dstPrefixLen,
+	})
+	if err != nil {
+		return fmt.Errorf("deleting egress policy: %w", err)
 	}
 	return nil
 }

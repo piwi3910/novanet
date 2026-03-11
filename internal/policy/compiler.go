@@ -12,21 +12,22 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 
+	"github.com/azrtydxb/novanet/internal/constants"
 	"github.com/azrtydxb/novanet/internal/identity"
 )
 
-// Action constants for compiled rules.
+// Action constants for compiled rules — aliased from constants package.
 const (
-	ActionDeny  uint8 = 0
-	ActionAllow uint8 = 1
+	ActionDeny  = constants.ActionDeny
+	ActionAllow = constants.ActionAllow
 )
 
-// Protocol constants.
+// Protocol constants — aliased from constants package.
 const (
-	ProtocolTCP  uint8 = 6
-	ProtocolUDP  uint8 = 17
-	ProtocolSCTP uint8 = 132
-	ProtocolAny  uint8 = 0
+	ProtocolTCP  = constants.ProtocolTCP
+	ProtocolUDP  = constants.ProtocolUDP
+	ProtocolSCTP = constants.ProtocolSCTP
+	ProtocolAny  = constants.ProtocolAny
 )
 
 // WildcardIdentity matches any identity in a rule (used for open selectors).

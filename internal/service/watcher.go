@@ -17,6 +17,7 @@ import (
 	"k8s.io/client-go/tools/cache"
 
 	pb "github.com/azrtydxb/novanet/api/v1"
+	"github.com/azrtydxb/novanet/internal/constants"
 )
 
 const (
@@ -26,16 +27,16 @@ const (
 	// MaglevTableSize is the size of each Maglev lookup table.
 	MaglevTableSize = 65537
 
-	// Scope constants matching eBPF SVC_SCOPE_*.
-	scopeClusterIP    uint32 = 0
-	scopeNodePort     uint32 = 1
-	scopeExternalIP   uint32 = 2
-	scopeLoadBalancer uint32 = 3
+	// Scope constants — aliased from constants package.
+	scopeClusterIP    = constants.ScopeClusterIP
+	scopeNodePort     = constants.ScopeNodePort
+	scopeExternalIP   = constants.ScopeExternalIP
+	scopeLoadBalancer = constants.ScopeLoadBalancer
 
-	// Algorithm constants matching eBPF LB_ALG_*.
-	algRandom     uint32 = 0
-	algRoundRobin uint32 = 1
-	algMaglev     uint32 = 2
+	// Algorithm constants — aliased from constants package.
+	algRandom     = constants.AlgRandom
+	algRoundRobin = constants.AlgRoundRobin
+	algMaglev     = constants.AlgMaglev
 )
 
 var errCacheSyncFailed = errors.New("failed to sync service/endpointslice informer caches")
@@ -744,16 +745,7 @@ func intToU32(n int) uint32 {
 }
 
 func protocolToNumber(proto corev1.Protocol) uint32 {
-	switch proto {
-	case corev1.ProtocolTCP:
-		return 6
-	case corev1.ProtocolUDP:
-		return 17
-	case corev1.ProtocolSCTP:
-		return 132
-	default:
-		return 6 // default to TCP
-	}
+	return constants.ProtocolToNumber(proto)
 }
 
 func resolveTargetPort(port corev1.ServicePort, be backendInfo) uint32 {

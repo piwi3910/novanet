@@ -9,6 +9,7 @@ import (
 	"time"
 
 	pb "github.com/azrtydxb/novanet/api/v1"
+	"github.com/azrtydxb/novanet/internal/constants"
 	"github.com/azrtydxb/novanet/internal/encryption"
 	"github.com/azrtydxb/novanet/internal/routing"
 	"github.com/azrtydxb/novanet/internal/tunnel"
@@ -102,7 +103,7 @@ type ShutdownState struct {
 	EbpfServicesGRPC *grpc.Server
 	MetricsServer    *http.Server
 	DpConn           *grpc.ClientConn
-	NrClient         *routing.Manager
+	RoutingMgr       *routing.Manager
 	PodCIDR          string
 	XdpMgr           *xdp.Manager
 	WgManager        *encryption.WireGuardManager
@@ -157,7 +158,7 @@ type FlowTuple struct {
 // Flow consumer constants.
 const (
 	FlowRetryInterval = 5 * time.Second
-	ProtoTCP          = 6
+	ProtoTCP          = uint32(constants.ProtocolTCP)
 	MaxTrackedTuples  = 10000 // cap tracked tuples to prevent memory growth
 
 	// TCP flag bits.

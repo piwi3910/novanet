@@ -11,6 +11,7 @@ import (
 	"sync"
 
 	"github.com/azrtydxb/novanet/api/v1alpha1"
+	"github.com/azrtydxb/novanet/internal/constants"
 	"go.uber.org/zap"
 	corev1 "k8s.io/api/core/v1"
 )
@@ -21,18 +22,18 @@ var (
 	ErrUnknownAction = errors.New("unknown action")
 )
 
-// Protocol constants matching IP protocol numbers.
+// Protocol constants — aliased from constants package.
 const (
-	ProtocolAny  uint8 = 0
-	ProtocolTCP  uint8 = 6
-	ProtocolUDP  uint8 = 17
-	ProtocolSCTP uint8 = 132
+	ProtocolAny  = constants.ProtocolAny
+	ProtocolTCP  = constants.ProtocolTCP
+	ProtocolUDP  = constants.ProtocolUDP
+	ProtocolSCTP = constants.ProtocolSCTP
 )
 
-// Action constants for firewall rules.
+// Action constants — aliased from constants package.
 const (
-	ActionDeny  uint8 = 0
-	ActionAllow uint8 = 1
+	ActionDeny  = constants.ActionDeny
+	ActionAllow = constants.ActionAllow
 )
 
 // Direction indicates whether a rule applies to ingress or egress traffic.

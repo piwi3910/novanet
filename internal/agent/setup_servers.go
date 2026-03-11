@@ -178,7 +178,7 @@ func GracefulShutdown(s *ShutdownState) {
 	s.Cancel()
 	s.BgWg.Wait()
 	s.Logger.Info("background goroutines stopped")
-	ShutdownRouting(s.Logger, s.NrClient, s.PodCIDR)
+	ShutdownRouting(s.Logger, s.RoutingMgr, s.PodCIDR)
 	s.CniGRPC.GracefulStop()
 	s.Logger.Info("CNI gRPC server stopped")
 	s.AgentGRPC.GracefulStop()

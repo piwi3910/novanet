@@ -16,10 +16,12 @@ import (
 	"sync"
 	"time"
 
+	"github.com/azrtydxb/novanet/internal/constants"
 	"github.com/azrtydxb/novanet/internal/dataplane"
 	"github.com/azrtydxb/novanet/internal/routing"
 	"github.com/azrtydxb/novanet/internal/tunnel"
 	"go.uber.org/zap"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 )
@@ -31,12 +33,12 @@ const (
 	backendBaseOffset uint32 = 65520
 	// apiServerPort is the standard Kubernetes API server port.
 	apiServerPort uint32 = 6443
-	// protocolTCP is the IP protocol number for TCP.
-	protocolTCP uint32 = 6
+	// protocolTCP is the IP protocol number for TCP — aliased from constants.
+	protocolTCP = uint32(constants.ProtocolTCP)
 	// scopeClusterIP matches the service watcher's scope constant.
-	scopeClusterIP uint32 = 0
+	scopeClusterIP = constants.ScopeClusterIP
 	// algRoundRobin matches the service watcher's algorithm constant.
-	algRoundRobin uint32 = 1
+	algRoundRobin = constants.AlgRoundRobin
 )
 
 // Config holds the configuration for the cp-vip manager.
@@ -53,7 +55,7 @@ type Config struct {
 type Manager struct {
 	cfg        Config
 	dpClient   dataplane.ClientInterface
-	nrClient   *routing.Manager
+	routingMgr *routing.Manager
 	k8sClient  kubernetes.Interface
 	logger     *zap.Logger
 	httpClient *http.Client
@@ -64,8 +66,8 @@ type Manager struct {
 	loopbackBound bool
 }
 
-// NewManager creates a cp-vip manager. nrClient may be nil if BGP is not used.
-func NewManager(cfg Config, dpClient dataplane.ClientInterface, nrClient *routing.Manager,
+// NewManager creates a cp-vip manager. routingMgr may be nil if BGP is not used.
+func NewManager(cfg Config, dpClient dataplane.ClientInterface, routingMgr *routing.Manager,
 	k8sClient kubernetes.Interface, logger *zap.Logger) *Manager {
 
 	if cfg.HealthInterval == 0 {
@@ -76,11 +78,11 @@ func NewManager(cfg Config, dpClient dataplane.ClientInterface, nrClient *routin
 	}
 
 	return &Manager{
-		cfg:       cfg,
-		dpClient:  dpClient,
-		nrClient:  nrClient,
-		k8sClient: k8sClient,
-		logger:    logger.With(zap.String("component", "cpvip")),
+		cfg:        cfg,
+		dpClient:   dpClient,
+		routingMgr: routingMgr,
+		k8sClient:  k8sClient,
+		logger:     logger.With(zap.String("component", "cpvip")),
 		httpClient: &http.Client{
 			Timeout: cfg.HealthTimeout,
 			Transport: &http.Transport{
@@ -183,7 +185,7 @@ func (m *Manager) discoverCPNodes(ctx context.Context) ([]string, error) {
 	var ips []string
 	for _, n := range nodes.Items {
 		for _, addr := range n.Status.Addresses {
-			if addr.Type == "InternalIP" {
+			if addr.Type == corev1.NodeInternalIP {
 				ips = append(ips, addr.Address)
 				break
 			}
@@ -269,21 +271,21 @@ func (m *Manager) updateDataplane(ctx context.Context, healthyIPs []string) erro
 
 // manageBGP advertises or withdraws the VIP prefix based on local health.
 func (m *Manager) manageBGP(localHealthy bool) {
-	if m.nrClient == nil {
+	if m.routingMgr == nil {
 		return
 	}
 
 	vipCIDR := m.cfg.VIP + vipPrefix(m.cfg.VIP)
 
 	if localHealthy && !m.bgpAdvertised {
-		if err := m.nrClient.AdvertisePrefix(vipCIDR); err != nil {
+		if err := m.routingMgr.AdvertisePrefix(vipCIDR); err != nil {
 			m.logger.Error("failed to advertise cp-vip", zap.Error(err))
 		} else {
 			m.bgpAdvertised = true
 			m.logger.Info("advertised cp-vip via BGP (local API server healthy)")
 		}
 	} else if !localHealthy && m.bgpAdvertised {
-		if err := m.nrClient.WithdrawPrefix(vipCIDR); err != nil {
+		if err := m.routingMgr.WithdrawPrefix(vipCIDR); err != nil {
 			m.logger.Error("failed to withdraw cp-vip", zap.Error(err))
 		} else {
 			m.bgpAdvertised = false
@@ -319,9 +321,9 @@ func (m *Manager) shutdown() {
 	m.logger.Info("cp-vip manager shutting down")
 
 	if m.cfg.IsControlPlane {
-		if m.bgpAdvertised && m.nrClient != nil {
+		if m.bgpAdvertised && m.routingMgr != nil {
 			vipCIDR := m.cfg.VIP + vipPrefix(m.cfg.VIP)
-			if err := m.nrClient.WithdrawPrefix(vipCIDR); err != nil {
+			if err := m.routingMgr.WithdrawPrefix(vipCIDR); err != nil {
 				m.logger.Error("failed to withdraw cp-vip on shutdown", zap.Error(err))
 			}
 		}

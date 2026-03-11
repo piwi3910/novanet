@@ -121,7 +121,7 @@ func ResolveNodeParams(logger *zap.Logger, k8sClient *kubernetes.Clientset, para
 		}
 		if params.NodeIPStr == "" {
 			for _, addr := range node.Status.Addresses {
-				if addr.Type == "InternalIP" {
+				if addr.Type == corev1.NodeInternalIP {
 					params.NodeIPStr = addr.Address
 					logger.Info("auto-detected node-ip", zap.String("node_ip", params.NodeIPStr))
 					break
@@ -149,7 +149,7 @@ func ParseNodeIP(logger *zap.Logger, nodeIPStr string) net.IP {
 // NodeInternalIP returns the InternalIP address of a Kubernetes node.
 func NodeInternalIP(node *corev1.Node) string {
 	for _, addr := range node.Status.Addresses {
-		if addr.Type == "InternalIP" {
+		if addr.Type == corev1.NodeInternalIP {
 			return addr.Address
 		}
 	}

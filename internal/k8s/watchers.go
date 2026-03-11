@@ -6,8 +6,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"time"
 
+	"github.com/azrtydxb/novanet/internal/constants"
 	"go.uber.org/zap"
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
@@ -57,7 +57,7 @@ type Watchers struct {
 // NewWatchers creates a new Watchers instance for the given Kubernetes
 // clientset. The nodeName is used to filter pod events to only the local node.
 func NewWatchers(clientset kubernetes.Interface, nodeName string, logger *zap.Logger) *Watchers {
-	factory := informers.NewSharedInformerFactory(clientset, 30*time.Second)
+	factory := informers.NewSharedInformerFactory(clientset, constants.DefaultResyncPeriod)
 
 	return &Watchers{
 		clientset: clientset,

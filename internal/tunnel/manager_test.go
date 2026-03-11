@@ -98,6 +98,12 @@ func (m *mockDPClient) UpsertBackends(_ context.Context, _ []*dataplane.Backend)
 func (m *mockDPClient) UpsertServiceEntry(_ context.Context, _ *dataplane.ServiceConfig) error {
 	return nil
 }
+func (m *mockDPClient) UpsertEgressPolicy(_ context.Context, _ *dataplane.EgressPolicy) error {
+	return nil
+}
+func (m *mockDPClient) DeleteEgressPolicy(_ context.Context, _ uint32, _ string, _ uint32) error {
+	return nil
+}
 
 func (m *mockDPClient) UpsertTunnel(ctx context.Context, nodeIP string, ifindex, vni uint32) error {
 	m.mu.Lock()

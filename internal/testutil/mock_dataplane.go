@@ -116,5 +116,15 @@ func (m *MockDataplane) UpsertServiceEntry(_ context.Context, _ *dataplane.Servi
 	return nil
 }
 
+// UpsertEgressPolicy implements dataplane.ClientInterface.
+func (m *MockDataplane) UpsertEgressPolicy(_ context.Context, _ *dataplane.EgressPolicy) error {
+	return nil
+}
+
+// DeleteEgressPolicy implements dataplane.ClientInterface.
+func (m *MockDataplane) DeleteEgressPolicy(_ context.Context, _ uint32, _ string, _ uint32) error {
+	return nil
+}
+
 // Close implements dataplane.ClientInterface.
 func (m *MockDataplane) Close() error { return nil }

@@ -7,14 +7,15 @@ import (
 	"net"
 	"sync"
 
+	"github.com/azrtydxb/novanet/internal/constants"
 	"go.uber.org/zap"
 )
 
-// Action represents the egress action to apply to matching traffic.
+// Action constants — aliased from constants package.
 const (
-	ActionDeny  uint8 = 0
-	ActionAllow uint8 = 1
-	ActionSNAT  uint8 = 2
+	ActionDeny  = constants.ActionDeny
+	ActionAllow = constants.ActionAllow
+	ActionSNAT  = constants.ActionSNAT
 )
 
 // Rule defines a single egress policy rule.

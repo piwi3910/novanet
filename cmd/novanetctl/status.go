@@ -90,7 +90,7 @@ func printStatusTable(resp *pb.GetAgentStatusResponse) error {
 	}
 	_, _ = fmt.Fprintf(w, "Dataplane:\t%s\n", dpStatus)
 	_, _ = fmt.Fprintf(w, "Attached Programs:\t%d\n", dpPrograms)
-	_, _ = fmt.Fprintf(w, "NovaRoute Connected:\t%v\n", resp.NovarouteConnected)
+	_, _ = fmt.Fprintf(w, "Routing Connected:\t%v\n", resp.NovarouteConnected)
 
 	return w.Flush()
 }

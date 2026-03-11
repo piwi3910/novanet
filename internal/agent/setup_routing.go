@@ -406,7 +406,7 @@ func WatchNodesNative(ctx context.Context, logger *zap.Logger, k8sClient *kubern
 			}
 			remoteIP := ""
 			for _, addr := range n.Status.Addresses {
-				if addr.Type == "InternalIP" {
+				if addr.Type == corev1.NodeInternalIP {
 					remoteIP = addr.Address
 					break
 				}

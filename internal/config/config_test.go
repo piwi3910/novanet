@@ -6,7 +6,10 @@ import (
 	"testing"
 )
 
-const testNativeMode = "native"
+const (
+	testNativeMode    = "native"
+	testVxlanProtocol = "vxlan"
+)
 
 func TestDefaultConfig(t *testing.T) {
 	cfg := DefaultConfig()
@@ -56,7 +59,7 @@ func TestLoadFromFile(t *testing.T) {
 	if cfg.ClusterCIDR != "10.100.0.0/16" {
 		t.Errorf("expected 10.100.0.0/16, got %s", cfg.ClusterCIDR)
 	}
-	if cfg.TunnelProtocol != "vxlan" {
+	if cfg.TunnelProtocol != testVxlanProtocol {
 		t.Errorf("expected vxlan, got %s", cfg.TunnelProtocol)
 	}
 	// Default values should be preserved for unset fields.
@@ -211,18 +214,18 @@ func TestExpandEnvVars(t *testing.T) {
 	cfg := DefaultConfig()
 
 	t.Setenv("NOVANET_CLUSTER_CIDR", "10.200.0.0/16")
-	t.Setenv("NOVANET_ROUTING_MODE", "native")
-	t.Setenv("NOVANET_TUNNEL_PROTOCOL", "vxlan")
+	t.Setenv("NOVANET_ROUTING_MODE", testNativeMode)
+	t.Setenv("NOVANET_TUNNEL_PROTOCOL", testVxlanProtocol)
 
 	ExpandEnvVars(cfg)
 
 	if cfg.ClusterCIDR != "10.200.0.0/16" {
 		t.Errorf("expected overridden cluster_cidr, got %s", cfg.ClusterCIDR)
 	}
-	if cfg.RoutingMode != "native" {
+	if cfg.RoutingMode != testNativeMode {
 		t.Errorf("expected overridden routing_mode, got %s", cfg.RoutingMode)
 	}
-	if cfg.TunnelProtocol != "vxlan" {
+	if cfg.TunnelProtocol != testVxlanProtocol {
 		t.Errorf("expected overridden tunnel_protocol, got %s", cfg.TunnelProtocol)
 	}
 }
@@ -301,6 +304,54 @@ func TestValidate_IPv6_Disabled_NoValidation(t *testing.T) {
 
 	if err := Validate(cfg); err != nil {
 		t.Errorf("IPv6 validation should be skipped when disabled: %v", err)
+	}
+}
+
+func TestExpandEnvVars_LegacyNovarouteOnly(t *testing.T) {
+	// When only NOVAROUTE_* vars are set (no NOVANET_* counterparts),
+	// the legacy values should override the defaults.
+	cfg := DefaultConfig()
+
+	t.Setenv("NOVAROUTE_ROUTING_MODE", testNativeMode)
+	t.Setenv("NOVAROUTE_CLUSTER_CIDR", "10.99.0.0/16")
+	t.Setenv("NOVAROUTE_TUNNEL_PROTOCOL", testVxlanProtocol)
+
+	ExpandEnvVars(cfg)
+
+	if cfg.RoutingMode != testNativeMode {
+		t.Errorf("expected NOVAROUTE_ROUTING_MODE override, got %s", cfg.RoutingMode)
+	}
+	if cfg.ClusterCIDR != "10.99.0.0/16" {
+		t.Errorf("expected NOVAROUTE_CLUSTER_CIDR override, got %s", cfg.ClusterCIDR)
+	}
+	if cfg.TunnelProtocol != testVxlanProtocol {
+		t.Errorf("expected NOVAROUTE_TUNNEL_PROTOCOL override, got %s", cfg.TunnelProtocol)
+	}
+}
+
+func TestExpandEnvVars_NovanetTakesPrecedenceOverNovaroute(t *testing.T) {
+	// When both NOVANET_* and NOVAROUTE_* are set, NOVANET_* must win.
+	cfg := DefaultConfig()
+
+	t.Setenv("NOVANET_ROUTING_MODE", "overlay")
+	t.Setenv("NOVAROUTE_ROUTING_MODE", testNativeMode)
+
+	t.Setenv("NOVANET_CLUSTER_CIDR", "10.200.0.0/16")
+	t.Setenv("NOVAROUTE_CLUSTER_CIDR", "10.99.0.0/16")
+
+	t.Setenv("NOVANET_TUNNEL_PROTOCOL", "geneve")
+	t.Setenv("NOVAROUTE_TUNNEL_PROTOCOL", testVxlanProtocol)
+
+	ExpandEnvVars(cfg)
+
+	if cfg.RoutingMode != "overlay" {
+		t.Errorf("expected NOVANET_ROUTING_MODE to take precedence, got %s", cfg.RoutingMode)
+	}
+	if cfg.ClusterCIDR != "10.200.0.0/16" {
+		t.Errorf("expected NOVANET_CLUSTER_CIDR to take precedence, got %s", cfg.ClusterCIDR)
+	}
+	if cfg.TunnelProtocol != "geneve" {
+		t.Errorf("expected NOVANET_TUNNEL_PROTOCOL to take precedence, got %s", cfg.TunnelProtocol)
 	}
 }
 

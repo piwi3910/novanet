@@ -57,7 +57,7 @@ type NovaNetClusterSpec struct {
 	// +kubebuilder:validation:Required
 	Networking NetworkingSpec `json:"networking"`
 
-	// NovaRouteIntegration enables native routing via NovaRoute.
+	// NovaRouteIntegration enables NovaNet routing (legacy NovaRoute API).
 	// +optional
 	NovaRouteIntegration *NovaRouteIntegrationSpec `json:"novaRouteIntegration,omitempty"`
 
@@ -248,7 +248,7 @@ type LBIPAMSpec struct {
 	L2AnnouncementEnabled *bool `json:"l2AnnouncementEnabled,omitempty"`
 }
 
-// NovaRouteIntegrationSpec configures native routing via NovaRoute.
+// NovaRouteIntegrationSpec configures NovaNet routing (legacy NovaRoute API).
 type NovaRouteIntegrationSpec struct {
 	// Enabled activates NovaRoute integration for native routing.
 	// +kubebuilder:default=false
