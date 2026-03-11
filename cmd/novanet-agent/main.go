@@ -127,15 +127,25 @@ func main() {
 		}
 	}
 
-	agentSrv := &agent.Server{
-		Logger: logger, Cfg: cfg, IPAlloc: ipAlloc, IDAlloc: idAlloc,
-		DpClient: dpClient, K8sClient: k8sClient, NodeIP: nodeIP, PodCIDR: params.PodCIDR,
-		PolicyCompiler: policyCompiler, EgressMgr: egressMgr, WgManager: wgMgr,
-		HostFW: hostFW, BwManager: bwMgr, LbIPAM: lbIPAMAlloc, L2Announcer: l2Ann,
-		XdpMgr: xdpMgr, PrevEgressKeys: make(map[agent.EgressMapKey]bool),
-		Endpoints: make(map[string]*agent.Endpoint),
-	}
-	agentSrv.DpConnected.Store(dpConnected)
+	agentSrv := agent.NewServer(agent.ServerOptions{
+		Logger:         logger,
+		Cfg:            cfg,
+		IPAlloc:        ipAlloc,
+		IDAlloc:        idAlloc,
+		DpClient:       dpClient,
+		K8sClient:      k8sClient,
+		NodeIP:         nodeIP,
+		PodCIDR:        params.PodCIDR,
+		PolicyCompiler: policyCompiler,
+		EgressMgr:      egressMgr,
+		WgManager:      wgMgr,
+		HostFW:         hostFW,
+		BwManager:      bwMgr,
+		LbIPAM:         lbIPAMAlloc,
+		L2Announcer:    l2Ann,
+		XdpMgr:         xdpMgr,
+		DpConnected:    dpConnected,
+	})
 
 	agent.SetRemoteEndpointSyncFunc(remotesync.StartRemoteEndpointSync)
 	agent.StartPolicyWatcher(ctx, logger, k8sClient, policyCompiler, agentSrv, &bgWg)
