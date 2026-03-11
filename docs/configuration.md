@@ -44,10 +44,12 @@ The following table lists all configurable values in the NovaNet Helm chart (`de
 | `routing.peers` | `[]` | List of BGP peers to configure. Each entry has `neighbor_address`, `remote_as`, `description`, and optionally `bfd_enabled`, `bfd_min_rx_ms`, `bfd_min_tx_ms`, `bfd_detect_multiplier`. |
 
 **Input validation**: All string parameters passed to FRR (neighbor addresses, descriptions,
-passwords, source addresses, network prefixes, and route-map names) are validated before
-constructing VTY commands. Neighbor and source addresses must be valid IPv4 or IPv6 addresses.
-All string fields are rejected if they contain control characters (newlines, tabs, etc.) to
-prevent VTY command injection.
+passwords, source addresses, network prefixes, route-map names, OSPF interface names, OSPF area
+IDs, and BFD peer interfaces) are validated before constructing VTY commands. Neighbor addresses,
+source addresses, and BFD peer addresses must be valid IPv4 or IPv6 addresses. Address-family
+identifiers (AFI) are validated against a fixed allowlist (`ipv4-unicast`, `ipv4`, `ipv6-unicast`,
+`ipv6`); unrecognized values are rejected. All other string fields are rejected if they contain
+control characters (newlines, tabs, etc.) to prevent VTY command injection.
 
 ### L4 Load Balancing
 

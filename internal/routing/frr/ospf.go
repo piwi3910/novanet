@@ -9,6 +9,13 @@ import (
 
 // EnableOSPFInterface enables OSPF on the specified interface within the given area.
 func (c *Client) EnableOSPFInterface(ctx context.Context, ifaceName, areaID string, passive bool, cost, hello, dead uint32) error {
+	if _, err := sanitizeVTYParam(ifaceName); err != nil {
+		return fmt.Errorf("frr: enable OSPF: interface name: %w", err)
+	}
+	if _, err := sanitizeVTYParam(areaID); err != nil {
+		return fmt.Errorf("frr: enable OSPF: area ID: %w", err)
+	}
+
 	c.logger.Info("enabling OSPF interface",
 		zap.String("interface", ifaceName),
 		zap.String("area_id", areaID),
@@ -53,6 +60,13 @@ func (c *Client) EnableOSPFInterface(ctx context.Context, ifaceName, areaID stri
 // Passive interfaces are configured under "router ospf6" with "passive-interface <iface>".
 // Unlike IPv4 OSPF, hello/dead intervals are not configured per-interface in FRR OSPFv3.
 func (c *Client) EnableOSPFv3Interface(ctx context.Context, ifaceName, areaID string, passive bool, cost uint32) error {
+	if _, err := sanitizeVTYParam(ifaceName); err != nil {
+		return fmt.Errorf("frr: enable OSPFv3: interface name: %w", err)
+	}
+	if _, err := sanitizeVTYParam(areaID); err != nil {
+		return fmt.Errorf("frr: enable OSPFv3: area ID: %w", err)
+	}
+
 	c.logger.Info("enabling OSPFv3 interface",
 		zap.String("interface", ifaceName),
 		zap.String("area_id", areaID),
@@ -87,6 +101,13 @@ func (c *Client) EnableOSPFv3Interface(ctx context.Context, ifaceName, areaID st
 // DisableOSPFv3Interface removes OSPFv3 (IPv6) configuration from the specified interface.
 // If passive is true, the passive-interface setting is also removed from router ospf6.
 func (c *Client) DisableOSPFv3Interface(ctx context.Context, ifaceName, areaID string, passive bool) error {
+	if _, err := sanitizeVTYParam(ifaceName); err != nil {
+		return fmt.Errorf("frr: disable OSPFv3: interface name: %w", err)
+	}
+	if _, err := sanitizeVTYParam(areaID); err != nil {
+		return fmt.Errorf("frr: disable OSPFv3: area ID: %w", err)
+	}
+
 	c.logger.Info("disabling OSPFv3 interface",
 		zap.String("interface", ifaceName),
 		zap.String("area_id", areaID),
@@ -114,6 +135,13 @@ func (c *Client) DisableOSPFv3Interface(ctx context.Context, ifaceName, areaID s
 // DisableOSPFInterface removes OSPF configuration from the specified interface.
 // If passive is true, the passive-interface setting is also removed.
 func (c *Client) DisableOSPFInterface(ctx context.Context, ifaceName, areaID string, passive bool) error {
+	if _, err := sanitizeVTYParam(ifaceName); err != nil {
+		return fmt.Errorf("frr: disable OSPF: interface name: %w", err)
+	}
+	if _, err := sanitizeVTYParam(areaID); err != nil {
+		return fmt.Errorf("frr: disable OSPF: area ID: %w", err)
+	}
+
 	c.logger.Info("disabling OSPF interface",
 		zap.String("interface", ifaceName),
 		zap.String("area_id", areaID),

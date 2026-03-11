@@ -579,21 +579,163 @@ func TestResolveAFICLI(t *testing.T) {
 	tests := []struct {
 		input    string
 		expected string
+		wantErr  bool
 	}{
-		{"ipv4", "ipv4 unicast"},
-		{"ipv4-unicast", "ipv4 unicast"},
-		{"ipv6", "ipv6 unicast"},
-		{"ipv6-unicast", "ipv6 unicast"},
-		{"custom-afi", "custom-afi"},
+		{"ipv4", "ipv4 unicast", false},
+		{"ipv4-unicast", "ipv4 unicast", false},
+		{"ipv6", "ipv6 unicast", false},
+		{"ipv6-unicast", "ipv6 unicast", false},
+		{"custom-afi", "", true},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.input, func(t *testing.T) {
-			result := resolveAFICLI(tt.input)
+			result, err := resolveAFICLI(tt.input)
+			if tt.wantErr {
+				if err == nil {
+					t.Errorf("resolveAFICLI(%q) expected error, got nil", tt.input)
+				}
+				return
+			}
+			if err != nil {
+				t.Errorf("resolveAFICLI(%q) unexpected error: %v", tt.input, err)
+			}
 			if result != tt.expected {
 				t.Errorf("resolveAFICLI(%q) = %q, want %q", tt.input, result, tt.expected)
 			}
 		})
+	}
+}
+
+// --- OSPF/BFD injection prevention tests ---
+
+func TestOSPFEnableInterface_InjectionInIfaceName(t *testing.T) {
+	client, _ := setupFakeVtysh(t)
+	ctx := context.Background()
+
+	err := client.EnableOSPFInterface(ctx, "eth0\nrouter bgp 666", "0.0.0.0", false, 0, 0, 0)
+	if err == nil {
+		t.Fatal("expected error for newline in interface name")
+	}
+	if !strings.Contains(err.Error(), "interface name") || !strings.Contains(err.Error(), "control characters") {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+func TestOSPFEnableInterface_InjectionInAreaID(t *testing.T) {
+	client, _ := setupFakeVtysh(t)
+	ctx := context.Background()
+
+	err := client.EnableOSPFInterface(ctx, "eth0", "0.0.0.0\nevil-command", false, 0, 0, 0)
+	if err == nil {
+		t.Fatal("expected error for newline in area ID")
+	}
+	if !strings.Contains(err.Error(), "area ID") || !strings.Contains(err.Error(), "control characters") {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+func TestOSPFv3EnableInterface_InjectionInIfaceName(t *testing.T) {
+	client, _ := setupFakeVtysh(t)
+	ctx := context.Background()
+
+	err := client.EnableOSPFv3Interface(ctx, "eth0\nrouter bgp 666", "0.0.0.0", false, 0)
+	if err == nil {
+		t.Fatal("expected error for newline in interface name")
+	}
+	if !strings.Contains(err.Error(), "interface name") || !strings.Contains(err.Error(), "control characters") {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+func TestOSPFv3EnableInterface_InjectionInAreaID(t *testing.T) {
+	client, _ := setupFakeVtysh(t)
+	ctx := context.Background()
+
+	err := client.EnableOSPFv3Interface(ctx, "eth0", "0.0.0.0\nevil-command", false, 0)
+	if err == nil {
+		t.Fatal("expected error for newline in area ID")
+	}
+	if !strings.Contains(err.Error(), "area ID") || !strings.Contains(err.Error(), "control characters") {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+func TestDisableOSPFInterface_InjectionInIfaceName(t *testing.T) {
+	client, _ := setupFakeVtysh(t)
+	ctx := context.Background()
+
+	err := client.DisableOSPFInterface(ctx, "eth0\nevil", "0.0.0.0", false)
+	if err == nil {
+		t.Fatal("expected error for newline in interface name")
+	}
+	if !strings.Contains(err.Error(), "interface name") || !strings.Contains(err.Error(), "control characters") {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+func TestDisableOSPFv3Interface_InjectionInIfaceName(t *testing.T) {
+	client, _ := setupFakeVtysh(t)
+	ctx := context.Background()
+
+	err := client.DisableOSPFv3Interface(ctx, "eth0\nevil", "0.0.0.0", false)
+	if err == nil {
+		t.Fatal("expected error for newline in interface name")
+	}
+	if !strings.Contains(err.Error(), "interface name") || !strings.Contains(err.Error(), "control characters") {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+func TestAddBFDPeer_InvalidAddr(t *testing.T) {
+	client, _ := setupFakeVtysh(t)
+	ctx := context.Background()
+
+	err := client.AddBFDPeer(ctx, "not-an-ip", 300, 300, 3, "eth0")
+	if err == nil {
+		t.Fatal("expected error for non-IP peer address")
+	}
+	if !strings.Contains(err.Error(), "invalid IP address") {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+func TestAddBFDPeer_InjectionInInterface(t *testing.T) {
+	client, _ := setupFakeVtysh(t)
+	ctx := context.Background()
+
+	err := client.AddBFDPeer(ctx, "192.168.1.1", 300, 300, 3, "eth0\nevil-command")
+	if err == nil {
+		t.Fatal("expected error for newline in interface")
+	}
+	if !strings.Contains(err.Error(), "interface") || !strings.Contains(err.Error(), "control characters") {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+func TestRemoveBFDPeer_InvalidAddr(t *testing.T) {
+	client, _ := setupFakeVtysh(t)
+	ctx := context.Background()
+
+	err := client.RemoveBFDPeer(ctx, "not-an-ip", "")
+	if err == nil {
+		t.Fatal("expected error for non-IP peer address")
+	}
+	if !strings.Contains(err.Error(), "invalid IP address") {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+func TestRemoveBFDPeer_InjectionInInterface(t *testing.T) {
+	client, _ := setupFakeVtysh(t)
+	ctx := context.Background()
+
+	err := client.RemoveBFDPeer(ctx, "192.168.1.1", "eth0\nevil")
+	if err == nil {
+		t.Fatal("expected error for newline in interface")
+	}
+	if !strings.Contains(err.Error(), "interface") || !strings.Contains(err.Error(), "control characters") {
+		t.Errorf("unexpected error: %v", err)
 	}
 }
 
