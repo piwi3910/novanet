@@ -16,6 +16,7 @@ import (
 	"github.com/azrtydxb/novanet/internal/service"
 	"github.com/azrtydxb/novanet/internal/tunnel"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"go.uber.org/zap"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -25,13 +26,15 @@ import (
 // SetRemoteEndpointSyncFunc allows the caller to inject the actual remote
 // endpoint sync implementation to avoid circular imports.
 func SetRemoteEndpointSyncFunc(fn func(ctx context.Context, logger *zap.Logger,
-	k8sClient kubernetes.Interface, dpClient pb.DataplaneControlClient, nodeName string)) {
+	k8sClient kubernetes.Interface, dpClient pb.DataplaneControlClient, nodeName string,
+	remoteEndpointsGauge prometheus.Gauge)) {
 	startRemoteEndpointSyncDirect = fn
 }
 
 var startRemoteEndpointSyncDirect = func(ctx context.Context, logger *zap.Logger,
-	k8sClient kubernetes.Interface, dpClient pb.DataplaneControlClient, nodeName string) {
-	logger.Warn("remote endpoint sync not wired — call remotesync.StartRemoteEndpointSync directly")
+	k8sClient kubernetes.Interface, dpClient pb.DataplaneControlClient, nodeName string,
+	_ prometheus.Gauge) {
+	logger.Warn("remote endpoint sync not wired — ensure agent.SetRemoteEndpointSyncFunc(remotesync.StartRemoteEndpointSync) is called during initialization")
 }
 
 // StartPolicyWatcher starts the NetworkPolicy watcher if a Kubernetes client is available.
@@ -63,7 +66,7 @@ func StartRemoteSync(ctx context.Context, logger *zap.Logger, k8sClient *kuberne
 	bgWg.Add(1)
 	go func() {
 		defer bgWg.Done()
-		startRemoteEndpointSyncDirect(ctx, logger, k8sClient, dpClient, nodeName)
+		startRemoteEndpointSyncDirect(ctx, logger, k8sClient, dpClient, nodeName, MetricRemoteEndpoints)
 	}()
 }
 

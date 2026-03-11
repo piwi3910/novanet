@@ -10,9 +10,9 @@ import (
 	"time"
 
 	pb "github.com/azrtydxb/novanet/api/v1"
-	"github.com/azrtydxb/novanet/internal/agent"
 	"github.com/azrtydxb/novanet/internal/identity"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"go.uber.org/zap"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/informers"
@@ -23,7 +23,7 @@ import (
 // StartRemoteEndpointSync watches all cluster pods via an informer and pushes
 // remote (non-local) pod endpoints to the eBPF dataplane.
 func StartRemoteEndpointSync(ctx context.Context, logger *zap.Logger, k8sClient kubernetes.Interface,
-	dpClient pb.DataplaneControlClient, selfNode string) {
+	dpClient pb.DataplaneControlClient, selfNode string, remoteEndpointsGauge prometheus.Gauge) {
 
 	factory := informers.NewSharedInformerFactory(k8sClient, 30*time.Second)
 	podInformer := factory.Core().V1().Pods().Informer()
@@ -40,7 +40,7 @@ func StartRemoteEndpointSync(ctx context.Context, logger *zap.Logger, k8sClient 
 			if upsertRemoteEndpoint(ctx, logger, dpClient, pod) {
 				mu.Lock()
 				remoteCount++
-				agent.MetricRemoteEndpoints.Set(float64(remoteCount))
+				remoteEndpointsGauge.Set(float64(remoteCount))
 				mu.Unlock()
 			}
 		},
@@ -71,7 +71,7 @@ func StartRemoteEndpointSync(ctx context.Context, logger *zap.Logger, k8sClient 
 				if remoteCount < 0 {
 					remoteCount = 0
 				}
-				agent.MetricRemoteEndpoints.Set(float64(remoteCount))
+				remoteEndpointsGauge.Set(float64(remoteCount))
 				mu.Unlock()
 			}
 		},

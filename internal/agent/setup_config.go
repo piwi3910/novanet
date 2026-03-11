@@ -185,24 +185,28 @@ func CreatePolicyCompiler(ctx context.Context, logger *zap.Logger, k8sClient *ku
 	policyCompiler := policy.NewCompiler(idAlloc, logger)
 	if k8sClient != nil {
 		policyCompiler.SetPortResolver(func(portName string, protocol corev1.Protocol, namespace string, selector metav1.LabelSelector) []uint16 {
-			return resolveNamedPorts(ctx, k8sClient, portName, protocol, namespace, selector)
+			return resolveNamedPorts(ctx, logger, k8sClient, portName, protocol, namespace, selector)
 		})
 		policyCompiler.SetNamespaceResolver(func(selector metav1.LabelSelector) []string {
-			return resolveNamespaces(ctx, k8sClient, selector)
+			return resolveNamespaces(ctx, logger, k8sClient, selector)
 		})
 	}
 	logger.Info("policy compiler created")
 	return policyCompiler
 }
 
-func resolveNamedPorts(ctx context.Context, k8sClient *kubernetes.Clientset,
+func resolveNamedPorts(ctx context.Context, logger *zap.Logger, k8sClient *kubernetes.Clientset,
 	portName string, protocol corev1.Protocol, namespace string, selector metav1.LabelSelector) []uint16 {
 	sel, err := metav1.LabelSelectorAsSelector(&selector)
 	if err != nil {
+		logger.Warn("failed to parse label selector for named port resolution",
+			zap.String("port", portName), zap.Error(err))
 		return nil
 	}
 	pods, err := k8sClient.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{LabelSelector: sel.String()})
 	if err != nil {
+		logger.Warn("failed to list pods for named port resolution",
+			zap.String("port", portName), zap.String("namespace", namespace), zap.Error(err))
 		return nil
 	}
 	seen := make(map[uint16]bool)
@@ -222,13 +226,16 @@ func resolveNamedPorts(ctx context.Context, k8sClient *kubernetes.Clientset,
 	return ports
 }
 
-func resolveNamespaces(ctx context.Context, k8sClient *kubernetes.Clientset, selector metav1.LabelSelector) []string {
+func resolveNamespaces(ctx context.Context, logger *zap.Logger, k8sClient *kubernetes.Clientset, selector metav1.LabelSelector) []string {
 	sel, err := metav1.LabelSelectorAsSelector(&selector)
 	if err != nil {
+		logger.Warn("failed to parse label selector for namespace resolution", zap.Error(err))
 		return nil
 	}
 	nsList, err := k8sClient.CoreV1().Namespaces().List(ctx, metav1.ListOptions{LabelSelector: sel.String()})
 	if err != nil {
+		logger.Warn("failed to list namespaces for policy resolution",
+			zap.String("selector", sel.String()), zap.Error(err))
 		return nil
 	}
 	var names []string

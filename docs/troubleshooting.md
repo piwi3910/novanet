@@ -565,6 +565,21 @@ novanetctl drops
 
 Flow events include the verdict (ALLOW/DENY) and drop reason for denied packets.
 
+### Policy Compilation Failures
+
+If a NetworkPolicy references named ports or namespace selectors, the agent
+resolves them at compile time via the Kubernetes API. Failures are logged at
+the `warn` level:
+
+```
+failed to list pods for named port resolution  port=http namespace=default error=...
+failed to list namespaces for policy resolution  selector=app=web error=...
+```
+
+Check the agent logs (`kubectl logs -n nova-system <agent-pod>`) for these
+warnings when policies using named ports or `namespaceSelector` are not
+taking effect as expected.
+
 ### Drop Counters and Reasons
 
 Drop reason codes help identify why packets are being denied:
