@@ -250,7 +250,7 @@ type LBIPAMSpec struct {
 
 // NovaRouteIntegrationSpec configures NovaNet routing (legacy NovaRoute API).
 type NovaRouteIntegrationSpec struct {
-	// Enabled activates NovaRoute integration for native routing.
+	// Enabled activates integrated routing for native routing mode.
 	// +kubebuilder:default=false
 	Enabled bool `json:"enabled"`
 
