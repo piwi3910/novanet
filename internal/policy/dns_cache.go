@@ -107,30 +107,30 @@ func (c *DNSCache) Resolve(fqdn string) []net.IP {
 
 	// Cache miss or expired — resolve outside the lock. Use singleflight
 	// to deduplicate concurrent lookups for the same FQDN.
-	type resolveResult struct {
-		ips []net.IP
-		err error
-	}
-	v, _, _ := c.flight.Do(fqdn, func() (interface{}, error) {
+	v, err, shared := c.flight.Do(fqdn, func() (interface{}, error) {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		resolved, err := resolverFn(ctx, fqdn)
-		return &resolveResult{ips: resolved, err: err}, nil
+		return resolverFn(ctx, fqdn)
 	})
 
-	result, ok := v.(*resolveResult)
-	if !ok {
+	if err != nil {
+		// Only log from the original caller, not from shared waiters,
+		// to avoid duplicate warnings.
+		if !shared {
+			c.logger.Warn("DNS resolution failed",
+				zap.String("fqdn", fqdn),
+				zap.Error(err),
+			)
+		}
+		// Return stale data if available.
 		if staleIPs != nil {
 			return staleIPs
 		}
 		return nil
 	}
-	if result.err != nil {
-		c.logger.Warn("DNS resolution failed",
-			zap.String("fqdn", fqdn),
-			zap.Error(result.err),
-		)
-		// Return stale data if available.
+
+	resolved, ok := v.([]net.IP)
+	if !ok {
 		if staleIPs != nil {
 			return staleIPs
 		}
@@ -141,23 +141,25 @@ func (c *DNSCache) Resolve(fqdn string) []net.IP {
 
 	c.mu.Lock()
 	c.entries[fqdn] = &dnsCacheEntry{
-		ips:        result.ips,
+		ips:        resolved,
 		expiry:     now.Add(defaultDNSTTL),
 		lastAccess: now,
 	}
 	c.evictLocked()
 	c.mu.Unlock()
 
-	c.logger.Debug("resolved FQDN",
-		zap.String("fqdn", fqdn),
-		zap.Int("ip_count", len(result.ips)),
-	)
+	if !shared {
+		c.logger.Debug("resolved FQDN",
+			zap.String("fqdn", fqdn),
+			zap.Int("ip_count", len(resolved)),
+		)
+	}
 
-	return result.ips
+	return resolved
 }
 
 // evictLocked removes the least recently used entry if the cache exceeds maxEntries.
-// Must be called with c.mu held for writing.
+// Must be called with c.mu held.
 func (c *DNSCache) evictLocked() {
 	for len(c.entries) > c.maxEntries {
 		var oldestKey string
@@ -188,12 +190,13 @@ func (c *DNSCache) Refresh() int {
 	for fqdn := range c.entries {
 		fqdns = append(fqdns, fqdn)
 	}
+	resolverFn := c.resolver
 	c.mu.Unlock()
 
 	changed := 0
 	for _, fqdn := range fqdns {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		resolved, err := c.resolver(ctx, fqdn)
+		resolved, err := resolverFn(ctx, fqdn)
 		cancel()
 
 		if err != nil {
